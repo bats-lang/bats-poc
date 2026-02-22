@@ -1,9 +1,9 @@
 [package]
 name = "bats-poc"
 kind = "bin"
-unsafe = true
 
 [dependencies]
 "builder" = ""
 "env" = ""
 "path" = ""
+"sha256" = ""
