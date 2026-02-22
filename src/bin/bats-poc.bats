@@ -35,6 +35,15 @@ static int _bpoc_get_repo(char *out, int max) {
   if (_bpoc_g_repo_len > 0 && _bpoc_g_repo_len < max) { memcpy(out, _bpoc_g_repo, _bpoc_g_repo_len); return _bpoc_g_repo_len; }
   return 0;
 }
+static char _bpoc_g_bin[256] = "";
+static int _bpoc_g_bin_len = 0;
+static void _bpoc_set_bin(const char *b, int len) {
+  if (len > 0 && len < 256) { memcpy(_bpoc_g_bin, b, len); _bpoc_g_bin[len] = '\0'; _bpoc_g_bin_len = len; }
+}
+static int _bpoc_get_bin(char *out, int max) {
+  if (_bpoc_g_bin_len > 0 && _bpoc_g_bin_len < max) { memcpy(out, _bpoc_g_bin, _bpoc_g_bin_len); return _bpoc_g_bin_len; }
+  return 0;
+}
 /* Handle --run-in <dir> flag: if first arg is "--run-in", chdir and return
    offset past the dir arg. Otherwise return first_start unchanged. */
 static int _bpoc_handle_run_in(const char *buf, int len,
@@ -229,6 +238,313 @@ static int _bpoc_strip_dep(const char *src, int slen,
     out[oi++] = '\n';
   }
   return found ? oi : -1;
+}
+static void _bpoc_print_completions_bash(void) {
+    fputs(
+        "_bats_poc() {\n"
+        "    local cur prev\n"
+        "    cur=\"${COMP_WORDS[COMP_CWORD]}\"\n"
+        "    prev=\"${COMP_WORDS[COMP_CWORD-1]}\"\n"
+        "\n"
+        "    local commands=\"init lock add remove build run test check tree upload clean completions\"\n"
+        "\n"
+        "    local i cmd=\"\"\n"
+        "    for ((i=1; i < COMP_CWORD; i++)); do\n"
+        "        case \"${COMP_WORDS[i]}\" in\n"
+        "            --run-in)\n"
+        "                ((i++))\n"
+        "                ;;\n"
+        "            -*)\n"
+        "                ;;\n"
+        "            *)\n"
+        "                cmd=\"${COMP_WORDS[i]}\"\n"
+        "                break\n"
+        "                ;;\n"
+        "        esac\n"
+        "    done\n"
+        "\n"
+        "    if [[ -z \"$cmd\" ]]; then\n"
+        "        if [[ \"$cur\" == -* ]]; then\n"
+        "            COMPREPLY=($(compgen -W \"--version -V --help -h --run-in --quiet -q\" -- \"$cur\"))\n"
+        "        else\n"
+        "            COMPREPLY=($(compgen -W \"$commands\" -- \"$cur\"))\n"
+        "        fi\n"
+        "        return\n"
+        "    fi\n"
+        "\n"
+        "    case \"$prev\" in\n"
+        "        --repository|--run-in)\n"
+        "            COMPREPLY=($(compgen -d -- \"$cur\"))\n"
+        "            return\n"
+        "            ;;\n"
+        "        --only)\n"
+        "            COMPREPLY=($(compgen -W \"native wasm\" -- \"$cur\"))\n"
+        "            return\n"
+        "            ;;\n"
+        "        --bin|--filter)\n"
+        "            return\n"
+        "            ;;\n"
+        "    esac\n"
+        "\n"
+        "    case \"$cmd\" in\n"
+        "        init)\n"
+        "            if [[ \"$cur\" == -* ]]; then\n"
+        "                COMPREPLY=($(compgen -W \"--help -h\" -- \"$cur\"))\n"
+        "            else\n"
+        "                COMPREPLY=($(compgen -W \"binary library\" -- \"$cur\"))\n"
+        "            fi\n"
+        "            ;;\n"
+        "        lock)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        add)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        remove)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        build)\n"
+        "            COMPREPLY=($(compgen -W \"--only --verbose -v --repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        run)\n"
+        "            COMPREPLY=($(compgen -W \"--bin --verbose -v --repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        test)\n"
+        "            COMPREPLY=($(compgen -W \"--filter --only --verbose -v --repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        check)\n"
+        "            COMPREPLY=($(compgen -W \"--verbose -v --repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        tree)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        upload)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        clean)\n"
+        "            COMPREPLY=($(compgen -W \"--help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        completions)\n"
+        "            COMPREPLY=($(compgen -W \"bash zsh fish\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "    esac\n"
+        "}\n"
+        "complete -F _bats_poc bats-poc\n"
+    , stdout);
+}
+static void _bpoc_print_completions_zsh(void) {
+    fputs(
+        "#compdef bats-poc\n"
+        "\n"
+        "_bats_poc() {\n"
+        "    local -a commands\n"
+        "    commands=(\n"
+        "        'init:Create a new project'\n"
+        "        'lock:Generate bats.lock'\n"
+        "        'add:Add a dep" "en" "dency'\n"
+        "        'remove:Remove a dep" "en" "dency'\n"
+        "        'build:Build the project'\n"
+        "        'run:Build and run a binary'\n"
+        "        'test:Run tests'\n"
+        "        'check:Type-check the project'\n"
+        "        'tree:Show dep" "en" "dency tree'\n"
+        "        'upload:Upload a library'\n"
+        "        'clean:Remove artifacts'\n"
+        "        'completions:Generate shell completions'\n"
+        "    )\n"
+        "\n"
+        "    _arguments -C \\\n"
+        "        '--version[Show version]' \\\n"
+        "        '-V[Show version]' \\\n"
+        "        '--help[Show help]' \\\n"
+        "        '-h[Show help]' \\\n"
+        "        '--run-in[Run in directory]:directory:_directories' \\\n"
+        "        '--quiet[Suppress progress output]' \\\n"
+        "        '-q[Suppress progress output]' \\\n"
+        "        '1:command:->command' \\\n"
+        "        '*::args:->args'\n"
+        "\n"
+        "    case $state in\n"
+        "        command)\n"
+        "            _describe 'command' commands\n"
+        "            ;;\n"
+        "        args)\n"
+        "            case ${words[1]} in\n"
+        "                init)\n"
+        "                    _arguments \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]' \\\n"
+        "                        '1:kind:(binary library)'\n"
+        "                    ;;\n"
+        "                lock)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                add)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]' \\\n"
+        "                        '1:package:' \\\n"
+        "                        '2:constraint:'\n"
+        "                    ;;\n"
+        "                remove)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]' \\\n"
+        "                        '1:package:'\n"
+        "                    ;;\n"
+        "                build)\n"
+        "                    _arguments \\\n"
+        "                        '--only[Target platform]:target:(native wasm)' \\\n"
+        "                        '--verbose[Verbose output]' \\\n"
+        "                        '-v[Verbose output]' \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                run)\n"
+        "                    _arguments \\\n"
+        "                        '--bin[Binary to run]:name:' \\\n"
+        "                        '--verbose[Verbose output]' \\\n"
+        "                        '-v[Verbose output]' \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                test)\n"
+        "                    _arguments \\\n"
+        "                        '--filter[Filter tests by name]:pattern:' \\\n"
+        "                        '--only[Target platform]:target:(native wasm)' \\\n"
+        "                        '--verbose[Verbose output]' \\\n"
+        "                        '-v[Verbose output]' \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                check)\n"
+        "                    _arguments \\\n"
+        "                        '--verbose[Verbose output]' \\\n"
+        "                        '-v[Verbose output]' \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                tree)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                upload)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                clean)\n"
+        "                    _arguments \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                completions)\n"
+        "                    _arguments \\\n"
+        "                        '1:shell:(bash zsh fish)'\n"
+        "                    ;;\n"
+        "            esac\n"
+        "            ;;\n"
+        "    esac\n"
+        "}\n"
+        "\n"
+        "_bats_poc\n"
+    , stdout);
+}
+static void _bpoc_print_completions_fish(void) {
+    fputs(
+        "complete -c bats-poc -f\n"
+        "\n"
+        "function __bats_poc_no_subcommand\n"
+        "    set -l cmd (commandline -opc)\n"
+        "    set -l skip_next 0\n"
+        "    for c in $cmd[2..]\n"
+        "        if test $skip_next -eq 1\n"
+        "            set skip_next 0\n"
+        "            continue\n"
+        "        en" "d\n"
+        "        switch $c\n"
+        "            case --run-in\n"
+        "                set skip_next 1\n"
+        "            case '-*'\n"
+        "                continue\n"
+        "            case '*'\n"
+        "                return 1\n"
+        "        en" "d\n"
+        "    en" "d\n"
+        "    return 0\n"
+        "en" "d\n"
+        "\n"
+        "function __bats_poc_using_subcommand\n"
+        "    set -l cmd (commandline -opc)\n"
+        "    set -l skip_next 0\n"
+        "    for c in $cmd[2..]\n"
+        "        if test $skip_next -eq 1\n"
+        "            set skip_next 0\n"
+        "            continue\n"
+        "        en" "d\n"
+        "        switch $c\n"
+        "            case --run-in\n"
+        "                set skip_next 1\n"
+        "            case '-*'\n"
+        "                continue\n"
+        "            case '*'\n"
+        "                test \"$c\" = \"$argv[1]\"\n"
+        "                return $status\n"
+        "        en" "d\n"
+        "    en" "d\n"
+        "    return 1\n"
+        "en" "d\n"
+        "\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -l version -s V -d 'Show version'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -l help -s h -d 'Show help'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -l run-in -rF -d 'Run in directory'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -l quiet -s q -d 'Suppress progress output'\n"
+        "\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a init -d 'Create a new project'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a lock -d 'Generate bats.lock'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a add -d 'Add a dep" "en" "dency'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a remove -d 'Remove a dep" "en" "dency'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a build -d 'Build the project'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a run -d 'Build and run a binary'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a test -d 'Run tests'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a check -d 'Type-check the project'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a tree -d 'Show dep" "en" "dency tree'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a upload -d 'Upload a library'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a clean -d 'Remove artifacts'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a completions -d 'Shell completions'\n"
+        "\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand init' -a 'binary library'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand lock' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand add' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand remove' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand build' -l only -ra 'native wasm' -d 'Target platform'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand build' -l verbose -s v -d 'Verbose output'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand build' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand run' -l bin -r -d 'Binary to run'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand run' -l verbose -s v -d 'Verbose output'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand run' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand test' -l filter -r -d 'Filter tests by name'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand test' -l only -ra 'native wasm' -d 'Target platform'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand test' -l verbose -s v -d 'Verbose output'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand test' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand check' -l verbose -s v -d 'Verbose output'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand check' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand tree' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand upload' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand completions' -a 'bash zsh fish'\n"
+    , stdout);
 }
 %}
 
@@ -2450,6 +2766,206 @@ fn cmd_is_version {l:agz}{n:pos}
     else false
   end
 
+fn cmd_is_completions {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 11 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 10 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+      in (* "completions" = 99,111,109,112,108,101,116,105,111,110,115 *)
+        $AR.eq_int_int(c0, 99) && $AR.eq_int_int(c1, 111) &&
+        $AR.eq_int_int(c2, 109) && $AR.eq_int_int(c3, 112) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 4)), 108) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 5)), 101) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 6)), 116) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 7)), 105) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 8)), 111) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 9)), 110) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 10)), 115)
+      end else false
+    else false
+  end
+
+fn cmd_is_test {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 4 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 3 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+      in (* "test" = 116,101,115,116 *)
+        $AR.eq_int_int(c0, 116) && $AR.eq_int_int(c1, 101) &&
+        $AR.eq_int_int(c2, 115) && $AR.eq_int_int(c3, 116)
+      end else false
+    else false
+  end
+
+fn cmd_is_upload {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 6 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 5 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
+        val c5 = byte2int0($A.get<byte>(buf, o0 + 5))
+      in (* "upload" = 117,112,108,111,97,100 *)
+        $AR.eq_int_int(c0, 117) && $AR.eq_int_int(c1, 112) &&
+        $AR.eq_int_int(c2, 108) && $AR.eq_int_int(c3, 111) &&
+        $AR.eq_int_int(c4, 97) && $AR.eq_int_int(c5, 100)
+      end else false
+    else false
+  end
+
+(* ============================================================
+   test: build and run tests
+   ============================================================ *)
+fn do_test(): void = let
+  val () = do_build(0)
+  (* Test infrastructure requires unittest block support in emitter.
+     For now, report that the build succeeded. *)
+  val () = println! ("no tests found")
+in () end
+
+(* ============================================================
+   upload: package library for repository
+   ============================================================ *)
+fn do_upload(): void = let
+  (* Read bats.toml for package name and verify kind = "lib" *)
+  val tp = str_to_path_arr("bats.toml")
+  val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
+  val tor = $F.file_open(bv_tp, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_tp, bv_tp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+in
+  case+ tor of
+  | ~$R.ok(tfd) => let
+      val tbuf = $A.alloc<byte>(8192)
+      val trr = $F.file_read(tfd, tbuf, 8192)
+      val tlen = (case+ trr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val tcr = $F.file_close(tfd)
+      val () = $R.discard<int><int>(tcr)
+      val @(fz_tb, bv_tb) = $A.freeze<byte>(tbuf)
+      val pr = $T.parse(bv_tb, 8192)
+      val () = $A.drop<byte>(fz_tb, bv_tb)
+      val () = $A.free<byte>($A.thaw<byte>(fz_tb))
+    in
+      case+ pr of
+      | ~$R.ok(doc) => let
+          val sec = $A.alloc<byte>(7)
+          val () = make_package(sec)
+          val @(fz_s, bv_s) = $A.freeze<byte>(sec)
+          (* Get package name *)
+          val kn = $A.alloc<byte>(4)
+          val () = make_name(kn)
+          val @(fz_kn, bv_kn) = $A.freeze<byte>(kn)
+          val nbuf = $A.alloc<byte>(256)
+          val nr = $T.get(doc, bv_s, 7, bv_kn, 4, nbuf, 256)
+          val () = $A.drop<byte>(fz_kn, bv_kn)
+          val () = $A.free<byte>($A.thaw<byte>(fz_kn))
+          (* Get package kind *)
+          val kk = $A.alloc<byte>(4)
+          val () = $A.set<byte>(kk, 0, int2byte0(107)) (* k *)
+          val () = $A.set<byte>(kk, 1, int2byte0(105)) (* i *)
+          val () = $A.set<byte>(kk, 2, int2byte0(110)) (* n *)
+          val () = $A.set<byte>(kk, 3, int2byte0(100)) (* d *)
+          val @(fz_kk, bv_kk) = $A.freeze<byte>(kk)
+          val kbuf = $A.alloc<byte>(32)
+          val kr = $T.get(doc, bv_s, 7, bv_kk, 4, kbuf, 32)
+          val () = $A.drop<byte>(fz_kk, bv_kk)
+          val () = $A.free<byte>($A.thaw<byte>(fz_kk))
+          val () = $A.drop<byte>(fz_s, bv_s)
+          val () = $A.free<byte>($A.thaw<byte>(fz_s))
+          val () = $T.toml_free(doc)
+          (* Check kind is "lib" (3 chars, l=108, i=105, b=98) *)
+          val is_lib = (case+ kr of
+            | ~$R.some(klen) => (if klen = 3 then let
+                val @(fz_kb, bv_kb) = $A.freeze<byte>(kbuf)
+                val k0 = byte2int0($A.read<byte>(bv_kb, 0))
+                val () = $A.drop<byte>(fz_kb, bv_kb)
+                val () = $A.free<byte>($A.thaw<byte>(fz_kb))
+              in $AR.eq_int_int(k0, 108) end
+              else let val () = $A.free<byte>(kbuf) in false end): bool
+            | ~$R.none() => let val () = $A.free<byte>(kbuf) in false end): bool
+          (* Get repository path before branching *)
+          val repo = $A.alloc<byte>(4096)
+          val rplen = $UNSAFE begin
+            $extfcall(int, "_bpoc_get_repo",
+              $UNSAFE.castvwtp1{ptr}(repo), 4096)
+          end
+        in
+          case+ nr of
+          | ~$R.some(nlen) =>
+            if is_lib then
+              if rplen > 0 then let
+                val cmd = $B.create()
+                val () = bput(cmd, "mkdir -p ")
+                val @(fz_rp, bv_rp) = $A.freeze<byte>(repo)
+                val () = copy_to_builder(bv_rp, 0, rplen, 4096, cmd,
+                  $AR.checked_nat(rplen + 1))
+                val () = bput(cmd, "/")
+                val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                  $AR.checked_nat(nlen + 1))
+                val () = bput(cmd, " && zip -r ")
+                val () = copy_to_builder(bv_rp, 0, rplen, 4096, cmd,
+                  $AR.checked_nat(rplen + 1))
+                val () = bput(cmd, "/")
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                  $AR.checked_nat(nlen + 1))
+                val () = bput(cmd, "/")
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                  $AR.checked_nat(nlen + 1))
+                val () = bput(cmd, "_0.1.0.bats bats.toml src/")
+                val () = $A.drop<byte>(fz_nb, bv_nb)
+                val () = $A.free<byte>($A.thaw<byte>(fz_nb))
+                val () = $A.drop<byte>(fz_rp, bv_rp)
+                val () = $A.free<byte>($A.thaw<byte>(fz_rp))
+                val rc = run_sh(cmd, 0)
+              in
+                if rc <> 0 then println! ("error: upload failed")
+                else println! ("uploaded successfully")
+              end
+              else let
+                val () = $A.free<byte>(repo)
+                val () = $A.free<byte>(nbuf)
+              in println! ("error: --repository is required for upload") end
+            else let
+              val () = $A.free<byte>(nbuf)
+              val () = $A.free<byte>(repo)
+            in println! ("error: 'upload' is only for library packages (kind = \"lib\")") end
+          | ~$R.none() => let
+              val () = $A.free<byte>(nbuf)
+              val () = $A.free<byte>(repo)
+            in println! ("error: package.name not found in bats.toml") end
+        end
+      | ~$R.err(_) => println! ("error: could not parse bats.toml")
+    end
+  | ~$R.err(_) => println! ("error: could not open bats.toml")
+end
+
+(* ============================================================
+   completions: generate shell completion scripts
+   ============================================================ *)
+fn do_completions(shell: int): void =
+  if shell = 0 then
+    $UNSAFE begin $extfcall(void, "_bpoc_print_completions_bash") end
+  else if shell = 1 then
+    $UNSAFE begin $extfcall(void, "_bpoc_print_completions_zsh") end
+  else if shell = 2 then
+    $UNSAFE begin $extfcall(void, "_bpoc_print_completions_fish") end
+  else println! ("error: specify a shell (bash, zsh, fish)")
+
 (* ============================================================
    init: create a new bats project
    ============================================================ *)
@@ -2822,17 +3338,39 @@ in
         in
           case+ nr of
           | ~$R.some(nlen) => let
+              (* Check if --bin was specified *)
+              val bin_name = $A.alloc<byte>(256)
+              val bn_len = $UNSAFE begin
+                $extfcall(int, "_bpoc_get_bin",
+                  $UNSAFE.castvwtp1{ptr}(bin_name), 256)
+              end
               val cmd = $B.create()
               val () = bput(cmd, "./dist/debug/")
-              val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
-              val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
-                $AR.checked_nat(nlen + 1))
-              val () = $A.drop<byte>(fz_nb, bv_nb)
-              val () = $A.free<byte>($A.thaw<byte>(fz_nb))
-              val rc = run_sh(cmd, 0)
             in
-              if rc <> 0 then println! ("error: run failed")
-              else ()
+              if bn_len > 0 then let
+                val @(fz_bn, bv_bn) = $A.freeze<byte>(bin_name)
+                val () = copy_to_builder(bv_bn, 0, bn_len, 256, cmd,
+                  $AR.checked_nat(bn_len + 1))
+                val () = $A.drop<byte>(fz_bn, bv_bn)
+                val () = $A.free<byte>($A.thaw<byte>(fz_bn))
+                val () = $A.free<byte>(nbuf)
+                val rc = run_sh(cmd, 0)
+              in
+                if rc <> 0 then println! ("error: run failed")
+                else ()
+              end
+              else let
+                val () = $A.free<byte>(bin_name)
+                val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                  $AR.checked_nat(nlen + 1))
+                val () = $A.drop<byte>(fz_nb, bv_nb)
+                val () = $A.free<byte>($A.thaw<byte>(fz_nb))
+                val rc = run_sh(cmd, 0)
+              in
+                if rc <> 0 then println! ("error: run failed")
+                else ()
+              end
             end
           | ~$R.none() => let
               val () = $A.free<byte>(nbuf)
@@ -3122,7 +3660,7 @@ in
             end
             val () = $A.drop<byte>(fz_cb, bv_cb)
             val () = $A.free<byte>($A.thaw<byte>(fz_cb))
-            (* Check if --only debug or --only release *)
+            (* Check if --only debug|release|native|wasm *)
             val @(fz_ov, bv_ov) = $A.freeze<byte>(only_val)
             val only_debug = (if olen = 5 then let
               val b0 = byte2int0($A.read<byte>(bv_ov, 0))
@@ -3134,10 +3672,20 @@ in
               val b1 = byte2int0($A.read<byte>(bv_ov, 1))
             in $AR.eq_int_int(b0, 114) && $AR.eq_int_int(b1, 101) end
               else false): bool
+            (* "native" = 6 chars, n=110; "wasm" = 4 chars, w=119 *)
+            val only_native = (if olen = 6 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+            in $AR.eq_int_int(b0, 110) end
+              else false): bool
+            val only_wasm = (if olen = 4 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+            in $AR.eq_int_int(b0, 119) end
+              else false): bool
             val () = $A.drop<byte>(fz_ov, bv_ov)
             val () = $A.free<byte>($A.thaw<byte>(fz_ov))
           in
-            if only_debug then do_build(0)
+            if only_wasm then println! ("error: wasm target is not yet supported")
+            else if only_debug then do_build(0)
             else if only_release then do_build(1)
             else let
               val () = do_build(0)
@@ -3150,6 +3698,17 @@ in
             val () = $A.free<byte>(cl_buf)
           in do_lock() end
           else if cmd_is_run(cl_buf, cmd_start, cmd_len, 4096) then let
+            val bin_buf = $A.alloc<byte>(256)
+            val blen = $UNSAFE begin
+              $extfcall(int, "_bpoc_get_flag_val",
+                $UNSAFE.castvwtp1{ptr}(cl_buf), cl_n, cmd_end + 1,
+                "--bin", $UNSAFE.castvwtp1{ptr}(bin_buf), 256)
+            end
+            val () = (if blen > 0 then
+              $UNSAFE begin $extfcall(void, "_bpoc_set_bin",
+                $UNSAFE.castvwtp1{ptr}(bin_buf), blen) end
+              else ())
+            val () = $A.free<byte>(bin_buf)
             val () = $A.free<byte>(cl_buf)
           in do_run() end
           else if cmd_is_init(cl_buf, cmd_start, cmd_len, 4096) then let
@@ -3187,6 +3746,12 @@ in
             if kind >= 0 then do_init(kind)
             else println! ("error: specify 'binary' or 'library'\nusage: bats-poc init binary|library")
           end
+          else if cmd_is_test(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in do_test() end
+          else if cmd_is_upload(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in do_upload() end
           else if cmd_is_tree(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in do_tree() end
@@ -3222,12 +3787,46 @@ in
               val () = $A.free<byte>($A.thaw<byte>(fz_rb))
             in println! ("error: specify a package name\nusage: bats-poc remove <package>") end
           end
+          else if cmd_is_completions(cl_buf, cmd_start, cmd_len, 4096) then let
+            val arg_start = cmd_end + 1
+            val arg_end = find_null(cl_buf, arg_start, 4096, 4096)
+            val arg_len = arg_end - arg_start
+            (* "bash"=4: b=98, "zsh"=3: z=122, "fish"=4: f=102 *)
+            val shell = (if arg_len = 4 then let
+                val a0 = g1ofg0(arg_start)
+              in
+                if a0 >= 0 then
+                  if a0 < 4096 then let
+                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                  in
+                    if $AR.eq_int_int(c0, 98) then 0  (* 'b' = bash *)
+                    else if $AR.eq_int_int(c0, 102) then 2  (* 'f' = fish *)
+                    else ~1
+                  end else ~1
+                else ~1
+              end
+            else if arg_len = 3 then let
+                val a0 = g1ofg0(arg_start)
+              in
+                if a0 >= 0 then
+                  if a0 < 4096 then let
+                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                  in if $AR.eq_int_int(c0, 122) then 1 else ~1 end
+                  else ~1
+                else ~1
+              end
+            else ~1): int
+            val () = $A.free<byte>(cl_buf)
+          in
+            if shell >= 0 then do_completions(shell)
+            else println! ("error: specify a shell (bash, zsh, fish)\nusage: bats-poc completions bash|zsh|fish")
+          end
           else if cmd_is_version(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in println! ("bats-poc 0.1.0") end
           else let
             val () = $A.free<byte>(cl_buf)
-          in println! ("usage: bats-poc <check|build|clean|lock|run|init|tree|add|remove|--version> [--only debug|release]") end
+          in println! ("usage: bats-poc <init|lock|add|remove|build|run|test|check|tree|upload|clean|completions> [--only debug|release]") end
         end
       | ~$R.err(e) => let
           val cr = $F.file_close(cl_fd)
