@@ -13,9 +13,48 @@
 #use str as S
 #use toml as T
 
+$UNSAFE begin
+
+%{
+#include <fcntl.h>
+#include <unistd.h>
+static int _bpoc_byte_at(const char *s, int i) {
+  return (unsigned char)s[i];
+}
+static int _bpoc_slen(const char *s) {
+  int len = 0;
+  while (s[len] != '\0') len++;
+  return len;
+}
+static int _bpoc_write_file(const char *path, const char *data, int len) {
+  int fd = open(path, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+  if (fd < 0) return -1;
+  int written = (int)write(fd, data, (unsigned)len);
+  close(fd);
+  return (written == len) ? 0 : -1;
+}
+%}
+
+end
+
 (* ============================================================
    Helpers
    ============================================================ *)
+
+(* Copy a string literal into a builder *)
+fun put_lit {fuel:nat} .<fuel>.
+  (b: !$B.builder, p: ptr, i: int, len: int, fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if i >= len then ()
+  else let
+    val c = $UNSAFE begin $extfcall(int, "_bpoc_byte_at", p, i) end
+    val () = $B.put_byte(b, c)
+  in put_lit(b, p, i + 1, len, fuel - 1) end
+
+fn bput(b: !$B.builder, s: string): void = let
+  val p = $UNSAFE begin $UNSAFE.castvwtp1{ptr}(s) end
+  val len = $UNSAFE begin $extfcall(int, "_bpoc_slen", p) end
+in put_lit(b, p, 0, len, $AR.checked_nat(len + 1)) end
 
 fun print_arr {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (buf: !$A.arr(byte, l, n), i: int, len: int, max: int n,
@@ -140,6 +179,16 @@ fn src_byte {l:agz}{n:pos}
       else 0
     else 0
   end
+
+fun print_borrow {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (buf: !$A.borrow(byte, l, n), i: int, len: int, max: int n,
+   fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if i >= len then ()
+  else let
+    val b = src_byte(buf, i, max)
+    val () = print_char(int2char0(b))
+  in print_borrow(buf, i + 1, len, max, fuel - 1) end
 
 (* ============================================================
    Lexer: keyword detection helpers
@@ -1141,6 +1190,698 @@ fn do_emit {ls:agz}{ns:pos}{lp:agz}{np:pos}
 in @(sats_arr, sats_len, dats_arr, dats_len, prelude_lines) end
 
 (* ============================================================
+   Build pipeline: helpers
+   ============================================================ *)
+
+(* Copy bytes from a frozen borrow into a builder *)
+fun copy_to_builder {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, l, n), start: int, len: int, max: int n,
+   dst: !$B.builder, fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if start >= len then ()
+  else let
+    val b = src_byte(src, start, max)
+    val () = $B.put_byte(dst, b)
+  in copy_to_builder(src, start + 1, len, max, dst, fuel - 1) end
+
+(* Run a shell command. cmd_b is CONSUMED. Returns exit code *)
+fn run_sh(cmd_b: $B.builder): int = let
+  val @(cmd_arr, cmd_len) = $B.to_arr(cmd_b)
+  val @(fz_cmd, bv_cmd) = $A.freeze<byte>(cmd_arr)
+  (* /bin/sh = 7 bytes *)
+  val sh_path = $A.alloc<byte>(7)
+  val () = $A.write_byte(sh_path, 0, 47)
+  val () = $A.write_byte(sh_path, 1, 98)
+  val () = $A.write_byte(sh_path, 2, 105)
+  val () = $A.write_byte(sh_path, 3, 110)
+  val () = $A.write_byte(sh_path, 4, 47)
+  val () = $A.write_byte(sh_path, 5, 115)
+  val () = $A.write_byte(sh_path, 6, 104)
+  val @(fz_sh, bv_sh) = $A.freeze<byte>(sh_path)
+  (* argv: "sh\0-c\0<cmd>\0" *)
+  val argv_b = $B.create()
+  val () = $B.put_byte(argv_b, 115)
+  val () = $B.put_byte(argv_b, 104)
+  val () = $B.put_byte(argv_b, 0)
+  val () = $B.put_byte(argv_b, 45)
+  val () = $B.put_byte(argv_b, 99)
+  val () = $B.put_byte(argv_b, 0)
+  val () = copy_to_builder(bv_cmd, 0, cmd_len, 65536, argv_b,
+    $AR.checked_nat(cmd_len + 1))
+  val () = $B.put_byte(argv_b, 0)
+  val @(argv_arr, _) = $B.to_arr(argv_b)
+  val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
+  (* envp: empty *)
+  val envp = $A.alloc<byte>(1)
+  val () = $A.write_byte(envp, 0, 0)
+  val @(fz_e, bv_e) = $A.freeze<byte>(envp)
+  val sr = $P.spawn(bv_sh, 7, bv_a, 3, bv_e, 0,
+    $P.dev_null(), $P.dev_null(), $P.pipe_new())
+  val () = $A.drop<byte>(fz_sh, bv_sh)
+  val () = $A.free<byte>($A.thaw<byte>(fz_sh))
+  val () = $A.drop<byte>(fz_a, bv_a)
+  val () = $A.free<byte>($A.thaw<byte>(fz_a))
+  val () = $A.drop<byte>(fz_e, bv_e)
+  val () = $A.free<byte>($A.thaw<byte>(fz_e))
+  val () = $A.drop<byte>(fz_cmd, bv_cmd)
+  val () = $A.free<byte>($A.thaw<byte>(fz_cmd))
+in
+  case+ sr of
+  | ~$R.ok(sp) => let
+      val+ ~$P.spawn_pipes_mk(child, sin_p, sout_p, serr_p) = sp
+      val () = $P.pipe_end_close(sin_p)
+      val () = $P.pipe_end_close(sout_p)
+      val+ ~$P.pipe_fd(err_fd) = serr_p
+      val eb = $A.alloc<byte>(4096)
+      val err_r = $F.file_read(err_fd, eb, 4096)
+      val elen = (case+ err_r of
+        | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val ecr = $F.file_close(err_fd)
+      val () = $R.discard<int><int>(ecr)
+      val wr = $P.child_wait(child)
+      val ec = (case+ wr of
+        | ~$R.ok(n) => n | ~$R.err(_) => ~1): int
+    in
+      if ec <> 0 then let
+        val () = print_arr(eb, 0, elen, 4096, $AR.checked_nat(elen + 1))
+        val () = $A.free<byte>(eb)
+      in ec end
+      else let
+        val () = $A.free<byte>(eb)
+      in 0 end
+    end
+  | ~$R.err(_) => ~1
+end
+
+(* Write builder contents to file via C helper. builder is CONSUMED.
+   Path borrow must contain a null-terminated path. *)
+fn write_file_from_builder {lp:agz}{np:pos}
+  (path_bv: !$A.borrow(byte, lp, np), path_len: int np,
+   content_b: $B.builder): int = let
+  val @(content_arr, content_len) = $B.to_arr(content_b)
+  val @(fz_c, bv_c) = $A.freeze<byte>(content_arr)
+  val p_path = $UNSAFE begin $UNSAFE.castvwtp1{ptr}(path_bv) end
+  val p_data = $UNSAFE begin $UNSAFE.castvwtp1{ptr}(bv_c) end
+  val rc = $UNSAFE begin $extfcall(int, "_bpoc_write_file",
+    p_path, p_data, content_len) end
+  val () = $A.drop<byte>(fz_c, bv_c)
+  val () = $A.free<byte>($A.thaw<byte>(fz_c))
+in rc end
+
+(* Preprocess one .bats file: read -> lex -> emit -> write .sats + .dats
+   All three path borrows must be null-terminated builder arrays (65536) *)
+fn preprocess_one
+  {l1:agz}{l2:agz}{l3:agz}
+  (src_bv: !$A.borrow(byte, l1, 65536),
+   sats_bv: !$A.borrow(byte, l2, 65536),
+   dats_bv: !$A.borrow(byte, l3, 65536)): int = let
+  val or = $F.file_open(src_bv, 65536, 0, 0)
+in
+  case+ or of
+  | ~$R.ok(fd) => let
+      val buf = $A.alloc<byte>(65536)
+      val rr = $F.file_read(fd, buf, 65536)
+      val nbytes = (case+ rr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val cr = $F.file_close(fd)
+      val () = $R.discard<int><int>(cr)
+      val @(fz_src, bv_src) = $A.freeze<byte>(buf)
+      val @(span_arr, _span_len, span_count) = do_lex(bv_src, nbytes, 65536)
+      val @(fz_sp, bv_sp) = $A.freeze<byte>(span_arr)
+      val @(sats_arr, sats_len, dats_arr, dats_len, _pre) =
+        do_emit(bv_src, nbytes, 65536, bv_sp, 65536, span_count)
+      val () = $A.drop<byte>(fz_sp, bv_sp)
+      val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+      val () = $A.drop<byte>(fz_src, bv_src)
+      val () = $A.free<byte>($A.thaw<byte>(fz_src))
+      (* Write .sats *)
+      val sb = $B.create()
+      val @(fz_s, bv_s) = $A.freeze<byte>(sats_arr)
+      val () = copy_to_builder(bv_s, 0, sats_len, 65536, sb,
+        $AR.checked_nat(sats_len + 1))
+      val () = $A.drop<byte>(fz_s, bv_s)
+      val () = $A.free<byte>($A.thaw<byte>(fz_s))
+      val r1 = write_file_from_builder(sats_bv, 65536, sb)
+      (* Write .dats *)
+      val db = $B.create()
+      val @(fz_d, bv_d) = $A.freeze<byte>(dats_arr)
+      val () = copy_to_builder(bv_d, 0, dats_len, 65536, db,
+        $AR.checked_nat(dats_len + 1))
+      val () = $A.drop<byte>(fz_d, bv_d)
+      val () = $A.free<byte>($A.thaw<byte>(fz_d))
+      val r2 = write_file_from_builder(dats_bv, 65536, db)
+    in
+      if r1 = 0 then (if r2 = 0 then 0 else ~1) else ~1
+    end
+  | ~$R.err(_) => ~1
+end
+
+(* ============================================================
+   Build pipeline: do_build
+   ============================================================ *)
+
+(* Build a null-terminated path array from string.
+   Returns arr(byte, l, 65536) for some l. Caller must free. *)
+fn str_to_path_arr(s: string): [l:agz] $A.arr(byte, l, 65536) = let
+  val b = $B.create()
+  val () = bput(b, s)
+  val () = $B.put_byte(b, 0)
+  val @(arr, _) = $B.to_arr(b)
+in arr end
+
+fn do_build(): void = let
+  (* Step 1: mkdir build directories *)
+  val cmd = $B.create()
+  val () = bput(cmd, "mkdir -p build/src/bin build/bats_modules dist/debug")
+  val r0 = run_sh(cmd)
+  val () = (if r0 <> 0 then println! ("error: mkdir failed") else ())
+in
+  if r0 <> 0 then ()
+  else let
+    (* Step 2: Get PATSHOME *)
+    val phbuf = $A.alloc<byte>(512)
+    val ph_key = $A.alloc<byte>(8)
+    val () = $A.write_byte(ph_key, 0, 80)   (* P *)
+    val () = $A.write_byte(ph_key, 1, 65)   (* A *)
+    val () = $A.write_byte(ph_key, 2, 84)   (* T *)
+    val () = $A.write_byte(ph_key, 3, 83)   (* S *)
+    val () = $A.write_byte(ph_key, 4, 72)   (* H *)
+    val () = $A.write_byte(ph_key, 5, 79)   (* O *)
+    val () = $A.write_byte(ph_key, 6, 77)   (* M *)
+    val () = $A.write_byte(ph_key, 7, 69)   (* E *)
+    val @(fz_ph, bv_ph) = $A.freeze<byte>(ph_key)
+    val ph_r = $E.get(bv_ph, 8, phbuf, 512)
+    val () = $A.drop<byte>(fz_ph, bv_ph)
+    val () = $A.free<byte>($A.thaw<byte>(fz_ph))
+    val phlen = (case+ ph_r of
+      | ~$R.some(n) => n | ~$R.none() => 0): int
+  in
+    if phlen <= 0 then let
+      val () = $A.free<byte>(phbuf)
+    in println! ("error: PATSHOME not set") end
+    else let
+      val @(fz_patshome, bv_patshome) = $A.freeze<byte>(phbuf)
+
+      (* Step 3: Scan bats_modules/ for deps and preprocess *)
+      val bm_arr = str_to_path_arr("bats_modules")
+      val @(fz_bm, bv_bm) = $A.freeze<byte>(bm_arr)
+      val bmdir_r = $F.dir_open(bv_bm, 65536)
+      val () = $A.drop<byte>(fz_bm, bv_bm)
+      val () = $A.free<byte>($A.thaw<byte>(fz_bm))
+      val () = (case+ bmdir_r of
+        | ~$R.ok(d) => let
+            fun scan_deps {lph:agz}{fuel:nat} .<fuel>.
+              (d: !$F.dir, ph: !$A.borrow(byte, lph, 512),
+               fuel: int fuel): void =
+              if fuel <= 0 then ()
+              else let
+                val ent = $A.alloc<byte>(256)
+                val nr = $F.dir_next(d, ent, 256)
+                val elen = $R.option_unwrap_or<int>(nr, ~1)
+              in
+                if elen < 0 then $A.free<byte>(ent)
+                else let
+                  val dd = is_dot_or_dotdot(ent, elen, 256)
+                in
+                  if dd then let
+                    val () = $A.free<byte>(ent)
+                  in scan_deps(d, ph, fuel - 1) end
+                  else let
+                    val @(fz_e, bv_e) = $A.freeze<byte>(ent)
+                    (* mkdir -p build/bats_modules/<name>/src *)
+                    val mc = $B.create()
+                    val () = bput(mc, "mkdir -p build/bats_modules/")
+                    val () = copy_to_builder(bv_e, 0, elen, 256, mc,
+                      $AR.checked_nat(elen + 1))
+                    val () = bput(mc, "/src")
+                    val _ = run_sh(mc)
+                    (* source: bats_modules/<name>/src/lib.bats *)
+                    val sp = $B.create()
+                    val () = bput(sp, "bats_modules/")
+                    val () = copy_to_builder(bv_e, 0, elen, 256, sp,
+                      $AR.checked_nat(elen + 1))
+                    val () = bput(sp, "/src/lib.bats")
+                    val () = $B.put_byte(sp, 0)
+                    val @(sa, _) = $B.to_arr(sp)
+                    val @(fz_sp, bv_sp) = $A.freeze<byte>(sa)
+                    (* sats: build/bats_modules/<name>/src/lib.sats *)
+                    val ss = $B.create()
+                    val () = bput(ss, "build/bats_modules/")
+                    val () = copy_to_builder(bv_e, 0, elen, 256, ss,
+                      $AR.checked_nat(elen + 1))
+                    val () = bput(ss, "/src/lib.sats")
+                    val () = $B.put_byte(ss, 0)
+                    val @(ssa, _) = $B.to_arr(ss)
+                    val @(fz_ss, bv_ss) = $A.freeze<byte>(ssa)
+                    (* dats: build/bats_modules/<name>/src/lib.dats *)
+                    val sd = $B.create()
+                    val () = bput(sd, "build/bats_modules/")
+                    val () = copy_to_builder(bv_e, 0, elen, 256, sd,
+                      $AR.checked_nat(elen + 1))
+                    val () = bput(sd, "/src/lib.dats")
+                    val () = $B.put_byte(sd, 0)
+                    val @(sda, _) = $B.to_arr(sd)
+                    val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd)
+                    val () = (if pr <> 0 then let
+                      val () = print! ("warning: preprocess failed for dep ")
+                      val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
+                    in print_newline() end
+                    else let
+                      val () = print! ("  preprocessed dep: ")
+                      val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
+                    in print_newline() end)
+                    val () = $A.drop<byte>(fz_sp, bv_sp)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+                    val () = $A.drop<byte>(fz_ss, bv_ss)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_ss))
+                    val () = $A.drop<byte>(fz_sd, bv_sd)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_sd))
+                    val () = $A.drop<byte>(fz_e, bv_e)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_e))
+                  in scan_deps(d, ph, fuel - 1) end
+                end
+              end
+            val () = scan_deps(d, bv_patshome, 200)
+            val dcr = $F.dir_close(d)
+            val () = $R.discard<int><int>(dcr)
+          in end
+        | ~$R.err(_) =>
+            println! ("warning: no bats_modules/ directory"))
+
+      (* Step 4: Preprocess src/bin/*.bats *)
+      val sb_arr = str_to_path_arr("src/bin")
+      val @(fz_sb, bv_sb) = $A.freeze<byte>(sb_arr)
+      val sbdir_r = $F.dir_open(bv_sb, 65536)
+      val () = $A.drop<byte>(fz_sb, bv_sb)
+      val () = $A.free<byte>($A.thaw<byte>(fz_sb))
+      val () = (case+ sbdir_r of
+        | ~$R.ok(d2) => let
+            fun scan_bins {lph:agz}{fuel:nat} .<fuel>.
+              (d: !$F.dir, ph: !$A.borrow(byte, lph, 512),
+               phlen: int, fuel: int fuel): void =
+              if fuel <= 0 then ()
+              else let
+                val ent = $A.alloc<byte>(256)
+                val nr = $F.dir_next(d, ent, 256)
+                val elen = $R.option_unwrap_or<int>(nr, ~1)
+              in
+                if elen < 0 then $A.free<byte>(ent)
+                else let
+                  val dd = is_dot_or_dotdot(ent, elen, 256)
+                  val bb = has_bats_ext(ent, elen, 256)
+                in
+                  if dd then let
+                    val () = $A.free<byte>(ent)
+                  in scan_bins(d, ph, phlen, fuel - 1) end
+                  else if bb then let
+                    val @(fz_e, bv_e) = $A.freeze<byte>(ent)
+                    (* stem = name without .bats extension *)
+                    val stem_len = elen - 5
+                    (* source: src/bin/<name>.bats *)
+                    val sp = $B.create()
+                    val () = bput(sp, "src/bin/")
+                    val () = copy_to_builder(bv_e, 0, elen, 256, sp,
+                      $AR.checked_nat(elen + 1))
+                    val () = $B.put_byte(sp, 0)
+                    val @(sa, _) = $B.to_arr(sp)
+                    val @(fz_sp, bv_sp) = $A.freeze<byte>(sa)
+                    (* sats: build/src/bin/<name>.sats *)
+                    val ss = $B.create()
+                    val () = bput(ss, "build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, ss,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(ss, ".sats")
+                    val () = $B.put_byte(ss, 0)
+                    val @(ssa, _) = $B.to_arr(ss)
+                    val @(fz_ss, bv_ss) = $A.freeze<byte>(ssa)
+                    (* dats: build/src/bin/<name>.dats *)
+                    val sd = $B.create()
+                    val () = bput(sd, "build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, sd,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(sd, ".dats")
+                    val () = $B.put_byte(sd, 0)
+                    val @(sda, _) = $B.to_arr(sd)
+                    val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd)
+                    val () = (if pr <> 0 then let
+                      val () = print! ("error: preprocess failed for ")
+                      val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
+                    in print_newline() end
+                    else let
+                      val () = print! ("  preprocessed: src/bin/")
+                      val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
+                    in print_newline() end)
+                    (* Step 5: Generate synthetic entry *)
+                    val entry = $B.create()
+                    val () = bput(entry, "staload \"./src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, entry,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(entry, ".sats\"\n")
+                    (* dynload all dep modules *)
+                    val bm2_arr = str_to_path_arr("bats_modules")
+                    val @(fz_bm2, bv_bm2) = $A.freeze<byte>(bm2_arr)
+                    val bdir2 = $F.dir_open(bv_bm2, 65536)
+                    val () = $A.drop<byte>(fz_bm2, bv_bm2)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_bm2))
+                    val () = (case+ bdir2 of
+                      | ~$R.ok(dd) => let
+                          fun add_dynloads {fuel2:nat} .<fuel2>.
+                            (dd: !$F.dir, eb: !$B.builder,
+                             fuel2: int fuel2): void =
+                            if fuel2 <= 0 then ()
+                            else let
+                              val de = $A.alloc<byte>(256)
+                              val dnr = $F.dir_next(dd, de, 256)
+                              val dlen = $R.option_unwrap_or<int>(dnr, ~1)
+                            in
+                              if dlen < 0 then $A.free<byte>(de)
+                              else let
+                                val ddd = is_dot_or_dotdot(de, dlen, 256)
+                              in
+                                if ddd then let
+                                  val () = $A.free<byte>(de)
+                                in add_dynloads(dd, eb, fuel2 - 1) end
+                                else let
+                                  val @(fz_de, bv_de) = $A.freeze<byte>(de)
+                                  val () = bput(eb, "dynload \"./bats_modules/")
+                                  val () = copy_to_builder(bv_de, 0, dlen, 256,
+                                    eb, $AR.checked_nat(dlen + 1))
+                                  val () = bput(eb, "/src/lib.dats\"\n")
+                                  val () = $A.drop<byte>(fz_de, bv_de)
+                                  val () = $A.free<byte>($A.thaw<byte>(fz_de))
+                                in add_dynloads(dd, eb, fuel2 - 1) end
+                              end
+                            end
+                          val () = add_dynloads(dd, entry, 200)
+                          val dcr2 = $F.dir_close(dd)
+                          val () = $R.discard<int><int>(dcr2)
+                        in end
+                      | ~$R.err(_) => ())
+                    val () = bput(entry, "implement ")
+                    val () = bput(entry, "main0 () = __BATS_main0 ()\n")
+                    (* Write synthetic entry *)
+                    val ep = $B.create()
+                    val () = bput(ep, "build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, ep,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(ep, ".dats")
+                    val () = $B.put_byte(ep, 0)
+                    val @(epa, _) = $B.to_arr(ep)
+                    val @(fz_ep, bv_ep) = $A.freeze<byte>(epa)
+                    val ew = write_file_from_builder(bv_ep, 65536, entry)
+                    val () = $A.drop<byte>(fz_ep, bv_ep)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_ep))
+                    val () = (if ew <> 0 then
+                      println! ("error: failed to write synthetic entry")
+                      else println! ("  generated synthetic entry"))
+
+                    (* Step 6: Run patsopt on all .dats files *)
+                    (* patsopt for dep modules *)
+                    val bm3_arr = str_to_path_arr("bats_modules")
+                    val @(fz_bm3, bv_bm3) = $A.freeze<byte>(bm3_arr)
+                    val bdir3 = $F.dir_open(bv_bm3, 65536)
+                    val () = $A.drop<byte>(fz_bm3, bv_bm3)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_bm3))
+                    val () = (case+ bdir3 of
+                      | ~$R.ok(dd3) => let
+                          fun patsopt_deps {lph:agz}{fuel3:nat} .<fuel3>.
+                            (dd3: !$F.dir,
+                             ph: !$A.borrow(byte, lph, 512), phlen: int,
+                             fuel3: int fuel3): void =
+                            if fuel3 <= 0 then ()
+                            else let
+                              val de = $A.alloc<byte>(256)
+                              val dnr = $F.dir_next(dd3, de, 256)
+                              val dlen = $R.option_unwrap_or<int>(dnr, ~1)
+                            in
+                              if dlen < 0 then $A.free<byte>(de)
+                              else let
+                                val ddd = is_dot_or_dotdot(de, dlen, 256)
+                              in
+                                if ddd then let
+                                  val () = $A.free<byte>(de)
+                                in patsopt_deps(dd3, ph, phlen, fuel3 - 1) end
+                                else let
+                                  val @(fz_de, bv_de) = $A.freeze<byte>(de)
+                                  val pc = $B.create()
+                                  val () = bput(pc, "PATSHOME=")
+                                  val () = copy_to_builder(ph, 0, phlen, 512, pc,
+                                    $AR.checked_nat(phlen + 1))
+                                  val () = $B.put_byte(pc, 32)
+                                  val () = copy_to_builder(ph, 0, phlen, 512, pc,
+                                    $AR.checked_nat(phlen + 1))
+                                  val () = bput(pc, "/bin/patsopt -IATS build -IATS build/src -IATS build/bats_modules -o build/bats_modules/")
+                                  val () = copy_to_builder(bv_de, 0, dlen, 256, pc,
+                                    $AR.checked_nat(dlen + 1))
+                                  val () = bput(pc, "/src/lib_dats.c -d build/bats_modules/")
+                                  val () = copy_to_builder(bv_de, 0, dlen, 256, pc,
+                                    $AR.checked_nat(dlen + 1))
+                                  val () = bput(pc, "/src/lib.dats")
+                                  val rc = run_sh(pc)
+                                  val () = (if rc <> 0 then let
+                                    val () = print! ("error: patsopt failed for dep ")
+                                    val () = print_borrow(bv_de, 0, dlen, 256,
+                                      $AR.checked_nat(dlen + 1))
+                                  in print_newline() end
+                                  else let
+                                    val () = print! ("  patsopt: ")
+                                    val () = print_borrow(bv_de, 0, dlen, 256,
+                                      $AR.checked_nat(dlen + 1))
+                                  in print_newline() end)
+                                  val () = $A.drop<byte>(fz_de, bv_de)
+                                  val () = $A.free<byte>($A.thaw<byte>(fz_de))
+                                in patsopt_deps(dd3, ph, phlen, fuel3 - 1) end
+                              end
+                            end
+                          val () = patsopt_deps(dd3, ph, phlen, 200)
+                          val dcr3 = $F.dir_close(dd3)
+                          val () = $R.discard<int><int>(dcr3)
+                        in end
+                      | ~$R.err(_) => ())
+
+                    (* patsopt for the binary *)
+                    val pbin = $B.create()
+                    val () = bput(pbin, "PATSHOME=")
+                    val () = copy_to_builder(ph, 0, phlen, 512, pbin,
+                      $AR.checked_nat(phlen + 1))
+                    val () = $B.put_byte(pbin, 32)
+                    val () = copy_to_builder(ph, 0, phlen, 512, pbin,
+                      $AR.checked_nat(phlen + 1))
+                    val () = bput(pbin, "/bin/patsopt -IATS build -IATS build/src -IATS build/bats_modules -o build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pbin,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(pbin, "_dats.c -d build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pbin,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(pbin, ".dats")
+                    val rbp = run_sh(pbin)
+                    val () = (if rbp <> 0 then
+                      println! ("error: patsopt failed for binary")
+                      else println! ("  patsopt: binary"))
+
+                    (* patsopt for synthetic entry *)
+                    val pent = $B.create()
+                    val () = bput(pent, "PATSHOME=")
+                    val () = copy_to_builder(ph, 0, phlen, 512, pent,
+                      $AR.checked_nat(phlen + 1))
+                    val () = $B.put_byte(pent, 32)
+                    val () = copy_to_builder(ph, 0, phlen, 512, pent,
+                      $AR.checked_nat(phlen + 1))
+                    val () = bput(pent, "/bin/patsopt -IATS build -IATS build/src -IATS build/bats_modules -o build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pent,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(pent, "_dats.c -d build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pent,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(pent, ".dats")
+                    val rep = run_sh(pent)
+                    val () = (if rep <> 0 then
+                      println! ("error: patsopt failed for entry")
+                      else println! ("  patsopt: entry"))
+
+                    (* Step 7: clang compile all _dats.c *)
+                    (* Compile deps *)
+                    val bm4_arr = str_to_path_arr("bats_modules")
+                    val @(fz_bm4, bv_bm4) = $A.freeze<byte>(bm4_arr)
+                    val bdir4 = $F.dir_open(bv_bm4, 65536)
+                    val () = $A.drop<byte>(fz_bm4, bv_bm4)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_bm4))
+                    val () = (case+ bdir4 of
+                      | ~$R.ok(dd4) => let
+                          fun clang_deps {lph:agz}{fuel4:nat} .<fuel4>.
+                            (dd4: !$F.dir,
+                             ph: !$A.borrow(byte, lph, 512), phlen: int,
+                             fuel4: int fuel4): void =
+                            if fuel4 <= 0 then ()
+                            else let
+                              val de = $A.alloc<byte>(256)
+                              val dnr = $F.dir_next(dd4, de, 256)
+                              val dlen = $R.option_unwrap_or<int>(dnr, ~1)
+                            in
+                              if dlen < 0 then $A.free<byte>(de)
+                              else let
+                                val ddd = is_dot_or_dotdot(de, dlen, 256)
+                              in
+                                if ddd then let
+                                  val () = $A.free<byte>(de)
+                                in clang_deps(dd4, ph, phlen, fuel4 - 1) end
+                                else let
+                                  val @(fz_de, bv_de) = $A.freeze<byte>(de)
+                                  val cc = $B.create()
+                                  val () = bput(cc, "cc -c -o build/bats_modules/")
+                                  val () = copy_to_builder(bv_de, 0, dlen, 256, cc,
+                                    $AR.checked_nat(dlen + 1))
+                                  val () = bput(cc, "/src/lib_dats.o build/bats_modules/")
+                                  val () = copy_to_builder(bv_de, 0, dlen, 256, cc,
+                                    $AR.checked_nat(dlen + 1))
+                                  val () = bput(cc, "/src/lib_dats.c -g -O0 -I")
+                                  val () = copy_to_builder(ph, 0, phlen, 512, cc,
+                                    $AR.checked_nat(phlen + 1))
+                                  val () = bput(cc, " -I")
+                                  val () = copy_to_builder(ph, 0, phlen, 512, cc,
+                                    $AR.checked_nat(phlen + 1))
+                                  val () = bput(cc, "/ccomp/runtime")
+                                  val rc = run_sh(cc)
+                                  val () = (if rc <> 0 then let
+                                    val () = print! ("error: cc failed for dep ")
+                                    val () = print_borrow(bv_de, 0, dlen, 256,
+                                      $AR.checked_nat(dlen + 1))
+                                  in print_newline() end else ())
+                                  val () = $A.drop<byte>(fz_de, bv_de)
+                                  val () = $A.free<byte>($A.thaw<byte>(fz_de))
+                                in clang_deps(dd4, ph, phlen, fuel4 - 1) end
+                              end
+                            end
+                          val () = clang_deps(dd4, ph, phlen, 200)
+                          val dcr4 = $F.dir_close(dd4)
+                          val () = $R.discard<int><int>(dcr4)
+                        in end
+                      | ~$R.err(_) => ())
+
+                    (* Compile binary *)
+                    val cbin = $B.create()
+                    val () = bput(cbin, "cc -c -o build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cbin,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(cbin, "_dats.o build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cbin,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(cbin, "_dats.c -g -O0 -I")
+                    val () = copy_to_builder(ph, 0, phlen, 512, cbin,
+                      $AR.checked_nat(phlen + 1))
+                    val () = bput(cbin, " -I")
+                    val () = copy_to_builder(ph, 0, phlen, 512, cbin,
+                      $AR.checked_nat(phlen + 1))
+                    val () = bput(cbin, "/ccomp/runtime")
+                    val _ = run_sh(cbin)
+
+                    (* Compile entry *)
+                    val cent = $B.create()
+                    val () = bput(cent, "cc -c -o build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cent,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(cent, "_dats.o build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cent,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(cent, "_dats.c -g -O0 -I")
+                    val () = copy_to_builder(ph, 0, phlen, 512, cent,
+                      $AR.checked_nat(phlen + 1))
+                    val () = bput(cent, " -I")
+                    val () = copy_to_builder(ph, 0, phlen, 512, cent,
+                      $AR.checked_nat(phlen + 1))
+                    val () = bput(cent, "/ccomp/runtime")
+                    val _ = run_sh(cent)
+
+                    (* Step 8: Link *)
+                    val link = $B.create()
+                    val () = bput(link, "cc -o dist/debug/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(link, " build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(link, "_dats.o build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(link, "_dats.o")
+                    (* Add all dep .o files *)
+                    val bm5_arr = str_to_path_arr("bats_modules")
+                    val @(fz_bm5, bv_bm5) = $A.freeze<byte>(bm5_arr)
+                    val bdir5 = $F.dir_open(bv_bm5, 65536)
+                    val () = $A.drop<byte>(fz_bm5, bv_bm5)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_bm5))
+                    val () = (case+ bdir5 of
+                      | ~$R.ok(dd5) => let
+                          fun link_deps {fuel5:nat} .<fuel5>.
+                            (dd5: !$F.dir, lb: !$B.builder,
+                             fuel5: int fuel5): void =
+                            if fuel5 <= 0 then ()
+                            else let
+                              val de = $A.alloc<byte>(256)
+                              val dnr = $F.dir_next(dd5, de, 256)
+                              val dlen = $R.option_unwrap_or<int>(dnr, ~1)
+                            in
+                              if dlen < 0 then $A.free<byte>(de)
+                              else let
+                                val ddd = is_dot_or_dotdot(de, dlen, 256)
+                              in
+                                if ddd then let
+                                  val () = $A.free<byte>(de)
+                                in link_deps(dd5, lb, fuel5 - 1) end
+                                else let
+                                  val @(fz_de, bv_de) = $A.freeze<byte>(de)
+                                  val () = bput(lb, " build/bats_modules/")
+                                  val () = copy_to_builder(bv_de, 0, dlen, 256,
+                                    lb, $AR.checked_nat(dlen + 1))
+                                  val () = bput(lb, "/src/lib_dats.o")
+                                  val () = $A.drop<byte>(fz_de, bv_de)
+                                  val () = $A.free<byte>($A.thaw<byte>(fz_de))
+                                in link_deps(dd5, lb, fuel5 - 1) end
+                              end
+                            end
+                          val () = link_deps(dd5, link, 200)
+                          val dcr5 = $F.dir_close(dd5)
+                          val () = $R.discard<int><int>(dcr5)
+                        in end
+                      | ~$R.err(_) => ())
+                    val () = bput(link, " -g -O0")
+                    val rl = run_sh(link)
+
+                    val () = $A.drop<byte>(fz_sp, bv_sp)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+                    val () = $A.drop<byte>(fz_ss, bv_ss)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_ss))
+                    val () = $A.drop<byte>(fz_sd, bv_sd)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_sd))
+                    val () = (if rl = 0 then let
+                      val () = print! ("  built: dist/debug/")
+                      val () = print_borrow(bv_e, 0, stem_len, 256,
+                        $AR.checked_nat(stem_len + 1))
+                    in print_newline() end
+                    else println! ("error: link failed"))
+                    val () = $A.drop<byte>(fz_e, bv_e)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_e))
+                  in scan_bins(d, ph, phlen, fuel - 1) end
+                  else let
+                    val () = $A.free<byte>(ent)
+                  in scan_bins(d, ph, phlen, fuel - 1) end
+                end
+              end
+            val () = scan_bins(d2, bv_patshome, phlen, 100)
+            val dcr2 = $F.dir_close(d2)
+            val () = $R.discard<int><int>(dcr2)
+          in end
+        | ~$R.err(_) =>
+            println! ("error: cannot open src/bin/"))
+
+      val () = $A.drop<byte>(fz_patshome, bv_patshome)
+      val () = $A.free<byte>($A.thaw<byte>(fz_patshome))
+    in end
+  end
+end
+
+(* ============================================================
    String constant builders
    ============================================================ *)
 
@@ -1629,7 +2370,7 @@ in
           in do_check() end
           else if cmd_is_build(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
-          in println! ("build: not yet implemented") end
+          in do_build() end
           else if cmd_is_clean(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in println! ("clean: not yet implemented") end
