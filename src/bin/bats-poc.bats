@@ -1819,7 +1819,12 @@ in
   else let
     (* Step 1b: Write and compile native runtime *)
     val nrt_b = $B.create()
-    val () = bput(nrt_b, "/* bats native runtime */\n")
+    val () = bput(nrt_b, "/* _bats_native_runtime.c -- ATS2 memory allocator backed by libc */\n")
+    val () = bput(nrt_b, "#include <stdlib.h>\n")
+    val () = bput(nrt_b, "void atsruntime_mfree_undef(void *ptr) { free(ptr); }\n")
+    val () = bput(nrt_b, "void *atsruntime_malloc_undef(size_t bsz) { return malloc(bsz); }\n")
+    val () = bput(nrt_b, "void *atsruntime_calloc_undef(size_t asz, size_t tsz) { return calloc(asz, tsz); }\n")
+    val () = bput(nrt_b, "void *atsruntime_realloc_undef(void *ptr, size_t bsz) { return realloc(ptr, bsz); }\n")
     val nrt_path = str_to_path_arr("build/_bats_native_runtime.c")
     val @(fz_nrtp, bv_nrtp) = $A.freeze<byte>(nrt_path)
     val _ = write_file_from_builder(bv_nrtp, 65536, nrt_b)
