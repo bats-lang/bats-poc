@@ -18,6 +18,49 @@ $UNSAFE begin
 %{
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+static int _bpoc_g_verbose = 0;
+static int _bpoc_g_quiet = 0;
+static char _bpoc_g_repo[4096] = "";
+static int _bpoc_g_repo_len = 0;
+static int _bpoc_is_verbose(void) { return _bpoc_g_verbose; }
+static int _bpoc_is_quiet(void) { return _bpoc_g_quiet; }
+static void _bpoc_set_verbose(int v) { _bpoc_g_verbose = v; }
+static void _bpoc_set_quiet(int v) { _bpoc_g_quiet = v; }
+static void _bpoc_set_repo(const char *r, int len) {
+  if (len > 0 && len < 4096) { memcpy(_bpoc_g_repo, r, len); _bpoc_g_repo[len] = '\0'; _bpoc_g_repo_len = len; }
+}
+static int _bpoc_get_repo(char *out, int max) {
+  if (_bpoc_g_repo_len > 0 && _bpoc_g_repo_len < max) { memcpy(out, _bpoc_g_repo, _bpoc_g_repo_len); out[_bpoc_g_repo_len] = '\0'; return _bpoc_g_repo_len; }
+  return 0;
+}
+static char _bpoc_g_bin[256] = "";
+static int _bpoc_g_bin_len = 0;
+static void _bpoc_set_bin(const char *b, int len) {
+  if (len > 0 && len < 256) { memcpy(_bpoc_g_bin, b, len); _bpoc_g_bin[len] = '\0'; _bpoc_g_bin_len = len; }
+}
+static int _bpoc_get_bin(char *out, int max) {
+  if (_bpoc_g_bin_len > 0 && _bpoc_g_bin_len < max) { memcpy(out, _bpoc_g_bin, _bpoc_g_bin_len); return _bpoc_g_bin_len; }
+  return 0;
+}
+/* Handle --run-in <dir> flag: if first arg is "--run-in", chdir and return
+   offset past the dir arg. Otherwise return first_start unchanged. */
+static int _bpoc_handle_run_in(const char *buf, int len,
+                                int fs, int fe, int fl) {
+  if (fl == 8 && memcmp(buf + fs, "--run-in", 8) == 0) {
+    int dir_start = fe + 1;
+    /* dir_start points to null-terminated dir string in buf */
+    if (chdir(buf + dir_start) != 0) {
+      fprintf(stderr, "error: cannot change to '%s'\n", buf + dir_start);
+    }
+    /* Locate dir token terminator */
+    int de = dir_start;
+    while (de < len && buf[de] != '\0') de++;
+    return de + 1;
+  }
+  return fs;
+}
 static int _bpoc_byte_at(const char *s, int i) {
   return (unsigned char)s[i];
 }
@@ -32,6 +75,924 @@ static int _bpoc_write_file(const char *path, const char *data, int len) {
   int written = (int)write(fd, data, (unsigned)len);
   close(fd);
   return (written == len) ? 0 : -1;
+}
+static void _bpoc_remap_errors(const char *buf, int len, int offset) {
+  int i = 0;
+  while (i < len) {
+    int ls = i, j;
+    while (i < len && buf[i] != '\n') i++;
+    int le = i;
+    if (i < len) i++;
+    int skip = 0;
+    for (j = ls; j + 11 <= le; j++)
+      if (memcmp(buf + j, "_bats_entry", 11) == 0) { skip = 1; break; }
+    if (skip) { fwrite(buf + ls, 1, le - ls, stderr); fputc('\n', stderr); continue; }
+    int has_dats = 0;
+    for (j = ls; j + 5 <= le; j++)
+      if (memcmp(buf + j, ".dats", 5) == 0) { has_dats = 1; break; }
+    for (j = ls; j < le; ) {
+      if (j + 6 <= le && memcmp(buf + j, "build/", 6) == 0) { j += 6; continue; }
+      if (j + 5 <= le && memcmp(buf + j, ".sats", 5) == 0) { fputs(".bats", stderr); j += 5; continue; }
+      if (j + 5 <= le && memcmp(buf + j, ".dats", 5) == 0) { fputs(".bats", stderr); j += 5; continue; }
+      if (has_dats && j + 5 <= le && memcmp(buf + j, "line=", 5) == 0) {
+        int num = 0, k = j + 5;
+        while (k < le && buf[k] >= '0' && buf[k] <= '9') { num = num * 10 + (buf[k] - '0'); k++; }
+        num = num > offset ? num - offset : 0;
+        fprintf(stderr, "line=%d", num);
+        j = k; continue;
+      }
+      fputc(buf[j], stderr);
+      j++;
+    }
+    if (le > ls) fputc('\n', stderr);
+  }
+}
+static void _bpoc_handle_stderr(const char *buf, int len, int offset) {
+  if (offset > 0) _bpoc_remap_errors(buf, len, offset);
+  else write(2, buf, (unsigned)len);
+}
+/* Check if a flag appears in null-separated cmdline tokens after position */
+static int _bpoc_has_flag(const char *buf, int len, int after, const char *flag) {
+  int flen = _bpoc_slen(flag);
+  int pos = after;
+  while (pos < len) {
+    int te = pos;
+    while (te < len && buf[te] != '\0') te++;
+    if (te - pos == flen && memcmp(buf + pos, flag, flen) == 0) return 1;
+    pos = te + 1;
+  }
+  return 0;
+}
+/* Get value of a flag (next token after the flag). Returns length, 0 if not found */
+static int _bpoc_get_flag_val(const char *buf, int len, int after,
+                               const char *flag, char *out, int out_max) {
+  int flen = _bpoc_slen(flag);
+  int pos = after;
+  while (pos < len) {
+    int te = pos;
+    while (te < len && buf[te] != '\0') te++;
+    if (te - pos == flen && memcmp(buf + pos, flag, flen) == 0) {
+      int vs = te + 1, ve = vs;
+      while (ve < len && buf[ve] != '\0') ve++;
+      int vl = ve - vs;
+      if (vl > 0 && vl < out_max) { memcpy(out, buf + vs, vl); out[vl] = '\0'; return vl; }
+      return 0;
+    }
+    pos = te + 1;
+  }
+  return 0;
+}
+/* Inject or update a dependency in bats.toml content.
+   Returns new length, or -1 on error. Writes result to out. */
+static int _bpoc_inject_dep(const char *src, int slen,
+                             const char *pkg, int plen,
+                             const char *cst, int clen,
+                             char *out, int omax) {
+  int oi = 0, si = 0, in_deps = 0, replaced = 0, has_deps = 0;
+  char dep_line[512];
+  int dlen = 0;
+  dep_line[dlen++] = '"';
+  for (int j = 0; j < plen; j++) dep_line[dlen++] = pkg[j];
+  dep_line[dlen++] = '"';
+  dep_line[dlen++] = ' ';
+  dep_line[dlen++] = '=';
+  dep_line[dlen++] = ' ';
+  dep_line[dlen++] = '"';
+  for (int j = 0; j < clen; j++) dep_line[dlen++] = cst[j];
+  dep_line[dlen++] = '"';
+  dep_line[dlen++] = '\n';
+  while (si < slen) {
+    int ls = si;
+    while (si < slen && src[si] != '\n') si++;
+    int le = si;
+    if (si < slen) si++; /* skip newline */
+    int ll = le - ls;
+    /* Check for [dependencies] */
+    if (ll == 14 && memcmp(src + ls, "[dependencies]", 14) == 0) {
+      has_deps = 1; in_deps = 1;
+      if (oi + ll + 1 >= omax) return -1;
+      memcpy(out + oi, src + ls, ll); oi += ll;
+      out[oi++] = '\n';
+      continue;
+    }
+    /* Check for new section start */
+    if (ll > 0 && src[ls] == '[') {
+      if (in_deps && !replaced) {
+        if (oi + dlen >= omax) return -1;
+        memcpy(out + oi, dep_line, dlen); oi += dlen;
+        replaced = 1;
+      }
+      in_deps = 0;
+    }
+    /* Check if line starts with "pkg" = (replace it) */
+    if (in_deps && ll > plen + 2 && src[ls] == '"'
+        && memcmp(src + ls + 1, pkg, plen) == 0
+        && src[ls + 1 + plen] == '"') {
+      if (oi + dlen >= omax) return -1;
+      memcpy(out + oi, dep_line, dlen); oi += dlen;
+      replaced = 1;
+      continue;
+    }
+    /* Copy line as-is */
+    if (oi + ll + 1 >= omax) return -1;
+    memcpy(out + oi, src + ls, ll); oi += ll;
+    out[oi++] = '\n';
+  }
+  if (in_deps && !replaced) {
+    if (oi + dlen >= omax) return -1;
+    memcpy(out + oi, dep_line, dlen); oi += dlen;
+  }
+  if (!has_deps) {
+    const char *sect = "\n[dependencies]\n";
+    int sectl = 16;
+    if (oi + sectl + dlen >= omax) return -1;
+    memcpy(out + oi, sect, sectl); oi += sectl;
+    memcpy(out + oi, dep_line, dlen); oi += dlen;
+  }
+  return oi;
+}
+/* Strip a dependency from bats.toml content.
+   Returns new length, or -1 if not found. */
+static int _bpoc_strip_dep(const char *src, int slen,
+                            const char *pkg, int plen,
+                            char *out, int omax) {
+  int oi = 0, si = 0, in_deps = 0, found = 0;
+  while (si < slen) {
+    int ls = si;
+    while (si < slen && src[si] != '\n') si++;
+    int le = si;
+    if (si < slen) si++;
+    int ll = le - ls;
+    if (ll == 14 && memcmp(src + ls, "[dependencies]", 14) == 0)
+      in_deps = 1;
+    else if (ll > 0 && src[ls] == '[')
+      in_deps = 0;
+    if (in_deps && ll > plen + 2 && src[ls] == '"'
+        && memcmp(src + ls + 1, pkg, plen) == 0
+        && src[ls + 1 + plen] == '"') {
+      found = 1;
+      continue; /* skip this line */
+    }
+    if (oi + ll + 1 >= omax) return -1;
+    memcpy(out + oi, src + ls, ll); oi += ll;
+    out[oi++] = '\n';
+  }
+  return found ? oi : -1;
+}
+/* Build cache: check if output is fresh given input mtime */
+#include <sys/stat.h>
+static long _bpoc_file_mtime(const char *path) {
+  struct stat st;
+  if (stat(path, &st) == 0) return (long)st.st_mtime;
+  return -1;
+}
+/* Cache file: build/.bats_build_cache
+   Format: header line, then input\toutput\tmtime per entry
+   Returns 1 if cached and fresh, 0 if needs rebuild */
+static int _bpoc_cache_fresh(const char *cache_path,
+                              const char *input, const char *output) {
+  long cur_mtime = _bpoc_file_mtime(input);
+  if (cur_mtime < 0) return 0;
+  struct stat ost;
+  if (stat(output, &ost) != 0) return 0;
+  int cfd = open(cache_path, O_RDONLY);
+  if (cfd < 0) return 0;
+  char buf[65536];
+  int nr = (int)read(cfd, buf, sizeof(buf) - 1);
+  close(cfd);
+  if (nr <= 0) return 0;
+  buf[nr] = '\0';
+  int ilen = _bpoc_slen(input);
+  int olen = _bpoc_slen(output);
+  int i = 0;
+  while (i < nr && buf[i] != '\n') i++;
+  if (i < nr) i++;
+  while (i < nr) {
+    int ls = i;
+    while (i < nr && buf[i] != '\n') i++;
+    int le = i;
+    if (i < nr) i++;
+    int t1 = ls;
+    while (t1 < le && buf[t1] != '\t') t1++;
+    if (t1 >= le) continue;
+    int t2 = t1 + 1;
+    while (t2 < le && buf[t2] != '\t') t2++;
+    if (t2 >= le) continue;
+    if (t1 - ls != ilen) continue;
+    if (memcmp(buf + ls, input, ilen) != 0) continue;
+    if (t2 - (t1 + 1) != olen) continue;
+    if (memcmp(buf + t1 + 1, output, olen) != 0) continue;
+    long cached_mt = 0;
+    int k = t2 + 1;
+    while (k < le && buf[k] >= '0' && buf[k] <= '9') {
+      cached_mt = cached_mt * 10 + (buf[k] - '0');
+      k++;
+    }
+    if (cached_mt == cur_mtime) return 1;
+  }
+  return 0;
+}
+/* Record a cache entry (appends to file, creating with header if new) */
+static void _bpoc_cache_record(const char *cache_path,
+                                const char *input, const char *output) {
+  long mt = _bpoc_file_mtime(input);
+  if (mt < 0) return;
+  struct stat cst;
+  int needs_hdr = (stat(cache_path, &cst) != 0);
+  int fd = open(cache_path, O_WRONLY|O_CREAT|O_APPEND, 0644);
+  if (fd < 0) return;
+  if (needs_hdr) {
+    const char *hdr = "bats-poc 0.1.0\n";
+    write(fd, hdr, _bpoc_slen(hdr));
+  }
+  write(fd, input, _bpoc_slen(input));
+  write(fd, "\t", 1);
+  write(fd, output, _bpoc_slen(output));
+  write(fd, "\t", 1);
+  char mtbuf[32];
+  int mi = 0;
+  long tmp = mt;
+  if (tmp == 0) mtbuf[mi++] = '0';
+  else {
+    char rev[32]; int ri = 0;
+    while (tmp > 0) { rev[ri++] = '0' + (int)(tmp % 10); tmp /= 10; }
+    while (ri > 0) mtbuf[mi++] = rev[--ri];
+  }
+  write(fd, mtbuf, mi);
+  write(fd, "\n", 1);
+  close(fd);
+}
+/* Quick freshness check: returns 1 if output exists and is newer than input */
+static int _bpoc_is_newer(const char *output, const char *input) {
+  long out_mt = _bpoc_file_mtime(output);
+  long in_mt = _bpoc_file_mtime(input);
+  if (out_mt < 0 || in_mt < 0) return 0;
+  return (out_mt >= in_mt) ? 1 : 0;
+}
+/* Scan a .bats file for #use directives and enqueue package names */
+static void _bpoc_scan_uses_to_queue(const char *fpath,
+    char queue[][256], int *qt_ptr, int max_q) {
+  int fd2 = open(fpath, O_RDONLY);
+  if (fd2 < 0) return;
+  char fbuf[65536];
+  int flen = (int)read(fd2, fbuf, sizeof(fbuf) - 1);
+  close(fd2);
+  if (flen <= 0) return;
+  fbuf[flen] = '\0';
+  int fi = 0;
+  while (fi < flen) {
+    int fls = fi;
+    while (fi < flen && fbuf[fi] != '\n') fi++;
+    int fle = fi;
+    if (fi < flen) fi++;
+    int fll = fle - fls;
+    if (fll < 8 || fbuf[fls] != '#') continue;
+    if (memcmp(fbuf + fls, "#use ", 5) != 0) continue;
+    int ups = fls + 5;
+    while (ups < fle && fbuf[ups] == ' ') ups++;
+    int upe = ups;
+    while (upe < fle && fbuf[upe] != ' ') upe++;
+    int uplen = upe - ups;
+    if (uplen <= 0 || uplen >= 256) continue;
+    char upkg[256];
+    memcpy(upkg, fbuf + ups, uplen);
+    upkg[uplen] = '\0';
+    int qt = *qt_ptr;
+    int udup = 0;
+    for (int q = 0; q < qt; q++) {
+      if (strcmp(queue[q], upkg) == 0) { udup = 1; break; }
+    }
+    if (!udup && qt < max_q) {
+      strcpy(queue[qt], upkg);
+      *qt_ptr = qt + 1;
+    }
+  }
+}
+
+/* Lock resolution: resolve deps from repository, extract, write bats.lock.
+   repo_path: null-terminated path to repository directory.
+   Returns 0 on success, -1 on error. */
+#include <dirent.h>
+static int _bpoc_version_cmp(const char *a, const char *b) {
+  /* Compare dot-separated numeric versions */
+  while (*a && *b) {
+    int va = 0, vb = 0;
+    while (*a >= '0' && *a <= '9') { va = va * 10 + (*a - '0'); a++; }
+    while (*b >= '0' && *b <= '9') { vb = vb * 10 + (*b - '0'); b++; }
+    if (va != vb) return va - vb;
+    if (*a == '.') a++;
+    if (*b == '.') b++;
+    /* If one has 'dev' suffix, it's less than a clean version */
+    if (*a == 'd' && *b != 'd') return -1;
+    if (*b == 'd' && *a != 'd') return 1;
+    if (*a == 'd' && *b == 'd') {
+      /* Both dev: compare as strings */
+      return strcmp(a, b);
+    }
+  }
+  if (*a) return 1;
+  if (*b) return -1;
+  return 0;
+}
+
+/* Resolved package entry */
+typedef struct {
+  char name[256];
+  char version[64];
+} _bpoc_resolved_t;
+
+static int _bpoc_resolve_lock(const char *repo_path) {
+  /* Read bats.toml to get [dependencies] */
+  int tfd = open("bats.toml", O_RDONLY);
+  if (tfd < 0) { fprintf(stderr, "error: cannot open bats.toml\n"); return -1; }
+  char toml[8192];
+  int tlen = (int)read(tfd, toml, sizeof(toml) - 1);
+  close(tfd);
+  if (tlen <= 0) { fprintf(stderr, "error: empty bats.toml\n"); return -1; }
+  toml[tlen] = '\0';
+
+  /* Parse [dependencies] section to find package names */
+  char deps[64][256]; /* max 64 deps */
+  int ndeps = 0;
+
+  int in_deps = 0;
+  int si = 0;
+  while (si < tlen && ndeps < 64) {
+    int ls = si;
+    while (si < tlen && toml[si] != '\n') si++;
+    int le = si;
+    if (si < tlen) si++;
+    int ll = le - ls;
+    if (ll == 14 && memcmp(toml + ls, "[dependencies]", 14) == 0) {
+      in_deps = 1; continue;
+    }
+    if (ll > 0 && toml[ls] == '[') { in_deps = 0; continue; }
+    if (!in_deps || ll < 3) continue;
+    /* Line should be "pkgname" = "constraint" */
+    if (toml[ls] != '"') continue;
+    int ne = ls + 1;
+    while (ne < le && toml[ne] != '"') ne++;
+    int nlen = ne - ls - 1;
+    if (nlen <= 0 || nlen >= 256) continue;
+    memcpy(deps[ndeps], toml + ls + 1, nlen);
+    deps[ndeps][nlen] = '\0';
+    ndeps++;
+  }
+
+  /* Resolve each dependency */
+  _bpoc_resolved_t resolved[256];
+  int nresolved = 0;
+  char queue[256][256];
+  int qh = 0, qt = 0;
+
+  /* Enqueue direct deps from bats.toml */
+  for (int i = 0; i < ndeps && qt < 256; i++) {
+    strcpy(queue[qt++], deps[i]);
+  }
+
+  /* Also scan own source files for #use directives */
+  _bpoc_scan_uses_to_queue("src/lib.bats", queue, &qt, 256);
+  {
+    DIR *bd = opendir("src/bin");
+    if (bd) {
+      struct dirent *be;
+      while ((be = readdir(bd)) != NULL) {
+        const char *bn = be->d_name;
+        int bnlen = _bpoc_slen(bn);
+        if (bnlen > 5 && memcmp(bn + bnlen - 5, ".bats", 5) == 0) {
+          char bpath[512];
+          snprintf(bpath, sizeof(bpath), "src/bin/%s", bn);
+          _bpoc_scan_uses_to_queue(bpath, queue, &qt, 256);
+        }
+      }
+      closedir(bd);
+    }
+  }
+
+  if (qt == 0) {
+    _bpoc_write_file("bats.lock", "", 0);
+    fprintf(stderr, "locked 0 packages\n");
+    return 0;
+  }
+
+  while (qh < qt && nresolved < 256) {
+    char pkg[256];
+    strcpy(pkg, queue[qh++]);
+
+    /* Check if already resolved */
+    int already = 0;
+    for (int r = 0; r < nresolved; r++) {
+      if (strcmp(resolved[r].name, pkg) == 0) { already = 1; break; }
+    }
+    if (already) continue;
+
+    /* Build repository path: repo_path/pkg/ */
+    char pkg_dir[4096];
+    snprintf(pkg_dir, sizeof(pkg_dir), "%s/%s", repo_path, pkg);
+
+    /* Scan for latest version */
+    DIR *d = opendir(pkg_dir);
+    if (!d) {
+      fprintf(stderr, "error: package '%s' not found in repository\n", pkg);
+      return -1;
+    }
+
+    /* Build prefix: replace / with _ in pkg name */
+    char prefix[256];
+    int pi = 0;
+    for (int j = 0; pkg[j] && pi < 254; j++) {
+      prefix[pi++] = (pkg[j] == '/') ? '_' : pkg[j];
+    }
+    prefix[pi] = '\0';
+    int prefix_len = pi;
+
+    char best_ver[64] = "";
+    char best_file[4096] = "";
+    struct dirent *de_ptr;
+    while ((de_ptr = readdir(d)) != NULL) {
+      const char *fn = de_ptr->d_name;
+      int fnlen = _bpoc_slen(fn);
+      /* Match: prefix_VERSION.bats (not .sha256) */
+      if (fnlen < prefix_len + 7) continue; /* prefix_ + X.bats */
+      if (memcmp(fn, prefix, prefix_len) != 0) continue;
+      if (fn[prefix_len] != '_') continue;
+      /* Check suffix is .bats (not .bats.sha256) */
+      if (fnlen < 5) continue;
+      if (memcmp(fn + fnlen - 5, ".bats", 5) != 0) continue;
+      if (fnlen > 7 && memcmp(fn + fnlen - 7, ".sha256", 7) == 0) continue;
+      /* Extract version string */
+      int vstart = prefix_len + 1;
+      int vte = fnlen - 5; /* before .bats */
+      int vlen = vte - vstart;
+      if (vlen <= 0 || vlen >= 64) continue;
+      char ver[64];
+      memcpy(ver, fn + vstart, vlen);
+      ver[vlen] = '\0';
+      /* Skip dev versions */
+      int is_dev = 0;
+      for (int k = 0; k < vlen - 2; k++) {
+        if (ver[k] == 'd' && ver[k+1] == 'e' && ver[k+2] == 'v') {
+          is_dev = 1; break;
+        }
+      }
+      if (is_dev) continue;
+      /* Compare to current best */
+      if (best_ver[0] == '\0' || _bpoc_version_cmp(ver, best_ver) > 0) {
+        strcpy(best_ver, ver);
+        snprintf(best_file, sizeof(best_file), "%s/%s", pkg_dir, fn);
+      }
+    }
+    closedir(d);
+
+    if (best_ver[0] == '\0') {
+      fprintf(stderr, "error: no version found for '%s'\n", pkg);
+      return -1;
+    }
+
+    /* Record resolved */
+    strcpy(resolved[nresolved].name, pkg);
+    strcpy(resolved[nresolved].version, best_ver);
+    nresolved++;
+
+    /* Extract to bats_modules/pkg/ if not already there */
+    char check_path[4096];
+    snprintf(check_path, sizeof(check_path), "bats_modules/%s/src/lib.bats", pkg);
+    struct stat cst;
+    if (stat(check_path, &cst) != 0) {
+      /* Need to extract */
+      char mkdir_cmd[4096];
+      snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p bats_modules/%s", pkg);
+      system(mkdir_cmd);
+      char unzip_cmd[8192];
+      snprintf(unzip_cmd, sizeof(unzip_cmd),
+        "unzip -o -q '%s' -d 'bats_modules/%s'", best_file, pkg);
+      if (system(unzip_cmd) != 0) {
+        fprintf(stderr, "error: failed to extract '%s'\n", best_file);
+        return -1;
+      }
+    }
+
+    /* Scan transitive deps from extracted bats.toml */
+    char dep_toml_path[4096];
+    snprintf(dep_toml_path, sizeof(dep_toml_path),
+      "bats_modules/%s/bats.toml", pkg);
+    int dtfd = open(dep_toml_path, O_RDONLY);
+    if (dtfd >= 0) {
+      char dt[4096];
+      int dtlen = (int)read(dtfd, dt, sizeof(dt) - 1);
+      close(dtfd);
+      if (dtlen > 0) {
+        dt[dtlen] = '\0';
+        int dt_in_deps = 0;
+        int dsi = 0;
+        while (dsi < dtlen) {
+          int dls = dsi;
+          while (dsi < dtlen && dt[dsi] != '\n') dsi++;
+          int dle = dsi;
+          if (dsi < dtlen) dsi++;
+          int dll = dle - dls;
+          if (dll == 14 && memcmp(dt + dls, "[dependencies]", 14) == 0) {
+            dt_in_deps = 1; continue;
+          }
+          if (dll > 0 && dt[dls] == '[') { dt_in_deps = 0; continue; }
+          if (!dt_in_deps || dll < 3 || dt[dls] != '"') continue;
+          int dne = dls + 1;
+          while (dne < dle && dt[dne] != '"') dne++;
+          int dnlen = dne - dls - 1;
+          if (dnlen <= 0 || dnlen >= 256) continue;
+          char tdep[256];
+          memcpy(tdep, dt + dls + 1, dnlen);
+          tdep[dnlen] = '\0';
+          /* Check not already queued or resolved */
+          int dup = 0;
+          for (int r = 0; r < nresolved; r++) {
+            if (strcmp(resolved[r].name, tdep) == 0) { dup = 1; break; }
+          }
+          if (!dup) {
+            for (int q = qh; q < qt; q++) {
+              if (strcmp(queue[q], tdep) == 0) { dup = 1; break; }
+            }
+          }
+          if (!dup && qt < 256) {
+            strcpy(queue[qt++], tdep);
+          }
+        }
+      }
+    }
+
+    /* Also scan src/lib.bats for #use directives (transitive deps) */
+    char src_path[4096];
+    snprintf(src_path, sizeof(src_path),
+      "bats_modules/%s/src/lib.bats", pkg);
+    int sfd = open(src_path, O_RDONLY);
+    if (sfd >= 0) {
+      char sbuf[65536];
+      int slen = (int)read(sfd, sbuf, sizeof(sbuf) - 1);
+      close(sfd);
+      if (slen > 0) {
+        sbuf[slen] = '\0';
+        int si2 = 0;
+        while (si2 < slen) {
+          /* Look for "#use " at start of line */
+          int lstart = si2;
+          while (si2 < slen && sbuf[si2] != '\n') si2++;
+          int lte = si2;
+          if (si2 < slen) si2++;
+          int llen = lte - lstart;
+          if (llen < 10 || sbuf[lstart] != '#') continue;
+          if (memcmp(sbuf + lstart, "#use ", 5) != 0) continue;
+          /* Extract package name: #use <pkg> as <alias> */
+          int ps = lstart + 5;
+          /* Skip leading whitespace */
+          while (ps < lte && sbuf[ps] == ' ') ps++;
+          int pe = ps;
+          while (pe < lte && sbuf[pe] != ' ') pe++;
+          int plen = pe - ps;
+          if (plen <= 0 || plen >= 256) continue;
+          char use_pkg[256];
+          memcpy(use_pkg, sbuf + ps, plen);
+          use_pkg[plen] = '\0';
+          /* Check not already queued or resolved */
+          int dup2 = 0;
+          for (int r = 0; r < nresolved; r++) {
+            if (strcmp(resolved[r].name, use_pkg) == 0) { dup2 = 1; break; }
+          }
+          if (!dup2) {
+            for (int q = qh; q < qt; q++) {
+              if (strcmp(queue[q], use_pkg) == 0) { dup2 = 1; break; }
+            }
+          }
+          if (!dup2 && qt < 256) {
+            strcpy(queue[qt++], use_pkg);
+          }
+        }
+      }
+    }
+  }
+
+  /* Write bats.lock */
+  char lock[65536];
+  int li = 0;
+  for (int r = 0; r < nresolved; r++) {
+    int nlen = _bpoc_slen(resolved[r].name);
+    int vlen = _bpoc_slen(resolved[r].version);
+    if (li + nlen + 1 + vlen + 1 >= 65536) break;
+    memcpy(lock + li, resolved[r].name, nlen); li += nlen;
+    lock[li++] = ' ';
+    memcpy(lock + li, resolved[r].version, vlen); li += vlen;
+    lock[li++] = '\n';
+  }
+  _bpoc_write_file("bats.lock", lock, li);
+  fprintf(stderr, "locked %d packages\n", nresolved);
+  return 0;
+}
+
+static void _bpoc_print_completions_bash(void) {
+    fputs(
+        "_bats_poc() {\n"
+        "    local cur prev\n"
+        "    cur=\"${COMP_WORDS[COMP_CWORD]}\"\n"
+        "    prev=\"${COMP_WORDS[COMP_CWORD-1]}\"\n"
+        "\n"
+        "    local commands=\"init lock add remove build run test check tree upload clean completions\"\n"
+        "\n"
+        "    local i cmd=\"\"\n"
+        "    for ((i=1; i < COMP_CWORD; i++)); do\n"
+        "        case \"${COMP_WORDS[i]}\" in\n"
+        "            --run-in)\n"
+        "                ((i++))\n"
+        "                ;;\n"
+        "            -*)\n"
+        "                ;;\n"
+        "            *)\n"
+        "                cmd=\"${COMP_WORDS[i]}\"\n"
+        "                break\n"
+        "                ;;\n"
+        "        esac\n"
+        "    done\n"
+        "\n"
+        "    if [[ -z \"$cmd\" ]]; then\n"
+        "        if [[ \"$cur\" == -* ]]; then\n"
+        "            COMPREPLY=($(compgen -W \"--version -V --help -h --run-in --quiet -q\" -- \"$cur\"))\n"
+        "        else\n"
+        "            COMPREPLY=($(compgen -W \"$commands\" -- \"$cur\"))\n"
+        "        fi\n"
+        "        return\n"
+        "    fi\n"
+        "\n"
+        "    case \"$prev\" in\n"
+        "        --repository|--run-in)\n"
+        "            COMPREPLY=($(compgen -d -- \"$cur\"))\n"
+        "            return\n"
+        "            ;;\n"
+        "        --only)\n"
+        "            COMPREPLY=($(compgen -W \"native wasm\" -- \"$cur\"))\n"
+        "            return\n"
+        "            ;;\n"
+        "        --bin|--filter)\n"
+        "            return\n"
+        "            ;;\n"
+        "    esac\n"
+        "\n"
+        "    case \"$cmd\" in\n"
+        "        init)\n"
+        "            if [[ \"$cur\" == -* ]]; then\n"
+        "                COMPREPLY=($(compgen -W \"--help -h\" -- \"$cur\"))\n"
+        "            else\n"
+        "                COMPREPLY=($(compgen -W \"binary library\" -- \"$cur\"))\n"
+        "            fi\n"
+        "            ;;\n"
+        "        lock)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        add)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        remove)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        build)\n"
+        "            COMPREPLY=($(compgen -W \"--only --verbose -v --repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        run)\n"
+        "            COMPREPLY=($(compgen -W \"--bin --verbose -v --repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        test)\n"
+        "            COMPREPLY=($(compgen -W \"--filter --only --verbose -v --repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        check)\n"
+        "            COMPREPLY=($(compgen -W \"--verbose -v --repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        tree)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        upload)\n"
+        "            COMPREPLY=($(compgen -W \"--repository --help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        clean)\n"
+        "            COMPREPLY=($(compgen -W \"--help -h\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "        completions)\n"
+        "            COMPREPLY=($(compgen -W \"bash zsh fish\" -- \"$cur\"))\n"
+        "            ;;\n"
+        "    esac\n"
+        "}\n"
+        "complete -F _bats_poc bats-poc\n"
+    , stdout);
+}
+static void _bpoc_print_completions_zsh(void) {
+    fputs(
+        "#compdef bats-poc\n"
+        "\n"
+        "_bats_poc() {\n"
+        "    local -a commands\n"
+        "    commands=(\n"
+        "        'init:Create a new project'\n"
+        "        'lock:Generate bats.lock'\n"
+        "        'add:Add a dep" "en" "dency'\n"
+        "        'remove:Remove a dep" "en" "dency'\n"
+        "        'build:Build the project'\n"
+        "        'run:Build and run a binary'\n"
+        "        'test:Run tests'\n"
+        "        'check:Type-check the project'\n"
+        "        'tree:Show dep" "en" "dency tree'\n"
+        "        'upload:Upload a library'\n"
+        "        'clean:Remove artifacts'\n"
+        "        'completions:Generate shell completions'\n"
+        "    )\n"
+        "\n"
+        "    _arguments -C \\\n"
+        "        '--version[Show version]' \\\n"
+        "        '-V[Show version]' \\\n"
+        "        '--help[Show help]' \\\n"
+        "        '-h[Show help]' \\\n"
+        "        '--run-in[Run in directory]:directory:_directories' \\\n"
+        "        '--quiet[Suppress progress output]' \\\n"
+        "        '-q[Suppress progress output]' \\\n"
+        "        '1:command:->command' \\\n"
+        "        '*::args:->args'\n"
+        "\n"
+        "    case $state in\n"
+        "        command)\n"
+        "            _describe 'command' commands\n"
+        "            ;;\n"
+        "        args)\n"
+        "            case ${words[1]} in\n"
+        "                init)\n"
+        "                    _arguments \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]' \\\n"
+        "                        '1:kind:(binary library)'\n"
+        "                    ;;\n"
+        "                lock)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                add)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]' \\\n"
+        "                        '1:package:' \\\n"
+        "                        '2:constraint:'\n"
+        "                    ;;\n"
+        "                remove)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]' \\\n"
+        "                        '1:package:'\n"
+        "                    ;;\n"
+        "                build)\n"
+        "                    _arguments \\\n"
+        "                        '--only[Target platform]:target:(native wasm)' \\\n"
+        "                        '--verbose[Verbose output]' \\\n"
+        "                        '-v[Verbose output]' \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                run)\n"
+        "                    _arguments \\\n"
+        "                        '--bin[Binary to run]:name:' \\\n"
+        "                        '--verbose[Verbose output]' \\\n"
+        "                        '-v[Verbose output]' \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                test)\n"
+        "                    _arguments \\\n"
+        "                        '--filter[Filter tests by name]:pattern:' \\\n"
+        "                        '--only[Target platform]:target:(native wasm)' \\\n"
+        "                        '--verbose[Verbose output]' \\\n"
+        "                        '-v[Verbose output]' \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                check)\n"
+        "                    _arguments \\\n"
+        "                        '--verbose[Verbose output]' \\\n"
+        "                        '-v[Verbose output]' \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                tree)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                upload)\n"
+        "                    _arguments \\\n"
+        "                        '--repository[Repository directory]:directory:_directories' \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                clean)\n"
+        "                    _arguments \\\n"
+        "                        '--help[Show help]' \\\n"
+        "                        '-h[Show help]'\n"
+        "                    ;;\n"
+        "                completions)\n"
+        "                    _arguments \\\n"
+        "                        '1:shell:(bash zsh fish)'\n"
+        "                    ;;\n"
+        "            esac\n"
+        "            ;;\n"
+        "    esac\n"
+        "}\n"
+        "\n"
+        "_bats_poc\n"
+    , stdout);
+}
+static void _bpoc_print_completions_fish(void) {
+    fputs(
+        "complete -c bats-poc -f\n"
+        "\n"
+        "function __bats_poc_no_subcommand\n"
+        "    set -l cmd (commandline -opc)\n"
+        "    set -l skip_next 0\n"
+        "    for c in $cmd[2..]\n"
+        "        if test $skip_next -eq 1\n"
+        "            set skip_next 0\n"
+        "            continue\n"
+        "        en" "d\n"
+        "        switch $c\n"
+        "            case --run-in\n"
+        "                set skip_next 1\n"
+        "            case '-*'\n"
+        "                continue\n"
+        "            case '*'\n"
+        "                return 1\n"
+        "        en" "d\n"
+        "    en" "d\n"
+        "    return 0\n"
+        "en" "d\n"
+        "\n"
+        "function __bats_poc_using_subcommand\n"
+        "    set -l cmd (commandline -opc)\n"
+        "    set -l skip_next 0\n"
+        "    for c in $cmd[2..]\n"
+        "        if test $skip_next -eq 1\n"
+        "            set skip_next 0\n"
+        "            continue\n"
+        "        en" "d\n"
+        "        switch $c\n"
+        "            case --run-in\n"
+        "                set skip_next 1\n"
+        "            case '-*'\n"
+        "                continue\n"
+        "            case '*'\n"
+        "                test \"$c\" = \"$argv[1]\"\n"
+        "                return $status\n"
+        "        en" "d\n"
+        "    en" "d\n"
+        "    return 1\n"
+        "en" "d\n"
+        "\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -l version -s V -d 'Show version'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -l help -s h -d 'Show help'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -l run-in -rF -d 'Run in directory'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -l quiet -s q -d 'Suppress progress output'\n"
+        "\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a init -d 'Create a new project'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a lock -d 'Generate bats.lock'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a add -d 'Add a dep" "en" "dency'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a remove -d 'Remove a dep" "en" "dency'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a build -d 'Build the project'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a run -d 'Build and run a binary'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a test -d 'Run tests'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a check -d 'Type-check the project'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a tree -d 'Show dep" "en" "dency tree'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a upload -d 'Upload a library'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a clean -d 'Remove artifacts'\n"
+        "complete -c bats-poc -n __bats_poc_no_subcommand -a completions -d 'Shell completions'\n"
+        "\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand init' -a 'binary library'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand lock' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand add' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand remove' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand build' -l only -ra 'native wasm' -d 'Target platform'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand build' -l verbose -s v -d 'Verbose output'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand build' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand run' -l bin -r -d 'Binary to run'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand run' -l verbose -s v -d 'Verbose output'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand run' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand test' -l filter -r -d 'Filter tests by name'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand test' -l only -ra 'native wasm' -d 'Target platform'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand test' -l verbose -s v -d 'Verbose output'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand test' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand check' -l verbose -s v -d 'Verbose output'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand check' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand tree' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand upload' -l repository -rF -d 'Repository directory'\n"
+        "complete -c bats-poc -n '__bats_poc_using_subcommand completions' -a 'bash zsh fish'\n"
+    , stdout);
 }
 %}
 
@@ -1204,10 +2165,43 @@ fun copy_to_builder {l:agz}{n:pos}{fuel:nat} .<fuel>.
     val () = $B.put_byte(dst, b)
   in copy_to_builder(src, start + 1, len, max, dst, fuel - 1) end
 
-(* Run a shell command. cmd_b is CONSUMED. Returns exit code *)
-fn run_sh(cmd_b: $B.builder): int = let
+(* Find start of basename in a null-terminated path (after last '/') *)
+fun find_basename_start {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (bv: !$A.borrow(byte, l, n), pos: int, max: int n,
+   last: int, fuel: int fuel): int =
+  if fuel <= 0 then last + 1
+  else let
+    val b = src_byte(bv, pos, max)
+  in
+    if $AR.eq_int_int(b, 0) then last + 1
+    else if $AR.eq_int_int(b, 47) then
+      find_basename_start(bv, pos + 1, max, pos, fuel - 1)
+    else find_basename_start(bv, pos + 1, max, last, fuel - 1)
+  end
+
+(* Find null terminator in a borrow *)
+fun find_null_bv {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (bv: !$A.borrow(byte, l, n), pos: int, max: int n,
+   fuel: int fuel): int =
+  if fuel <= 0 then pos
+  else let
+    val b = src_byte(bv, pos, max)
+  in
+    if $AR.eq_int_int(b, 0) then pos
+    else find_null_bv(bv, pos + 1, max, fuel - 1)
+  end
+
+(* Run a shell command. cmd_b is CONSUMED. Returns exit code.
+   When remap_offset > 0, stderr is remapped: strip build/, .dats->.bats, adjust line=N *)
+fn run_sh(cmd_b: $B.builder, remap_offset: int): int = let
   val @(cmd_arr, cmd_len) = $B.to_arr(cmd_b)
   val @(fz_cmd, bv_cmd) = $A.freeze<byte>(cmd_arr)
+  val _verbose = $UNSAFE begin $extfcall(int, "_bpoc_is_verbose") end
+  val () = (if _verbose > 0 then let
+    val () = print! ("  + ")
+    val () = print_borrow(bv_cmd, 0, cmd_len, 65536,
+      $AR.checked_nat(cmd_len + 1))
+  in print_newline() end else ())
   (* /bin/sh = 7 bytes *)
   val sh_path = $A.alloc<byte>(7)
   val () = $A.write_byte(sh_path, 0, 47)
@@ -1263,7 +2257,8 @@ in
         | ~$R.ok(n) => n | ~$R.err(_) => ~1): int
     in
       if ec <> 0 then let
-        val () = print_arr(eb, 0, elen, 4096, $AR.checked_nat(elen + 1))
+        val () = $UNSAFE begin $extfcall(void, "_bpoc_handle_stderr",
+          $UNSAFE.castvwtp1{ptr}(eb), elen, remap_offset) end
         val () = $A.free<byte>(eb)
       in ec end
       else let
@@ -1295,6 +2290,15 @@ fn preprocess_one
   (src_bv: !$A.borrow(byte, l1, 65536),
    sats_bv: !$A.borrow(byte, l2, 65536),
    dats_bv: !$A.borrow(byte, l3, 65536)): int = let
+  (* Cache check: if .sats is newer than .bats source, skip preprocessing *)
+  val fresh = $UNSAFE begin
+    $extfcall(int, "_bpoc_is_newer",
+      $UNSAFE.castvwtp1{ptr}(sats_bv),
+      $UNSAFE.castvwtp1{ptr}(src_bv))
+  end
+in
+  if fresh > 0 then 0
+  else let
   val or = $F.file_open(src_bv, 65536, 0, 0)
 in
   case+ or of
@@ -1321,8 +2325,14 @@ in
       val () = $A.drop<byte>(fz_s, bv_s)
       val () = $A.free<byte>($A.thaw<byte>(fz_s))
       val r1 = write_file_from_builder(sats_bv, 65536, sb)
-      (* Write .dats *)
+      (* Write .dats - prepend self-staload *)
       val db = $B.create()
+      val bn_start = find_basename_start(sats_bv, 0, 65536, ~1, 4096)
+      val bn_end = find_null_bv(sats_bv, bn_start, 65536, 4096)
+      val () = bput(db, "staload \"./")
+      val () = copy_to_builder(sats_bv, bn_start, bn_end, 65536, db,
+        $AR.checked_nat(bn_end - bn_start + 1))
+      val () = bput(db, "\"\n")
       val @(fz_d, bv_d) = $A.freeze<byte>(dats_arr)
       val () = copy_to_builder(bv_d, 0, dats_len, 65536, db,
         $AR.checked_nat(dats_len + 1))
@@ -1333,7 +2343,7 @@ in
       if r1 = 0 then (if r2 = 0 then 0 else ~1) else ~1
     end
   | ~$R.err(_) => ~1
-end
+end end
 
 (* ============================================================
    Build pipeline: do_build
@@ -1353,56 +2363,78 @@ in arr end
    ============================================================ *)
 fn do_clean(): void = let
   val cmd = $B.create()
-  val () = bput(cmd, "rm -rf build dist")
-  val rc = run_sh(cmd)
+  val () = bput(cmd, "rm -rf build dist docs")
+  val rc = run_sh(cmd, 0)
 in
   if rc <> 0 then println! ("error: clean failed")
-  else println! ("cleaned build/ and dist/")
+  else println! ("cleaned build/, dist/, and docs/")
 end
 
 (* ============================================================
    lock: read bats.lock and verify it exists
    ============================================================ *)
 fn do_lock(): void = let
-  val la = str_to_path_arr("bats.lock")
-  val @(fz_la, bv_la) = $A.freeze<byte>(la)
-  val lock_or = $F.file_open(bv_la, 65536, 0, 0)
-  val () = $A.drop<byte>(fz_la, bv_la)
-  val () = $A.free<byte>($A.thaw<byte>(fz_la))
+  (* Check if --repository was specified *)
+  val repo_buf = $A.alloc<byte>(4096)
+  val rplen = $UNSAFE begin
+    $extfcall(int, "_bpoc_get_repo",
+      $UNSAFE.castvwtp1{ptr}(repo_buf), 4096)
+  end
 in
-  case+ lock_or of
-  | ~$R.ok(lfd) => let
-      val lock_buf = $A.alloc<byte>(65536)
-      val lr = $F.file_read(lfd, lock_buf, 65536)
-      val lock_len = (case+ lr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
-      val lcr = $F.file_close(lfd)
-      val () = $R.discard<int><int>(lcr)
-    in
-      if lock_len > 0 then let
-        val @(fz_lb, bv_lb) = $A.freeze<byte>(lock_buf)
-        val () = println! ("bats.lock:")
-        val () = print_borrow(bv_lb, 0, lock_len, 65536,
-          $AR.checked_nat(lock_len + 1))
-        val () = $A.drop<byte>(fz_lb, bv_lb)
-        val () = $A.free<byte>($A.thaw<byte>(fz_lb))
-      in
-        println! ("lock: verified (existing lockfile)")
-      end
-      else let
-        val () = $A.free<byte>(lock_buf)
-      in
-        println! ("lock: empty lockfile")
-      end
+  if rplen > 0 then let
+    (* Full lock resolution with repository *)
+    val rc = $UNSAFE begin
+      $extfcall(int, "_bpoc_resolve_lock",
+        $UNSAFE.castvwtp1{ptr}(repo_buf))
     end
-  | ~$R.err(_) =>
-      println! ("lock: no bats.lock found, full resolution not yet implemented")
+    val () = $A.free<byte>(repo_buf)
+  in
+    if rc <> 0 then println! ("error: lock resolution failed")
+    else ()
+  end
+  else let
+    (* No repository - just read existing lockfile *)
+    val () = $A.free<byte>(repo_buf)
+    val la = str_to_path_arr("bats.lock")
+    val @(fz_la, bv_la) = $A.freeze<byte>(la)
+    val lock_or = $F.file_open(bv_la, 65536, 0, 0)
+    val () = $A.drop<byte>(fz_la, bv_la)
+    val () = $A.free<byte>($A.thaw<byte>(fz_la))
+  in
+    case+ lock_or of
+    | ~$R.ok(lfd) => let
+        val lock_buf = $A.alloc<byte>(65536)
+        val lr = $F.file_read(lfd, lock_buf, 65536)
+        val lock_len = (case+ lr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+        val lcr = $F.file_close(lfd)
+        val () = $R.discard<int><int>(lcr)
+      in
+        if lock_len > 0 then let
+          val @(fz_lb, bv_lb) = $A.freeze<byte>(lock_buf)
+          val () = println! ("bats.lock:")
+          val () = print_borrow(bv_lb, 0, lock_len, 65536,
+            $AR.checked_nat(lock_len + 1))
+          val () = $A.drop<byte>(fz_lb, bv_lb)
+          val () = $A.free<byte>($A.thaw<byte>(fz_lb))
+        in
+          println! ("lock: verified")
+        end
+        else let
+          val () = $A.free<byte>(lock_buf)
+        in
+          println! ("lock: empty lockfile")
+        end
+      end
+    | ~$R.err(_) =>
+        println! ("lock: no bats.lock found (use --repository to resolve)")
+  end
 end
 
-fn do_build(): void = let
+fn do_build(release: int): void = let
   (* Step 1: mkdir build directories *)
   val cmd = $B.create()
-  val () = bput(cmd, "mkdir -p build/src/bin build/bats_modules dist/debug")
-  val r0 = run_sh(cmd)
+  val () = bput(cmd, "mkdir -p build/src/bin build/bats_modules dist/debug dist/release")
+  val r0 = run_sh(cmd, 0)
   val () = (if r0 <> 0 then println! ("error: mkdir failed") else ())
 in
   if r0 <> 0 then ()
@@ -1463,7 +2495,7 @@ in
                     val () = copy_to_builder(bv_e, 0, elen, 256, mc,
                       $AR.checked_nat(elen + 1))
                     val () = bput(mc, "/src")
-                    val _ = run_sh(mc)
+                    val _ = run_sh(mc, 0)
                     (* source: bats_modules/<name>/src/lib.bats *)
                     val sp = $B.create()
                     val () = bput(sp, "bats_modules/")
@@ -1528,7 +2560,7 @@ in
         | ~$R.ok(d2) => let
             fun scan_bins {lph:agz}{fuel:nat} .<fuel>.
               (d: !$F.dir, ph: !$A.borrow(byte, lph, 512),
-               phlen: int, fuel: int fuel): void =
+               phlen: int, rel: int, fuel: int fuel): void =
               if fuel <= 0 then ()
               else let
                 val ent = $A.alloc<byte>(256)
@@ -1542,7 +2574,7 @@ in
                 in
                   if dd then let
                     val () = $A.free<byte>(ent)
-                  in scan_bins(d, ph, phlen, fuel - 1) end
+                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
                   else if bb then let
                     val @(fz_e, bv_e) = $A.freeze<byte>(ent)
                     (* stem = name without .bats extension *)
@@ -1688,7 +2720,7 @@ in
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, pc,
                                     $AR.checked_nat(dlen + 1))
                                   val () = bput(pc, "/src/lib.dats")
-                                  val rc = run_sh(pc)
+                                  val rc = run_sh(pc, 1)
                                   val () = (if rc <> 0 then let
                                     val () = print! ("error: patsopt failed for dep ")
                                     val () = print_borrow(bv_de, 0, dlen, 256,
@@ -1725,7 +2757,7 @@ in
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, pbin,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(pbin, ".dats")
-                    val rbp = run_sh(pbin)
+                    val rbp = run_sh(pbin, 1)
                     val () = (if rbp <> 0 then
                       println! ("error: patsopt failed for binary")
                       else println! ("  patsopt: binary"))
@@ -1745,7 +2777,7 @@ in
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, pent,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(pent, ".dats")
-                    val rep = run_sh(pent)
+                    val rep = run_sh(pent, 0)
                     val () = (if rep <> 0 then
                       println! ("error: patsopt failed for entry")
                       else println! ("  patsopt: entry"))
@@ -1762,7 +2794,7 @@ in
                           fun clang_deps {lph:agz}{fuel4:nat} .<fuel4>.
                             (dd4: !$F.dir,
                              ph: !$A.borrow(byte, lph, 512), phlen: int,
-                             fuel4: int fuel4): void =
+                             rr: int, fuel4: int fuel4): void =
                             if fuel4 <= 0 then ()
                             else let
                               val de = $A.alloc<byte>(256)
@@ -1775,7 +2807,7 @@ in
                               in
                                 if ddd then let
                                   val () = $A.free<byte>(de)
-                                in clang_deps(dd4, ph, phlen, fuel4 - 1) end
+                                in clang_deps(dd4, ph, phlen, rr, fuel4 - 1) end
                                 else let
                                   val @(fz_de, bv_de) = $A.freeze<byte>(de)
                                   val cc = $B.create()
@@ -1785,14 +2817,16 @@ in
                                   val () = bput(cc, "/src/lib_dats.o build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, cc,
                                     $AR.checked_nat(dlen + 1))
-                                  val () = bput(cc, "/src/lib_dats.c -g -O0 -I")
+                                  val () = bput(cc, "/src/lib_dats.c ")
+                                  val () = (if rr > 0 then bput(cc, "-O2 -I")
+                                    else bput(cc, "-g -O0 -I"))
                                   val () = copy_to_builder(ph, 0, phlen, 512, cc,
                                     $AR.checked_nat(phlen + 1))
                                   val () = bput(cc, " -I")
                                   val () = copy_to_builder(ph, 0, phlen, 512, cc,
                                     $AR.checked_nat(phlen + 1))
                                   val () = bput(cc, "/ccomp/runtime")
-                                  val rc = run_sh(cc)
+                                  val rc = run_sh(cc, 0)
                                   val () = (if rc <> 0 then let
                                     val () = print! ("error: cc failed for dep ")
                                     val () = print_borrow(bv_de, 0, dlen, 256,
@@ -1800,10 +2834,10 @@ in
                                   in print_newline() end else ())
                                   val () = $A.drop<byte>(fz_de, bv_de)
                                   val () = $A.free<byte>($A.thaw<byte>(fz_de))
-                                in clang_deps(dd4, ph, phlen, fuel4 - 1) end
+                                in clang_deps(dd4, ph, phlen, rr, fuel4 - 1) end
                               end
                             end
-                          val () = clang_deps(dd4, ph, phlen, 200)
+                          val () = clang_deps(dd4, ph, phlen, rel, 200)
                           val dcr4 = $F.dir_close(dd4)
                           val () = $R.discard<int><int>(dcr4)
                         in end
@@ -1817,14 +2851,15 @@ in
                     val () = bput(cbin, "_dats.o build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cbin,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(cbin, "_dats.c -g -O0 -I")
+                    val () = (if rel > 0 then bput(cbin, "_dats.c -O2 -I")
+                      else bput(cbin, "_dats.c -g -O0 -I"))
                     val () = copy_to_builder(ph, 0, phlen, 512, cbin,
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cbin, " -I")
                     val () = copy_to_builder(ph, 0, phlen, 512, cbin,
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cbin, "/ccomp/runtime")
-                    val _ = run_sh(cbin)
+                    val _ = run_sh(cbin, 0)
 
                     (* Compile entry *)
                     val cent = $B.create()
@@ -1834,18 +2869,21 @@ in
                     val () = bput(cent, "_dats.o build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cent,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(cent, "_dats.c -g -O0 -I")
+                    val () = (if rel > 0 then bput(cent, "_dats.c -O2 -I")
+                      else bput(cent, "_dats.c -g -O0 -I"))
                     val () = copy_to_builder(ph, 0, phlen, 512, cent,
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cent, " -I")
                     val () = copy_to_builder(ph, 0, phlen, 512, cent,
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cent, "/ccomp/runtime")
-                    val _ = run_sh(cent)
+                    val _ = run_sh(cent, 0)
 
                     (* Step 8: Link *)
                     val link = $B.create()
-                    val () = bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/debug/")
+                    val () = (if rel > 0 then
+                      bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/release/")
+                      else bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/debug/"))
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(link, " build/_bats_entry_")
@@ -1895,8 +2933,9 @@ in
                           val () = $R.discard<int><int>(dcr5)
                         in end
                       | ~$R.err(_) => ())
-                    val () = bput(link, " -g -O0")
-                    val rl = run_sh(link)
+                    val () = (if rel > 0 then bput(link, " -O2")
+                      else bput(link, " -g -O0"))
+                    val rl = run_sh(link, 0)
 
                     val () = $A.drop<byte>(fz_sp, bv_sp)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sp))
@@ -1905,20 +2944,21 @@ in
                     val () = $A.drop<byte>(fz_sd, bv_sd)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sd))
                     val () = (if rl = 0 then let
-                      val () = print! ("  built: dist/debug/")
+                      val () = (if rel > 0 then print! ("  built: dist/release/")
+                        else print! ("  built: dist/debug/"))
                       val () = print_borrow(bv_e, 0, stem_len, 256,
                         $AR.checked_nat(stem_len + 1))
                     in print_newline() end
                     else println! ("error: link failed"))
                     val () = $A.drop<byte>(fz_e, bv_e)
                     val () = $A.free<byte>($A.thaw<byte>(fz_e))
-                  in scan_bins(d, ph, phlen, fuel - 1) end
+                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
                   else let
                     val () = $A.free<byte>(ent)
-                  in scan_bins(d, ph, phlen, fuel - 1) end
+                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
                 end
               end
-            val () = scan_bins(d2, bv_patshome, phlen, 100)
+            val () = scan_bins(d2, bv_patshome, phlen, release, 100)
             val dcr2 = $F.dir_close(d2)
             val () = $R.discard<int><int>(dcr2)
           in end
@@ -2148,6 +3188,42 @@ fn cmd_is_tree {l:agz}{n:pos}
     else false
   end
 
+fn cmd_is_add {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 3 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 2 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+      in (* "add" = 97,100,100 *)
+        $AR.eq_int_int(c0, 97) && $AR.eq_int_int(c1, 100) &&
+        $AR.eq_int_int(c2, 100)
+      end else false
+    else false
+  end
+
+fn cmd_is_remove {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 6 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 5 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
+        val c5 = byte2int0($A.get<byte>(buf, o0 + 5))
+      in (* "remove" = 114,101,109,111,118,101 *)
+        $AR.eq_int_int(c0, 114) && $AR.eq_int_int(c1, 101) &&
+        $AR.eq_int_int(c2, 109) && $AR.eq_int_int(c3, 111) &&
+        $AR.eq_int_int(c4, 118) && $AR.eq_int_int(c5, 101)
+      end else false
+    else false
+  end
+
 fn cmd_is_version {l:agz}{n:pos}
   (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
   if len <> 9 then false
@@ -2169,34 +3245,276 @@ fn cmd_is_version {l:agz}{n:pos}
     else false
   end
 
+fn cmd_is_completions {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 11 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 10 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+      in (* "completions" = 99,111,109,112,108,101,116,105,111,110,115 *)
+        $AR.eq_int_int(c0, 99) && $AR.eq_int_int(c1, 111) &&
+        $AR.eq_int_int(c2, 109) && $AR.eq_int_int(c3, 112) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 4)), 108) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 5)), 101) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 6)), 116) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 7)), 105) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 8)), 111) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 9)), 110) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 10)), 115)
+      end else false
+    else false
+  end
+
+fn cmd_is_test {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 4 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 3 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+      in (* "test" = 116,101,115,116 *)
+        $AR.eq_int_int(c0, 116) && $AR.eq_int_int(c1, 101) &&
+        $AR.eq_int_int(c2, 115) && $AR.eq_int_int(c3, 116)
+      end else false
+    else false
+  end
+
+fn cmd_is_upload {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 6 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 5 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
+        val c5 = byte2int0($A.get<byte>(buf, o0 + 5))
+      in (* "upload" = 117,112,108,111,97,100 *)
+        $AR.eq_int_int(c0, 117) && $AR.eq_int_int(c1, 112) &&
+        $AR.eq_int_int(c2, 108) && $AR.eq_int_int(c3, 111) &&
+        $AR.eq_int_int(c4, 97) && $AR.eq_int_int(c5, 100)
+      end else false
+    else false
+  end
+
+(* ============================================================
+   test: build and run tests
+   ============================================================ *)
+fn do_test(): void = let
+  val () = do_build(0)
+  (* Test infrastructure requires unittest block support in emitter.
+     For now, report that the build succeeded. *)
+  val () = println! ("no tests found")
+in () end
+
+(* ============================================================
+   upload: package library for repository
+   ============================================================ *)
+fn do_upload(): void = let
+  (* Read bats.toml for package name and verify kind = "lib" *)
+  val tp = str_to_path_arr("bats.toml")
+  val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
+  val tor = $F.file_open(bv_tp, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_tp, bv_tp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+in
+  case+ tor of
+  | ~$R.ok(tfd) => let
+      val tbuf = $A.alloc<byte>(8192)
+      val trr = $F.file_read(tfd, tbuf, 8192)
+      val tlen = (case+ trr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val tcr = $F.file_close(tfd)
+      val () = $R.discard<int><int>(tcr)
+      val @(fz_tb, bv_tb) = $A.freeze<byte>(tbuf)
+      val pr = $T.parse(bv_tb, 8192)
+      val () = $A.drop<byte>(fz_tb, bv_tb)
+      val () = $A.free<byte>($A.thaw<byte>(fz_tb))
+    in
+      case+ pr of
+      | ~$R.ok(doc) => let
+          val sec = $A.alloc<byte>(7)
+          val () = make_package(sec)
+          val @(fz_s, bv_s) = $A.freeze<byte>(sec)
+          (* Get package name *)
+          val kn = $A.alloc<byte>(4)
+          val () = make_name(kn)
+          val @(fz_kn, bv_kn) = $A.freeze<byte>(kn)
+          val nbuf = $A.alloc<byte>(256)
+          val nr = $T.get(doc, bv_s, 7, bv_kn, 4, nbuf, 256)
+          val () = $A.drop<byte>(fz_kn, bv_kn)
+          val () = $A.free<byte>($A.thaw<byte>(fz_kn))
+          (* Get package kind *)
+          val kk = $A.alloc<byte>(4)
+          val () = $A.set<byte>(kk, 0, int2byte0(107)) (* k *)
+          val () = $A.set<byte>(kk, 1, int2byte0(105)) (* i *)
+          val () = $A.set<byte>(kk, 2, int2byte0(110)) (* n *)
+          val () = $A.set<byte>(kk, 3, int2byte0(100)) (* d *)
+          val @(fz_kk, bv_kk) = $A.freeze<byte>(kk)
+          val kbuf = $A.alloc<byte>(32)
+          val kr = $T.get(doc, bv_s, 7, bv_kk, 4, kbuf, 32)
+          val () = $A.drop<byte>(fz_kk, bv_kk)
+          val () = $A.free<byte>($A.thaw<byte>(fz_kk))
+          val () = $A.drop<byte>(fz_s, bv_s)
+          val () = $A.free<byte>($A.thaw<byte>(fz_s))
+          val () = $T.toml_free(doc)
+          (* Check kind is "lib" (3 chars, l=108, i=105, b=98) *)
+          val is_lib = (case+ kr of
+            | ~$R.some(klen) => (if klen = 3 then let
+                val @(fz_kb, bv_kb) = $A.freeze<byte>(kbuf)
+                val k0 = byte2int0($A.read<byte>(bv_kb, 0))
+                val () = $A.drop<byte>(fz_kb, bv_kb)
+                val () = $A.free<byte>($A.thaw<byte>(fz_kb))
+              in $AR.eq_int_int(k0, 108) end
+              else let val () = $A.free<byte>(kbuf) in false end): bool
+            | ~$R.none() => let val () = $A.free<byte>(kbuf) in false end): bool
+          (* Get repository path before branching *)
+          val repo = $A.alloc<byte>(4096)
+          val rplen = $UNSAFE begin
+            $extfcall(int, "_bpoc_get_repo",
+              $UNSAFE.castvwtp1{ptr}(repo), 4096)
+          end
+        in
+          case+ nr of
+          | ~$R.some(nlen) =>
+            if is_lib then
+              if rplen > 0 then let
+                val cmd = $B.create()
+                val () = bput(cmd, "mkdir -p ")
+                val @(fz_rp, bv_rp) = $A.freeze<byte>(repo)
+                val () = copy_to_builder(bv_rp, 0, rplen, 4096, cmd,
+                  $AR.checked_nat(rplen + 1))
+                val () = bput(cmd, "/")
+                val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                  $AR.checked_nat(nlen + 1))
+                val () = bput(cmd, " && zip -r ")
+                val () = copy_to_builder(bv_rp, 0, rplen, 4096, cmd,
+                  $AR.checked_nat(rplen + 1))
+                val () = bput(cmd, "/")
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                  $AR.checked_nat(nlen + 1))
+                val () = bput(cmd, "/")
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                  $AR.checked_nat(nlen + 1))
+                val () = bput(cmd, "_0.1.0.bats bats.toml src/")
+                val () = $A.drop<byte>(fz_nb, bv_nb)
+                val () = $A.free<byte>($A.thaw<byte>(fz_nb))
+                val () = $A.drop<byte>(fz_rp, bv_rp)
+                val () = $A.free<byte>($A.thaw<byte>(fz_rp))
+                val rc = run_sh(cmd, 0)
+              in
+                if rc <> 0 then println! ("error: upload failed")
+                else println! ("uploaded successfully")
+              end
+              else let
+                val () = $A.free<byte>(repo)
+                val () = $A.free<byte>(nbuf)
+              in println! ("error: --repository is required for upload") end
+            else let
+              val () = $A.free<byte>(nbuf)
+              val () = $A.free<byte>(repo)
+            in println! ("error: 'upload' is only for library packages (kind = \"lib\")") end
+          | ~$R.none() => let
+              val () = $A.free<byte>(nbuf)
+              val () = $A.free<byte>(repo)
+            in println! ("error: package.name not found in bats.toml") end
+        end
+      | ~$R.err(_) => println! ("error: could not parse bats.toml")
+    end
+  | ~$R.err(_) => println! ("error: could not open bats.toml")
+end
+
+(* ============================================================
+   completions: generate shell completion scripts
+   ============================================================ *)
+fn do_completions(shell: int): void =
+  if shell = 0 then
+    $UNSAFE begin $extfcall(void, "_bpoc_print_completions_bash") end
+  else if shell = 1 then
+    $UNSAFE begin $extfcall(void, "_bpoc_print_completions_zsh") end
+  else if shell = 2 then
+    $UNSAFE begin $extfcall(void, "_bpoc_print_completions_fish") end
+  else println! ("error: specify a shell (bash, zsh, fish)")
+
 (* ============================================================
    init: create a new bats project
    ============================================================ *)
-fn do_init(): void = let
-  (* Create bats.toml with a basic template *)
+fn do_init(kind: int): void = let
+  (* kind: 0=binary, 1=library *)
+  (* Get current directory name via readlink /proc/self/cwd *)
+  val cwd_buf = $A.alloc<byte>(4096)
+  val cwd_len = $UNSAFE begin
+    $extfcall(int, "readlink", "/proc/self/cwd",
+      $UNSAFE.castvwtp1{ptr}(cwd_buf), 4095)
+  end
+  val @(fz_cwd, bv_cwd) = $A.freeze<byte>(cwd_buf)
+  (* Find last '/' in cwd path to extract basename *)
+  fun find_last_slash {l2:agz}{fuel2:nat} .<fuel2>.
+    (bv: !$A.borrow(byte, l2, 4096), pos: int, len: int,
+     last: int, fuel2: int fuel2): int =
+    if fuel2 <= 0 then last
+    else if pos >= len then last
+    else let
+      val b = src_byte(bv, pos, 4096)
+    in
+      if b = 47 then find_last_slash(bv, pos + 1, len, pos, fuel2 - 1)
+      else find_last_slash(bv, pos + 1, len, last, fuel2 - 1)
+    end
+  val last_slash = find_last_slash(bv_cwd, 0, cwd_len, ~1,
+    $AR.checked_nat(cwd_len + 1))
+  val name_start = last_slash + 1
+  val name_len = cwd_len - name_start
+  (* mkdir *)
   val cmd1 = $B.create()
-  val () = bput(cmd1, "mkdir -p src/bin")
-  val _ = run_sh(cmd1)
+  val () = (if kind = 0 then bput(cmd1, "mkdir -p src/bin")
+    else bput(cmd1, "mkdir -p src"))
+  val _ = run_sh(cmd1, 0)
   (* Write bats.toml *)
   val toml = $B.create()
-  val () = bput(toml, "[package]\nname = \"my-project\"\nkind = \"bin\"\n\n[dependencies]\n")
+  val () = bput(toml, "[package]\nname = \"")
+  val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, toml,
+    $AR.checked_nat(name_len + 1))
+  val () = (if kind = 0 then bput(toml, "\"\nkind = \"bin\"\n\n[dependencies]\n")
+    else bput(toml, "\"\nkind = \"lib\"\n\n[dependencies]\n"))
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
   val rc = write_file_from_builder(bv_tp, 65536, toml)
   val () = $A.drop<byte>(fz_tp, bv_tp)
   val () = $A.free<byte>($A.thaw<byte>(fz_tp))
-  (* Write src/bin/my-project.bats *)
+  (* Write source file *)
   val src = $B.create()
-  val () = bput(src, "implement ")
-  val () = bput(src, "main0 () = println! (\"hello, world!\")\n")
-  val sp = str_to_path_arr("src/bin/my-project.bats")
-  val @(fz_sp, bv_sp) = $A.freeze<byte>(sp)
+  val src_path = $B.create()
+  val () = (if kind = 0 then let
+    val () = bput(src, "implement ")
+    val () = bput(src, "main0 () = println! (\"hello, world!\")\n")
+    val () = bput(src_path, "src/bin/")
+    val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, src_path,
+      $AR.checked_nat(name_len + 1))
+  in bput(src_path, ".bats") end
+  else let
+    val () = bput(src, "#pub fun hello(): void\n\n")
+    val () = bput(src, "implement hello () = println! (\"hello from library\")\n")
+  in bput(src_path, "src/lib.bats") end)
+  val () = $B.put_byte(src_path, 0)
+  val @(src_pa, _) = $B.to_arr(src_path)
+  val @(fz_sp, bv_sp) = $A.freeze<byte>(src_pa)
   val rc2 = write_file_from_builder(bv_sp, 65536, src)
   val () = $A.drop<byte>(fz_sp, bv_sp)
   val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+  val () = $A.drop<byte>(fz_cwd, bv_cwd)
+  val () = $A.free<byte>($A.thaw<byte>(fz_cwd))
   (* Write .gitignore *)
   val gi = $B.create()
-  val () = bput(gi, "build/\ndist/\nbats_modules/\n")
+  val () = bput(gi, "build/\ndist/\nbats_modules/\ndocs/\n")
   val gp = str_to_path_arr(".gitignore")
   val @(fz_gp, bv_gp) = $A.freeze<byte>(gp)
   val rc3 = write_file_from_builder(bv_gp, 65536, gi)
@@ -2272,6 +3590,105 @@ in
       in println! ("no dependencies") end
     end
   | ~$R.err(_) => println! ("error: no bats.lock found (run lock first)")
+end
+
+(* ============================================================
+   add: add a dependency to bats.toml
+   ============================================================ *)
+fn do_add {l:agz}{n:pos}
+  (bv: !$A.borrow(byte, l, n), pkg_start: int, pkg_len: int,
+   max: int n): void = let
+  (* Read bats.toml *)
+  val tp = str_to_path_arr("bats.toml")
+  val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
+  val tor = $F.file_open(bv_tp, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_tp, bv_tp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+in
+  case+ tor of
+  | ~$R.ok(tfd) => let
+      val tbuf = $A.alloc<byte>(4096)
+      val trr = $F.file_read(tfd, tbuf, 4096)
+      val tlen = (case+ trr of | ~$R.ok(nn) => nn | ~$R.err(_) => 0): int
+      val tcr = $F.file_close(tfd)
+      val () = $R.discard<int><int>(tcr)
+      val out = $A.alloc<byte>(8192)
+      val nlen = $UNSAFE begin
+        $extfcall(int, "_bpoc_inject_dep",
+          $UNSAFE.castvwtp1{ptr}(tbuf), tlen,
+          ptr_add<byte>($UNSAFE.castvwtp1{ptr}(bv), g1ofg0(pkg_start)), pkg_len,
+          "", 0,
+          $UNSAFE.castvwtp1{ptr}(out), 8192)
+      end
+      val () = $A.free<byte>(tbuf)
+    in
+      if nlen > 0 then let
+        val rc = $UNSAFE begin $extfcall(int, "_bpoc_write_file",
+          "bats.toml", $UNSAFE.castvwtp1{ptr}(out), nlen) end
+        val () = $A.free<byte>(out)
+      in
+        if rc = 0 then let
+            val () = print! ("added '")
+            val () = print_borrow(bv, pkg_start, pkg_start + pkg_len, max,
+              $AR.checked_nat(pkg_len + 1))
+          in println! ("' to [dependencies]") end
+        else println! ("error: cannot write bats.toml")
+      end
+      else let
+        val () = $A.free<byte>(out)
+      in println! ("error: failed to update bats.toml") end
+    end
+  | ~$R.err(_) => println! ("error: cannot open bats.toml")
+end
+
+(* ============================================================
+   remove: remove a dependency from bats.toml
+   ============================================================ *)
+fn do_remove {l:agz}{n:pos}
+  (bv: !$A.borrow(byte, l, n), pkg_start: int, pkg_len: int,
+   max: int n): void = let
+  val tp = str_to_path_arr("bats.toml")
+  val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
+  val tor = $F.file_open(bv_tp, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_tp, bv_tp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+in
+  case+ tor of
+  | ~$R.ok(tfd) => let
+      val tbuf = $A.alloc<byte>(4096)
+      val trr = $F.file_read(tfd, tbuf, 4096)
+      val tlen = (case+ trr of | ~$R.ok(nn) => nn | ~$R.err(_) => 0): int
+      val tcr = $F.file_close(tfd)
+      val () = $R.discard<int><int>(tcr)
+      val out = $A.alloc<byte>(8192)
+      val nlen = $UNSAFE begin
+        $extfcall(int, "_bpoc_strip_dep",
+          $UNSAFE.castvwtp1{ptr}(tbuf), tlen,
+          ptr_add<byte>($UNSAFE.castvwtp1{ptr}(bv), g1ofg0(pkg_start)), pkg_len,
+          $UNSAFE.castvwtp1{ptr}(out), 8192)
+      end
+      val () = $A.free<byte>(tbuf)
+    in
+      if nlen > 0 then let
+        val rc = $UNSAFE begin $extfcall(int, "_bpoc_write_file",
+          "bats.toml", $UNSAFE.castvwtp1{ptr}(out), nlen) end
+        val () = $A.free<byte>(out)
+      in
+        if rc = 0 then let
+            val () = print! ("removed '")
+            val () = print_borrow(bv, pkg_start, pkg_start + pkg_len, max,
+              $AR.checked_nat(pkg_len + 1))
+          in println! ("' from [dependencies]") end
+        else println! ("error: cannot write bats.toml")
+      end
+      else let
+        val () = $A.free<byte>(out)
+        val () = print! ("error: package '")
+        val () = print_borrow(bv, pkg_start, pkg_start + pkg_len, max,
+          $AR.checked_nat(pkg_len + 1))
+      in println! ("' not found in [dependencies]") end
+    end
+  | ~$R.err(_) => println! ("error: cannot open bats.toml")
 end
 
 (* ============================================================
@@ -2360,7 +3777,8 @@ end
    run: build then execute the binary
    ============================================================ *)
 fn do_run(): void = let
-  val () = do_build()
+  val () = do_build(0)
+  val () = do_build(1)
   (* Read bats.toml to find the package name *)
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
@@ -2399,17 +3817,39 @@ in
         in
           case+ nr of
           | ~$R.some(nlen) => let
+              (* Check if --bin was specified *)
+              val bin_name = $A.alloc<byte>(256)
+              val bn_len = $UNSAFE begin
+                $extfcall(int, "_bpoc_get_bin",
+                  $UNSAFE.castvwtp1{ptr}(bin_name), 256)
+              end
               val cmd = $B.create()
               val () = bput(cmd, "./dist/debug/")
-              val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
-              val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
-                $AR.checked_nat(nlen + 1))
-              val () = $A.drop<byte>(fz_nb, bv_nb)
-              val () = $A.free<byte>($A.thaw<byte>(fz_nb))
-              val rc = run_sh(cmd)
             in
-              if rc <> 0 then println! ("error: run failed")
-              else ()
+              if bn_len > 0 then let
+                val @(fz_bn, bv_bn) = $A.freeze<byte>(bin_name)
+                val () = copy_to_builder(bv_bn, 0, bn_len, 256, cmd,
+                  $AR.checked_nat(bn_len + 1))
+                val () = $A.drop<byte>(fz_bn, bv_bn)
+                val () = $A.free<byte>($A.thaw<byte>(fz_bn))
+                val () = $A.free<byte>(nbuf)
+                val rc = run_sh(cmd, 0)
+              in
+                if rc <> 0 then println! ("error: run failed")
+                else ()
+              end
+              else let
+                val () = $A.free<byte>(bin_name)
+                val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                  $AR.checked_nat(nlen + 1))
+                val () = $A.drop<byte>(fz_nb, bv_nb)
+                val () = $A.free<byte>($A.thaw<byte>(fz_nb))
+                val rc = run_sh(cmd, 0)
+              in
+                if rc <> 0 then println! ("error: run failed")
+                else ()
+              end
             end
           | ~$R.none() => let
               val () = $A.free<byte>(nbuf)
@@ -2635,16 +4075,101 @@ in
           val cr = $F.file_close(cl_fd)
           val () = $R.discard<int><int>(cr)
           val tok0_end = find_null(cl_buf, 0, 4096, 4096)
-          val cmd_start = tok0_end + 1
+          (* Check for --run-in <dir> global flag before subcommand *)
+          val first_start = tok0_end + 1
+          val first_end = find_null(cl_buf, first_start, 4096, 4096)
+          val first_len = first_end - first_start
+          (* Use C helper to handle --run-in; returns offset to actual command *)
+          val cmd_start = $UNSAFE begin
+            $extfcall(int, "_bpoc_handle_run_in",
+              $UNSAFE.castvwtp1{ptr}(cl_buf), cl_n,
+              first_start, first_end, first_len)
+          end
           val cmd_end = find_null(cl_buf, cmd_start, 4096, 4096)
           val cmd_len = cmd_end - cmd_start
+          (* Parse global flags --verbose/-v and --quiet/-q *)
+          val @(fz_flags, bv_flags) = $A.freeze<byte>(cl_buf)
+          val has_verbose = $UNSAFE begin
+            $extfcall(int, "_bpoc_has_flag",
+              $UNSAFE.castvwtp1{ptr}(bv_flags), cl_n, cmd_end + 1, "--verbose")
+          end
+          val has_v = $UNSAFE begin
+            $extfcall(int, "_bpoc_has_flag",
+              $UNSAFE.castvwtp1{ptr}(bv_flags), cl_n, cmd_end + 1, "-v")
+          end
+          val has_quiet = $UNSAFE begin
+            $extfcall(int, "_bpoc_has_flag",
+              $UNSAFE.castvwtp1{ptr}(bv_flags), cl_n, cmd_end + 1, "--quiet")
+          end
+          val has_q = $UNSAFE begin
+            $extfcall(int, "_bpoc_has_flag",
+              $UNSAFE.castvwtp1{ptr}(bv_flags), cl_n, cmd_end + 1, "-q")
+          end
+          val () = $A.drop<byte>(fz_flags, bv_flags)
+          val cl_buf = $A.thaw<byte>(fz_flags)
+          val () = (if has_verbose > 0 orelse has_v > 0 then
+            $UNSAFE begin $extfcall(void, "_bpoc_set_verbose", 1) end
+            else ())
+          val () = (if has_quiet > 0 orelse has_q > 0 then
+            $UNSAFE begin $extfcall(void, "_bpoc_set_quiet", 1) end
+            else ())
+          (* Parse --repository flag *)
+          val repo_buf = $A.alloc<byte>(4096)
+          val rlen = $UNSAFE begin
+            $extfcall(int, "_bpoc_get_flag_val",
+              $UNSAFE.castvwtp1{ptr}(cl_buf), cl_n, cmd_end + 1,
+              "--repository", $UNSAFE.castvwtp1{ptr}(repo_buf), 4096)
+          end
+          val () = (if rlen > 0 then
+            $UNSAFE begin $extfcall(void, "_bpoc_set_repo",
+              $UNSAFE.castvwtp1{ptr}(repo_buf), rlen) end
+            else ())
+          val () = $A.free<byte>(repo_buf)
         in
           if cmd_is_check(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in do_check() end
           else if cmd_is_build(cl_buf, cmd_start, cmd_len, 4096) then let
-            val () = $A.free<byte>(cl_buf)
-          in do_build() end
+            val @(fz_cb, bv_cb) = $A.freeze<byte>(cl_buf)
+            val only_val = $A.alloc<byte>(32)
+            val olen = $UNSAFE begin
+              $extfcall(int, "_bpoc_get_flag_val",
+                $UNSAFE.castvwtp1{ptr}(bv_cb), cl_n, cmd_end + 1,
+                "--only", $UNSAFE.castvwtp1{ptr}(only_val), 32)
+            end
+            val () = $A.drop<byte>(fz_cb, bv_cb)
+            val () = $A.free<byte>($A.thaw<byte>(fz_cb))
+            (* Check if --only debug|release|native|wasm *)
+            val @(fz_ov, bv_ov) = $A.freeze<byte>(only_val)
+            val only_debug = (if olen = 5 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+              val b1 = byte2int0($A.read<byte>(bv_ov, 1))
+            in $AR.eq_int_int(b0, 100) && $AR.eq_int_int(b1, 101) end
+              else false): bool
+            val only_release = (if olen = 7 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+              val b1 = byte2int0($A.read<byte>(bv_ov, 1))
+            in $AR.eq_int_int(b0, 114) && $AR.eq_int_int(b1, 101) end
+              else false): bool
+            (* "native" = 6 chars, n=110; "wasm" = 4 chars, w=119 *)
+            val only_native = (if olen = 6 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+            in $AR.eq_int_int(b0, 110) end
+              else false): bool
+            val only_wasm = (if olen = 4 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+            in $AR.eq_int_int(b0, 119) end
+              else false): bool
+            val () = $A.drop<byte>(fz_ov, bv_ov)
+            val () = $A.free<byte>($A.thaw<byte>(fz_ov))
+          in
+            if only_wasm then println! ("error: wasm target is not yet supported")
+            else if only_debug then do_build(0)
+            else if only_release then do_build(1)
+            else let
+              val () = do_build(0)
+            in do_build(1) end
+          end
           else if cmd_is_clean(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in do_clean() end
@@ -2652,20 +4177,135 @@ in
             val () = $A.free<byte>(cl_buf)
           in do_lock() end
           else if cmd_is_run(cl_buf, cmd_start, cmd_len, 4096) then let
+            val bin_buf = $A.alloc<byte>(256)
+            val blen = $UNSAFE begin
+              $extfcall(int, "_bpoc_get_flag_val",
+                $UNSAFE.castvwtp1{ptr}(cl_buf), cl_n, cmd_end + 1,
+                "--bin", $UNSAFE.castvwtp1{ptr}(bin_buf), 256)
+            end
+            val () = (if blen > 0 then
+              $UNSAFE begin $extfcall(void, "_bpoc_set_bin",
+                $UNSAFE.castvwtp1{ptr}(bin_buf), blen) end
+              else ())
+            val () = $A.free<byte>(bin_buf)
             val () = $A.free<byte>(cl_buf)
           in do_run() end
           else if cmd_is_init(cl_buf, cmd_start, cmd_len, 4096) then let
+            (* Parse init argument: "binary"|"bin" or "library"|"lib" *)
+            val arg_start = cmd_end + 1
+            val arg_end = find_null(cl_buf, arg_start, 4096, 4096)
+            val arg_len = arg_end - arg_start
+            (* Check for "binary"(6) or "bin"(3) → 0, "library"(7) or "lib"(3) → 1 *)
+            val kind = (if arg_len = 6 orelse arg_len = 3 then let
+                val a0 = g1ofg0(arg_start)
+              in
+                if a0 >= 0 then
+                  if a0 < 4096 then let
+                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                  in
+                    if $AR.eq_int_int(c0, 98) then 0  (* 'b' = binary/bin *)
+                    else if $AR.eq_int_int(c0, 108) then 1  (* 'l' = library/lib *)
+                    else ~1
+                  end else ~1
+                else ~1
+              end
+            else if arg_len = 7 then let
+                val a0 = g1ofg0(arg_start)
+              in
+                if a0 >= 0 then
+                  if a0 < 4096 then let
+                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                  in if $AR.eq_int_int(c0, 108) then 1 else ~1 end
+                  else ~1
+                else ~1
+              end
+            else ~1): int
             val () = $A.free<byte>(cl_buf)
-          in do_init() end
+          in
+            if kind >= 0 then do_init(kind)
+            else println! ("error: specify 'binary' or 'library'\nusage: bats-poc init binary|library")
+          end
+          else if cmd_is_test(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in do_test() end
+          else if cmd_is_upload(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in do_upload() end
           else if cmd_is_tree(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in do_tree() end
+          else if cmd_is_add(cl_buf, cmd_start, cmd_len, 4096) then let
+            val pkg_start = cmd_end + 1
+            val pkg_end = find_null(cl_buf, pkg_start, 4096, 4096)
+            val pkg_len = pkg_end - pkg_start
+            val @(fz_ab, bv_ab) = $A.freeze<byte>(cl_buf)
+          in
+            if pkg_len > 0 then let
+              val () = do_add(bv_ab, pkg_start, pkg_len, 4096)
+              val () = $A.drop<byte>(fz_ab, bv_ab)
+              val () = $A.free<byte>($A.thaw<byte>(fz_ab))
+            in end
+            else let
+              val () = $A.drop<byte>(fz_ab, bv_ab)
+              val () = $A.free<byte>($A.thaw<byte>(fz_ab))
+            in println! ("error: specify a package name\nusage: bats-poc add <package>") end
+          end
+          else if cmd_is_remove(cl_buf, cmd_start, cmd_len, 4096) then let
+            val pkg_start = cmd_end + 1
+            val pkg_end = find_null(cl_buf, pkg_start, 4096, 4096)
+            val pkg_len = pkg_end - pkg_start
+            val @(fz_rb, bv_rb) = $A.freeze<byte>(cl_buf)
+          in
+            if pkg_len > 0 then let
+              val () = do_remove(bv_rb, pkg_start, pkg_len, 4096)
+              val () = $A.drop<byte>(fz_rb, bv_rb)
+              val () = $A.free<byte>($A.thaw<byte>(fz_rb))
+            in end
+            else let
+              val () = $A.drop<byte>(fz_rb, bv_rb)
+              val () = $A.free<byte>($A.thaw<byte>(fz_rb))
+            in println! ("error: specify a package name\nusage: bats-poc remove <package>") end
+          end
+          else if cmd_is_completions(cl_buf, cmd_start, cmd_len, 4096) then let
+            val arg_start = cmd_end + 1
+            val arg_end = find_null(cl_buf, arg_start, 4096, 4096)
+            val arg_len = arg_end - arg_start
+            (* "bash"=4: b=98, "zsh"=3: z=122, "fish"=4: f=102 *)
+            val shell = (if arg_len = 4 then let
+                val a0 = g1ofg0(arg_start)
+              in
+                if a0 >= 0 then
+                  if a0 < 4096 then let
+                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                  in
+                    if $AR.eq_int_int(c0, 98) then 0  (* 'b' = bash *)
+                    else if $AR.eq_int_int(c0, 102) then 2  (* 'f' = fish *)
+                    else ~1
+                  end else ~1
+                else ~1
+              end
+            else if arg_len = 3 then let
+                val a0 = g1ofg0(arg_start)
+              in
+                if a0 >= 0 then
+                  if a0 < 4096 then let
+                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                  in if $AR.eq_int_int(c0, 122) then 1 else ~1 end
+                  else ~1
+                else ~1
+              end
+            else ~1): int
+            val () = $A.free<byte>(cl_buf)
+          in
+            if shell >= 0 then do_completions(shell)
+            else println! ("error: specify a shell (bash, zsh, fish)\nusage: bats-poc completions bash|zsh|fish")
+          end
           else if cmd_is_version(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in println! ("bats-poc 0.1.0") end
           else let
             val () = $A.free<byte>(cl_buf)
-          in println! ("usage: bats-poc <check|build|clean|lock|run|init|tree|--version>") end
+          in println! ("usage: bats-poc <init|lock|add|remove|build|run|test|check|tree|upload|clean|completions> [--only debug|release]") end
         end
       | ~$R.err(e) => let
           val cr = $F.file_close(cl_fd)
