@@ -1348,6 +1348,56 @@ fn str_to_path_arr(s: string): [l:agz] $A.arr(byte, l, 65536) = let
   val @(arr, _) = $B.to_arr(b)
 in arr end
 
+(* ============================================================
+   clean: remove build/ and dist/ directories
+   ============================================================ *)
+fn do_clean(): void = let
+  val cmd = $B.create()
+  val () = bput(cmd, "rm -rf build dist")
+  val rc = run_sh(cmd)
+in
+  if rc <> 0 then println! ("error: clean failed")
+  else println! ("cleaned build/ and dist/")
+end
+
+(* ============================================================
+   lock: read bats.lock and verify it exists
+   ============================================================ *)
+fn do_lock(): void = let
+  val la = str_to_path_arr("bats.lock")
+  val @(fz_la, bv_la) = $A.freeze<byte>(la)
+  val lock_or = $F.file_open(bv_la, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_la, bv_la)
+  val () = $A.free<byte>($A.thaw<byte>(fz_la))
+in
+  case+ lock_or of
+  | ~$R.ok(lfd) => let
+      val lock_buf = $A.alloc<byte>(65536)
+      val lr = $F.file_read(lfd, lock_buf, 65536)
+      val lock_len = (case+ lr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val lcr = $F.file_close(lfd)
+      val () = $R.discard<int><int>(lcr)
+    in
+      if lock_len > 0 then let
+        val @(fz_lb, bv_lb) = $A.freeze<byte>(lock_buf)
+        val () = println! ("bats.lock:")
+        val () = print_borrow(bv_lb, 0, lock_len, 65536,
+          $AR.checked_nat(lock_len + 1))
+        val () = $A.drop<byte>(fz_lb, bv_lb)
+        val () = $A.free<byte>($A.thaw<byte>(fz_lb))
+      in
+        println! ("lock: verified (existing lockfile)")
+      end
+      else let
+        val () = $A.free<byte>(lock_buf)
+      in
+        println! ("lock: empty lockfile")
+      end
+    end
+  | ~$R.err(_) =>
+      println! ("lock: no bats.lock found, full resolution not yet implemented")
+end
+
 fn do_build(): void = let
   (* Step 1: mkdir build directories *)
   val cmd = $B.create()
@@ -2147,6 +2197,70 @@ in
 end
 
 (* ============================================================
+   run: build then execute the binary
+   ============================================================ *)
+fn do_run(): void = let
+  val () = do_build()
+  (* Read bats.toml to find the package name *)
+  val tp = str_to_path_arr("bats.toml")
+  val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
+  val tor = $F.file_open(bv_tp, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_tp, bv_tp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+in
+  case+ tor of
+  | ~$R.ok(tfd) => let
+      val tbuf = $A.alloc<byte>(4096)
+      val trr = $F.file_read(tfd, tbuf, 4096)
+      val tlen = (case+ trr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val tcr = $F.file_close(tfd)
+      val () = $R.discard<int><int>(tcr)
+      val @(fz_tb, bv_tb) = $A.freeze<byte>(tbuf)
+      val pr = $T.parse(bv_tb, 4096)
+      val () = $A.drop<byte>(fz_tb, bv_tb)
+      val () = $A.free<byte>($A.thaw<byte>(fz_tb))
+    in
+      case+ pr of
+      | ~$R.ok(doc) => let
+          (* Query package.name *)
+          val sec = $A.alloc<byte>(7)
+          val () = make_package(sec)
+          val @(fz_s, bv_s) = $A.freeze<byte>(sec)
+          val kn = $A.alloc<byte>(4)
+          val () = make_name(kn)
+          val @(fz_kn, bv_kn) = $A.freeze<byte>(kn)
+          val nbuf = $A.alloc<byte>(256)
+          val nr = $T.get(doc, bv_s, 7, bv_kn, 4, nbuf, 256)
+          val () = $A.drop<byte>(fz_kn, bv_kn)
+          val () = $A.free<byte>($A.thaw<byte>(fz_kn))
+          val () = $A.drop<byte>(fz_s, bv_s)
+          val () = $A.free<byte>($A.thaw<byte>(fz_s))
+          val () = $T.toml_free(doc)
+        in
+          case+ nr of
+          | ~$R.some(nlen) => let
+              val cmd = $B.create()
+              val () = bput(cmd, "./dist/debug/")
+              val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
+              val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
+                $AR.checked_nat(nlen + 1))
+              val () = $A.drop<byte>(fz_nb, bv_nb)
+              val () = $A.free<byte>($A.thaw<byte>(fz_nb))
+              val rc = run_sh(cmd)
+            in
+              if rc <> 0 then println! ("error: run failed")
+              else ()
+            end
+          | ~$R.none() => let
+              val () = $A.free<byte>(nbuf)
+            in println! ("error: package.name not found in bats.toml") end
+        end
+      | ~$R.err(_) => println! ("error: could not parse bats.toml")
+    end
+  | ~$R.err(_) => println! ("error: could not open bats.toml")
+end
+
+(* ============================================================
    do_check: read bats.toml, find .bats files
    ============================================================ *)
 
@@ -2373,13 +2487,13 @@ in
           in do_build() end
           else if cmd_is_clean(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
-          in println! ("clean: not yet implemented") end
+          in do_clean() end
           else if cmd_is_lock(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
-          in println! ("lock: not yet implemented") end
+          in do_lock() end
           else if cmd_is_run(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
-          in println! ("run: not yet implemented") end
+          in do_run() end
           else let
             val () = $A.free<byte>(cl_buf)
           in println! ("usage: bats-poc <check|build|clean|lock|run>") end
