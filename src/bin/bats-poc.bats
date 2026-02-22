@@ -4,11 +4,14 @@
 
 #use array as A
 #use arith as AR
-#use result as R
+#use builder as B
+#use env as E
 #use file as F
-#use toml as T
-#use str as S
+#use path as PA
 #use process as P
+#use result as R
+#use str as S
+#use toml as T
 
 (* ============================================================
    Helpers
@@ -29,68 +32,18 @@ fun print_arr {l:agz}{n:pos}{fuel:nat} .<fuel>.
     else ()
   end
 
-(* Compare 5 bytes at offset in array against known values *)
-fn cmd_is_check {l:agz}{n:pos}
-  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
-  if len <> 5 then false
-  else let
-    val o0 = g1ofg0(off)
-  in
-    if o0 >= 0 then
-      if o0 + 4 < max then let
-        val c0 = byte2int0($A.get<byte>(buf, o0))
-        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
-        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
-        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
-        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
-      in
-        $AR.eq_int_int(c0, 99) && $AR.eq_int_int(c1, 104) &&
-        $AR.eq_int_int(c2, 101) && $AR.eq_int_int(c3, 99) &&
-        $AR.eq_int_int(c4, 107)
-      end else false
-    else false
-  end
-
-fn cmd_is_build {l:agz}{n:pos}
-  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
-  if len <> 5 then false
-  else let
-    val o0 = g1ofg0(off)
-  in
-    if o0 >= 0 then
-      if o0 + 4 < max then let
-        val c0 = byte2int0($A.get<byte>(buf, o0))
-        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
-        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
-        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
-        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
-      in
-        $AR.eq_int_int(c0, 98) && $AR.eq_int_int(c1, 117) &&
-        $AR.eq_int_int(c2, 105) && $AR.eq_int_int(c3, 108) &&
-        $AR.eq_int_int(c4, 100)
-      end else false
-    else false
-  end
-
-fn cmd_is_clean {l:agz}{n:pos}
-  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
-  if len <> 5 then false
-  else let
-    val o0 = g1ofg0(off)
-  in
-    if o0 >= 0 then
-      if o0 + 4 < max then let
-        val c0 = byte2int0($A.get<byte>(buf, o0))
-        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
-        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
-        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
-        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
-      in
-        $AR.eq_int_int(c0, 99) && $AR.eq_int_int(c1, 108) &&
-        $AR.eq_int_int(c2, 101) && $AR.eq_int_int(c3, 97) &&
-        $AR.eq_int_int(c4, 110)
-      end else false
-    else false
+(* Find end of null-terminated token *)
+fun find_null {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (buf: !$A.arr(byte, l, n), pos: int, max: int n,
+   fuel: int fuel): int =
+  if fuel <= 0 then pos
+  else let val p = g1ofg0(pos) in
+    if p >= 0 then
+      if p < max then
+        if $AR.eq_int_int(byte2int0($A.get<byte>(buf, p)), 0) then pos
+        else find_null(buf, pos + 1, max, fuel - 1)
+      else pos
+    else pos
   end
 
 (* Check if dir entry is "." or ".." *)
@@ -128,66 +81,242 @@ fn has_bats_ext {l:agz}{n:pos}
     else false
   end
 
-(* Find end of null-terminated token *)
-fun find_null {l:agz}{n:pos}{fuel:nat} .<fuel>.
-  (buf: !$A.arr(byte, l, n), pos: int, max: int n,
-   fuel: int fuel): int =
-  if fuel <= 0 then pos
-  else let val p = g1ofg0(pos) in
-    if p >= 0 then
-      if p < max then
-        if $AR.eq_int_int(byte2int0($A.get<byte>(buf, p)), 0) then pos
-        else find_null(buf, pos + 1, max, fuel - 1)
-      else pos
-    else pos
+(* Check if a byte is an identifier character *)
+fn is_ident_byte(b: int): bool =
+  (b >= 97 && b <= 122) ||
+  (b >= 65 && b <= 90) ||
+  (b >= 48 && b <= 57) ||
+  $AR.eq_int_int(b, 95)
+
+(* ============================================================
+   String constant builders
+   ============================================================ *)
+
+(* Write "bats.toml" into buf -- 9 bytes *)
+fn make_bats_toml {l:agz}{n:pos | n >= 9}
+  (buf: !$A.arr(byte, l, n)): void =
+  let
+    val () = $A.write_byte(buf, 0, 98)   (* b *)
+    val () = $A.write_byte(buf, 1, 97)   (* a *)
+    val () = $A.write_byte(buf, 2, 116)  (* t *)
+    val () = $A.write_byte(buf, 3, 115)  (* s *)
+    val () = $A.write_byte(buf, 4, 46)   (* . *)
+    val () = $A.write_byte(buf, 5, 116)  (* t *)
+    val () = $A.write_byte(buf, 6, 111)  (* o *)
+    val () = $A.write_byte(buf, 7, 109)  (* m *)
+    val () = $A.write_byte(buf, 8, 108)  (* l *)
+  in end
+
+(* Write "src/bin" into buf -- 7 bytes *)
+fn make_src_bin {l:agz}{n:pos | n >= 7}
+  (buf: !$A.arr(byte, l, n)): void =
+  let
+    val () = $A.write_byte(buf, 0, 115)  (* s *)
+    val () = $A.write_byte(buf, 1, 114)  (* r *)
+    val () = $A.write_byte(buf, 2, 99)   (* c *)
+    val () = $A.write_byte(buf, 3, 47)   (* / *)
+    val () = $A.write_byte(buf, 4, 98)   (* b *)
+    val () = $A.write_byte(buf, 5, 105)  (* i *)
+    val () = $A.write_byte(buf, 6, 110)  (* n *)
+  in end
+
+(* Write "package" into buf -- 7 bytes *)
+fn make_package {l:agz}{n:pos | n >= 7}
+  (buf: !$A.arr(byte, l, n)): void =
+  let
+    val () = $A.write_byte(buf, 0, 112)
+    val () = $A.write_byte(buf, 1, 97)
+    val () = $A.write_byte(buf, 2, 99)
+    val () = $A.write_byte(buf, 3, 107)
+    val () = $A.write_byte(buf, 4, 97)
+    val () = $A.write_byte(buf, 5, 103)
+    val () = $A.write_byte(buf, 6, 101)
+  in end
+
+(* Write "name" into buf -- 4 bytes *)
+fn make_name {l:agz}{n:pos | n >= 4}
+  (buf: !$A.arr(byte, l, n)): void =
+  let
+    val () = $A.write_byte(buf, 0, 110)
+    val () = $A.write_byte(buf, 1, 97)
+    val () = $A.write_byte(buf, 2, 109)
+    val () = $A.write_byte(buf, 3, 101)
+  in end
+
+(* Write "kind" into buf -- 4 bytes *)
+fn make_kind {l:agz}{n:pos | n >= 4}
+  (buf: !$A.arr(byte, l, n)): void =
+  let
+    val () = $A.write_byte(buf, 0, 107)
+    val () = $A.write_byte(buf, 1, 105)
+    val () = $A.write_byte(buf, 2, 110)
+    val () = $A.write_byte(buf, 3, 100)
+  in end
+
+(* Write "/proc/self/cmdline" into buf -- 18 bytes *)
+fn make_proc_cmdline {l:agz}{n:pos | n >= 18}
+  (buf: !$A.arr(byte, l, n)): void =
+  let
+    val () = $A.write_byte(buf, 0, 47)   (* / *)
+    val () = $A.write_byte(buf, 1, 112)  (* p *)
+    val () = $A.write_byte(buf, 2, 114)  (* r *)
+    val () = $A.write_byte(buf, 3, 111)  (* o *)
+    val () = $A.write_byte(buf, 4, 99)   (* c *)
+    val () = $A.write_byte(buf, 5, 47)   (* / *)
+    val () = $A.write_byte(buf, 6, 115)  (* s *)
+    val () = $A.write_byte(buf, 7, 101)  (* e *)
+    val () = $A.write_byte(buf, 8, 108)  (* l *)
+    val () = $A.write_byte(buf, 9, 102)  (* f *)
+    val () = $A.write_byte(buf, 10, 47)  (* / *)
+    val () = $A.write_byte(buf, 11, 99)  (* c *)
+    val () = $A.write_byte(buf, 12, 109) (* m *)
+    val () = $A.write_byte(buf, 13, 100) (* d *)
+    val () = $A.write_byte(buf, 14, 108) (* l *)
+    val () = $A.write_byte(buf, 15, 105) (* i *)
+    val () = $A.write_byte(buf, 16, 110) (* n *)
+    val () = $A.write_byte(buf, 17, 101) (* e *)
+  in end
+
+(* ============================================================
+   Command matching
+   ============================================================ *)
+
+fn cmd_is_check {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 5 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 4 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
+      in (* "check" = 99,104,101,99,107 *)
+        $AR.eq_int_int(c0, 99) && $AR.eq_int_int(c1, 104) &&
+        $AR.eq_int_int(c2, 101) && $AR.eq_int_int(c3, 99) &&
+        $AR.eq_int_int(c4, 107)
+      end else false
+    else false
+  end
+
+fn cmd_is_build {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 5 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 4 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
+      in (* "build" = 98,117,105,108,100 *)
+        $AR.eq_int_int(c0, 98) && $AR.eq_int_int(c1, 117) &&
+        $AR.eq_int_int(c2, 105) && $AR.eq_int_int(c3, 108) &&
+        $AR.eq_int_int(c4, 100)
+      end else false
+    else false
+  end
+
+fn cmd_is_clean {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 5 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 4 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
+      in (* "clean" = 99,108,101,97,110 *)
+        $AR.eq_int_int(c0, 99) && $AR.eq_int_int(c1, 108) &&
+        $AR.eq_int_int(c2, 101) && $AR.eq_int_int(c3, 97) &&
+        $AR.eq_int_int(c4, 110)
+      end else false
+    else false
+  end
+
+fn cmd_is_lock {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 4 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 3 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+      in (* "lock" = 108,111,99,107 *)
+        $AR.eq_int_int(c0, 108) && $AR.eq_int_int(c1, 111) &&
+        $AR.eq_int_int(c2, 99) && $AR.eq_int_int(c3, 107)
+      end else false
+    else false
+  end
+
+fn cmd_is_run {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 3 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 2 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+      in (* "run" = 114,117,110 *)
+        $AR.eq_int_int(c0, 114) && $AR.eq_int_int(c1, 117) &&
+        $AR.eq_int_int(c2, 110)
+      end else false
+    else false
   end
 
 (* ============================================================
-   Process spawning: demonstrate invoking external tools
+   Process spawning
    ============================================================ *)
 
 fn run_process_demo(): void = let
-  (* path: "/bin/echo" = 47,98,105,110,47,101,99,104,111 *)
+  (* "/bin/echo" -- 9 bytes, exact alloc for spawn path *)
   val path_arr = $A.alloc<byte>(9)
-  val () = $A.write_byte(path_arr, 0, 47)
-  val () = $A.write_byte(path_arr, 1, 98)
-  val () = $A.write_byte(path_arr, 2, 105)
-  val () = $A.write_byte(path_arr, 3, 110)
-  val () = $A.write_byte(path_arr, 4, 47)
-  val () = $A.write_byte(path_arr, 5, 101)
-  val () = $A.write_byte(path_arr, 6, 99)
-  val () = $A.write_byte(path_arr, 7, 104)
-  val () = $A.write_byte(path_arr, 8, 111)
+  val () = $A.write_byte(path_arr, 0, 47)   (* / *)
+  val () = $A.write_byte(path_arr, 1, 98)   (* b *)
+  val () = $A.write_byte(path_arr, 2, 105)  (* i *)
+  val () = $A.write_byte(path_arr, 3, 110)  (* n *)
+  val () = $A.write_byte(path_arr, 4, 47)   (* / *)
+  val () = $A.write_byte(path_arr, 5, 101)  (* e *)
+  val () = $A.write_byte(path_arr, 6, 99)   (* c *)
+  val () = $A.write_byte(path_arr, 7, 104)  (* h *)
+  val () = $A.write_byte(path_arr, 8, 111)  (* o *)
   val @(fz_p, bv_p) = $A.freeze<byte>(path_arr)
 
-  (* argv: "echo\0check passed\0" = 18 bytes, 2 args *)
-  val argv_arr = $A.alloc<byte>(18)
-  val () = $A.write_byte(argv_arr, 0, 101)   (* e *)
-  val () = $A.write_byte(argv_arr, 1, 99)    (* c *)
-  val () = $A.write_byte(argv_arr, 2, 104)   (* h *)
-  val () = $A.write_byte(argv_arr, 3, 111)   (* o *)
-  val () = $A.write_byte(argv_arr, 4, 0)
-  val () = $A.write_byte(argv_arr, 5, 99)    (* c *)
-  val () = $A.write_byte(argv_arr, 6, 104)   (* h *)
-  val () = $A.write_byte(argv_arr, 7, 101)   (* e *)
-  val () = $A.write_byte(argv_arr, 8, 99)    (* c *)
-  val () = $A.write_byte(argv_arr, 9, 107)   (* k *)
-  val () = $A.write_byte(argv_arr, 10, 32)   (* space *)
-  val () = $A.write_byte(argv_arr, 11, 112)  (* p *)
-  val () = $A.write_byte(argv_arr, 12, 97)   (* a *)
-  val () = $A.write_byte(argv_arr, 13, 115)  (* s *)
-  val () = $A.write_byte(argv_arr, 14, 115)  (* s *)
-  val () = $A.write_byte(argv_arr, 15, 101)  (* e *)
-  val () = $A.write_byte(argv_arr, 16, 100)  (* d *)
-  val () = $A.write_byte(argv_arr, 17, 0)
+  (* argv: "echo\0check passed\0" *)
+  val b_argv = $B.create()
+  val () = $B.put_byte(b_argv, 101)
+  val () = $B.put_byte(b_argv, 99)
+  val () = $B.put_byte(b_argv, 104)
+  val () = $B.put_byte(b_argv, 111)
+  val () = $B.put_byte(b_argv, 0)
+  val () = $B.put_byte(b_argv, 99)
+  val () = $B.put_byte(b_argv, 104)
+  val () = $B.put_byte(b_argv, 101)
+  val () = $B.put_byte(b_argv, 99)
+  val () = $B.put_byte(b_argv, 107)
+  val () = $B.put_byte(b_argv, 32)
+  val () = $B.put_byte(b_argv, 112)
+  val () = $B.put_byte(b_argv, 97)
+  val () = $B.put_byte(b_argv, 115)
+  val () = $B.put_byte(b_argv, 115)
+  val () = $B.put_byte(b_argv, 101)
+  val () = $B.put_byte(b_argv, 100)
+  val () = $B.put_byte(b_argv, 0)
+  val @(argv_arr, _) = $B.to_arr(b_argv)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
 
-  (* envp: single null byte (empty environment) *)
+  (* envp: single null byte *)
   val envp_arr = $A.alloc<byte>(1)
   val () = $A.write_byte(envp_arr, 0, 0)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
 
-  (* Spawn: stdin=dev_null, stdout=pipe, stderr=dev_null *)
   val spawn_r = $P.spawn(bv_p, 9, bv_a, 2, bv_e, 0,
     $P.dev_null(), $P.pipe_new(), $P.dev_null())
 
@@ -203,7 +332,6 @@ in
       val+ ~$P.spawn_pipes_mk(child, sin_p, sout_p, serr_p) = sp
       val () = $P.pipe_end_close(sin_p)
       val () = $P.pipe_end_close(serr_p)
-      (* Read stdout from pipe *)
       val+ ~$P.pipe_fd(stdout_fd) = sout_p
       val out_buf = $A.alloc<byte>(256)
       val read_r = $F.file_read(stdout_fd, out_buf, 256)
@@ -212,7 +340,6 @@ in
         | ~$R.err(_) => 0): int
       val fcr = $F.file_close(stdout_fd)
       val () = $R.discard<int><int>(fcr)
-      (* Wait for child *)
       val wait_r = $P.child_wait(child)
       val exit_code = (case+ wait_r of
         | ~$R.ok(n) => n
@@ -227,21 +354,12 @@ in
 end
 
 (* ============================================================
-   do_check: read bats.toml, find .bats files, invoke patsopt
+   do_check: read bats.toml, find .bats files
    ============================================================ *)
 
 fn do_check(): void = let
-  (* Open bats.toml *)
   val path = $A.alloc<byte>(9)
-  val () = $A.write_byte(path, 0, 98)
-  val () = $A.write_byte(path, 1, 97)
-  val () = $A.write_byte(path, 2, 116)
-  val () = $A.write_byte(path, 3, 115)
-  val () = $A.write_byte(path, 4, 46)
-  val () = $A.write_byte(path, 5, 116)
-  val () = $A.write_byte(path, 6, 111)
-  val () = $A.write_byte(path, 7, 109)
-  val () = $A.write_byte(path, 8, 108)
+  val () = make_bats_toml(path)
   val @(fz, bv) = $A.freeze<byte>(path)
   val open_r = $F.file_open(bv, 9, 0, 0)
   val () = $A.drop<byte>(fz, bv)
@@ -263,23 +381,12 @@ in
         in
           case+ pr of
           | ~$R.ok(doc) => let
-              (* "package" section *)
               val sec = $A.alloc<byte>(7)
-              val () = $A.write_byte(sec, 0, 112)
-              val () = $A.write_byte(sec, 1, 97)
-              val () = $A.write_byte(sec, 2, 99)
-              val () = $A.write_byte(sec, 3, 107)
-              val () = $A.write_byte(sec, 4, 97)
-              val () = $A.write_byte(sec, 5, 103)
-              val () = $A.write_byte(sec, 6, 101)
+              val () = make_package(sec)
               val @(fz_s, bv_s) = $A.freeze<byte>(sec)
 
-              (* "name" key *)
               val kn = $A.alloc<byte>(4)
-              val () = $A.write_byte(kn, 0, 110)
-              val () = $A.write_byte(kn, 1, 97)
-              val () = $A.write_byte(kn, 2, 109)
-              val () = $A.write_byte(kn, 3, 101)
+              val () = make_name(kn)
               val @(fz_kn, bv_kn) = $A.freeze<byte>(kn)
               val nbuf = $A.alloc<byte>(256)
               val nr = $T.get(doc, bv_s, 7, bv_kn, 4, nbuf, 256)
@@ -297,12 +404,8 @@ in
                     val () = $A.free<byte>(nbuf)
                   in end)
 
-              (* "kind" key *)
               val kk = $A.alloc<byte>(4)
-              val () = $A.write_byte(kk, 0, 107)
-              val () = $A.write_byte(kk, 1, 105)
-              val () = $A.write_byte(kk, 2, 110)
-              val () = $A.write_byte(kk, 3, 100)
+              val () = make_kind(kk)
               val @(fz_kk, bv_kk) = $A.freeze<byte>(kk)
               val kbuf = $A.alloc<byte>(256)
               val kr = $T.get(doc, bv_s, 7, bv_kk, 4, kbuf, 256)
@@ -323,17 +426,9 @@ in
               val () = $A.drop<byte>(fz_s, bv_s)
               val () = $A.free<byte>($A.thaw<byte>(fz_s))
 
-              (* Scan src/bin/ for .bats files *)
               val () = println! ("Scanning src/bin/ for .bats files...")
-              (* "src/bin" = 115,114,99,47,98,105,110 *)
               val sp = $A.alloc<byte>(7)
-              val () = $A.write_byte(sp, 0, 115)
-              val () = $A.write_byte(sp, 1, 114)
-              val () = $A.write_byte(sp, 2, 99)
-              val () = $A.write_byte(sp, 3, 47)
-              val () = $A.write_byte(sp, 4, 98)
-              val () = $A.write_byte(sp, 5, 105)
-              val () = $A.write_byte(sp, 6, 110)
+              val () = make_src_bin(sp)
               val @(fz_sp, bv_sp) = $A.freeze<byte>(sp)
               val dir_r = $F.dir_open(bv_sp, 7)
               val () = $A.drop<byte>(fz_sp, bv_sp)
@@ -349,13 +444,13 @@ in
                         val len = $R.option_unwrap_or<int>(nr, ~1)
                       in
                         if len >= 0 then let
-                          val is_dot = is_dot_or_dotdot(ent, len, 256)
-                          val is_bats = has_bats_ext(ent, len, 256)
+                          val dd = is_dot_or_dotdot(ent, len, 256)
+                          val bb = has_bats_ext(ent, len, 256)
                         in
-                          if is_dot then let
+                          if dd then let
                             val () = $A.free<byte>(ent)
                           in scan_dir(d, fuel - 1) end
-                          else if is_bats then let
+                          else if bb then let
                             val () = print! ("  src/bin/")
                             val () = print_arr(ent, 0, len, 256, $AR.checked_nat(len))
                             val () = print_newline()
@@ -375,7 +470,6 @@ in
                 | ~$R.err(_) =>
                     println! ("Cannot open src/bin/ directory"))
 
-              (* Demonstrate process spawning *)
               val () = run_process_demo()
               val () = println! ("check passed")
               val () = $T.toml_free(doc)
@@ -398,26 +492,8 @@ end
    ============================================================ *)
 
 implement main0 () = let
-  (* Read /proc/self/cmdline *)
   val clp = $A.alloc<byte>(18)
-  val () = $A.write_byte(clp, 0, 47)   (* / *)
-  val () = $A.write_byte(clp, 1, 112)  (* p *)
-  val () = $A.write_byte(clp, 2, 114)  (* r *)
-  val () = $A.write_byte(clp, 3, 111)  (* o *)
-  val () = $A.write_byte(clp, 4, 99)   (* c *)
-  val () = $A.write_byte(clp, 5, 47)   (* / *)
-  val () = $A.write_byte(clp, 6, 115)  (* s *)
-  val () = $A.write_byte(clp, 7, 101)  (* e *)
-  val () = $A.write_byte(clp, 8, 108)  (* l *)
-  val () = $A.write_byte(clp, 9, 102)  (* f *)
-  val () = $A.write_byte(clp, 10, 47)  (* / *)
-  val () = $A.write_byte(clp, 11, 99)  (* c *)
-  val () = $A.write_byte(clp, 12, 109) (* m *)
-  val () = $A.write_byte(clp, 13, 100) (* d *)
-  val () = $A.write_byte(clp, 14, 108) (* l *)
-  val () = $A.write_byte(clp, 15, 105) (* i *)
-  val () = $A.write_byte(clp, 16, 110) (* n *)
-  val () = $A.write_byte(clp, 17, 101) (* e *)
+  val () = make_proc_cmdline(clp)
   val @(fz_cl, bv_cl) = $A.freeze<byte>(clp)
   val cl_open = $F.file_open(bv_cl, 18, 0, 0)
   val () = $A.drop<byte>(fz_cl, bv_cl)
@@ -432,7 +508,6 @@ in
       | ~$R.ok(cl_n) => let
           val cr = $F.file_close(cl_fd)
           val () = $R.discard<int><int>(cr)
-          (* Find end of first token (program name) *)
           val tok0_end = find_null(cl_buf, 0, 4096, 4096)
           val cmd_start = tok0_end + 1
           val cmd_end = find_null(cl_buf, cmd_start, 4096, 4096)
@@ -447,9 +522,15 @@ in
           else if cmd_is_clean(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in println! ("clean: not yet implemented") end
+          else if cmd_is_lock(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in println! ("lock: not yet implemented") end
+          else if cmd_is_run(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in println! ("run: not yet implemented") end
           else let
             val () = $A.free<byte>(cl_buf)
-          in println! ("usage: bats-poc <check|build|clean>") end
+          in println! ("usage: bats-poc <check|build|clean|lock|run>") end
         end
       | ~$R.err(e) => let
           val cr = $F.file_close(cl_fd)
