@@ -70,6 +70,134 @@ static void _bpoc_handle_stderr(const char *buf, int len, int offset) {
   if (offset > 0) _bpoc_remap_errors(buf, len, offset);
   else write(2, buf, (unsigned)len);
 }
+/* Check if a flag appears in null-separated cmdline tokens after position */
+static int _bpoc_has_flag(const char *buf, int len, int after, const char *flag) {
+  int flen = _bpoc_slen(flag);
+  int pos = after;
+  while (pos < len) {
+    int te = pos;
+    while (te < len && buf[te] != '\0') te++;
+    if (te - pos == flen && memcmp(buf + pos, flag, flen) == 0) return 1;
+    pos = te + 1;
+  }
+  return 0;
+}
+/* Get value of a flag (next token after the flag). Returns length, 0 if not found */
+static int _bpoc_get_flag_val(const char *buf, int len, int after,
+                               const char *flag, char *out, int out_max) {
+  int flen = _bpoc_slen(flag);
+  int pos = after;
+  while (pos < len) {
+    int te = pos;
+    while (te < len && buf[te] != '\0') te++;
+    if (te - pos == flen && memcmp(buf + pos, flag, flen) == 0) {
+      int vs = te + 1, ve = vs;
+      while (ve < len && buf[ve] != '\0') ve++;
+      int vl = ve - vs;
+      if (vl > 0 && vl < out_max) { memcpy(out, buf + vs, vl); out[vl] = '\0'; return vl; }
+      return 0;
+    }
+    pos = te + 1;
+  }
+  return 0;
+}
+/* Inject or update a dependency in bats.toml content.
+   Returns new length, or -1 on error. Writes result to out. */
+static int _bpoc_inject_dep(const char *src, int slen,
+                             const char *pkg, int plen,
+                             const char *cst, int clen,
+                             char *out, int omax) {
+  int oi = 0, si = 0, in_deps = 0, replaced = 0, has_deps = 0;
+  char dep_line[512];
+  int dlen = 0;
+  dep_line[dlen++] = '"';
+  for (int j = 0; j < plen; j++) dep_line[dlen++] = pkg[j];
+  dep_line[dlen++] = '"';
+  dep_line[dlen++] = ' ';
+  dep_line[dlen++] = '=';
+  dep_line[dlen++] = ' ';
+  dep_line[dlen++] = '"';
+  for (int j = 0; j < clen; j++) dep_line[dlen++] = cst[j];
+  dep_line[dlen++] = '"';
+  dep_line[dlen++] = '\n';
+  while (si < slen) {
+    int ls = si;
+    while (si < slen && src[si] != '\n') si++;
+    int le = si;
+    if (si < slen) si++; /* skip newline */
+    int ll = le - ls;
+    /* Check for [dependencies] */
+    if (ll == 14 && memcmp(src + ls, "[dependencies]", 14) == 0) {
+      has_deps = 1; in_deps = 1;
+      if (oi + ll + 1 >= omax) return -1;
+      memcpy(out + oi, src + ls, ll); oi += ll;
+      out[oi++] = '\n';
+      continue;
+    }
+    /* Check for new section start */
+    if (ll > 0 && src[ls] == '[') {
+      if (in_deps && !replaced) {
+        if (oi + dlen >= omax) return -1;
+        memcpy(out + oi, dep_line, dlen); oi += dlen;
+        replaced = 1;
+      }
+      in_deps = 0;
+    }
+    /* Check if line starts with "pkg" = (replace it) */
+    if (in_deps && ll > plen + 2 && src[ls] == '"'
+        && memcmp(src + ls + 1, pkg, plen) == 0
+        && src[ls + 1 + plen] == '"') {
+      if (oi + dlen >= omax) return -1;
+      memcpy(out + oi, dep_line, dlen); oi += dlen;
+      replaced = 1;
+      continue;
+    }
+    /* Copy line as-is */
+    if (oi + ll + 1 >= omax) return -1;
+    memcpy(out + oi, src + ls, ll); oi += ll;
+    out[oi++] = '\n';
+  }
+  if (in_deps && !replaced) {
+    if (oi + dlen >= omax) return -1;
+    memcpy(out + oi, dep_line, dlen); oi += dlen;
+  }
+  if (!has_deps) {
+    const char *sect = "\n[dependencies]\n";
+    int sectl = 16;
+    if (oi + sectl + dlen >= omax) return -1;
+    memcpy(out + oi, sect, sectl); oi += sectl;
+    memcpy(out + oi, dep_line, dlen); oi += dlen;
+  }
+  return oi;
+}
+/* Strip a dependency from bats.toml content.
+   Returns new length, or -1 if not found. */
+static int _bpoc_strip_dep(const char *src, int slen,
+                            const char *pkg, int plen,
+                            char *out, int omax) {
+  int oi = 0, si = 0, in_deps = 0, found = 0;
+  while (si < slen) {
+    int ls = si;
+    while (si < slen && src[si] != '\n') si++;
+    int le = si;
+    if (si < slen) si++;
+    int ll = le - ls;
+    if (ll == 14 && memcmp(src + ls, "[dependencies]", 14) == 0)
+      in_deps = 1;
+    else if (ll > 0 && src[ls] == '[')
+      in_deps = 0;
+    if (in_deps && ll > plen + 2 && src[ls] == '"'
+        && memcmp(src + ls + 1, pkg, plen) == 0
+        && src[ls + 1 + plen] == '"') {
+      found = 1;
+      continue; /* skip this line */
+    }
+    if (oi + ll + 1 >= omax) return -1;
+    memcpy(out + oi, src + ls, ll); oi += ll;
+    out[oi++] = '\n';
+  }
+  return found ? oi : -1;
+}
 %}
 
 end
@@ -1469,10 +1597,10 @@ in
       println! ("lock: no bats.lock found, full resolution not yet implemented")
 end
 
-fn do_build(): void = let
+fn do_build(release: int): void = let
   (* Step 1: mkdir build directories *)
   val cmd = $B.create()
-  val () = bput(cmd, "mkdir -p build/src/bin build/bats_modules dist/debug")
+  val () = bput(cmd, "mkdir -p build/src/bin build/bats_modules dist/debug dist/release")
   val r0 = run_sh(cmd, 0)
   val () = (if r0 <> 0 then println! ("error: mkdir failed") else ())
 in
@@ -1599,7 +1727,7 @@ in
         | ~$R.ok(d2) => let
             fun scan_bins {lph:agz}{fuel:nat} .<fuel>.
               (d: !$F.dir, ph: !$A.borrow(byte, lph, 512),
-               phlen: int, fuel: int fuel): void =
+               phlen: int, rel: int, fuel: int fuel): void =
               if fuel <= 0 then ()
               else let
                 val ent = $A.alloc<byte>(256)
@@ -1613,7 +1741,7 @@ in
                 in
                   if dd then let
                     val () = $A.free<byte>(ent)
-                  in scan_bins(d, ph, phlen, fuel - 1) end
+                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
                   else if bb then let
                     val @(fz_e, bv_e) = $A.freeze<byte>(ent)
                     (* stem = name without .bats extension *)
@@ -1833,7 +1961,7 @@ in
                           fun clang_deps {lph:agz}{fuel4:nat} .<fuel4>.
                             (dd4: !$F.dir,
                              ph: !$A.borrow(byte, lph, 512), phlen: int,
-                             fuel4: int fuel4): void =
+                             rr: int, fuel4: int fuel4): void =
                             if fuel4 <= 0 then ()
                             else let
                               val de = $A.alloc<byte>(256)
@@ -1846,7 +1974,7 @@ in
                               in
                                 if ddd then let
                                   val () = $A.free<byte>(de)
-                                in clang_deps(dd4, ph, phlen, fuel4 - 1) end
+                                in clang_deps(dd4, ph, phlen, rr, fuel4 - 1) end
                                 else let
                                   val @(fz_de, bv_de) = $A.freeze<byte>(de)
                                   val cc = $B.create()
@@ -1856,7 +1984,9 @@ in
                                   val () = bput(cc, "/src/lib_dats.o build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, cc,
                                     $AR.checked_nat(dlen + 1))
-                                  val () = bput(cc, "/src/lib_dats.c -g -O0 -I")
+                                  val () = bput(cc, "/src/lib_dats.c ")
+                                  val () = (if rr > 0 then bput(cc, "-O2 -I")
+                                    else bput(cc, "-g -O0 -I"))
                                   val () = copy_to_builder(ph, 0, phlen, 512, cc,
                                     $AR.checked_nat(phlen + 1))
                                   val () = bput(cc, " -I")
@@ -1871,10 +2001,10 @@ in
                                   in print_newline() end else ())
                                   val () = $A.drop<byte>(fz_de, bv_de)
                                   val () = $A.free<byte>($A.thaw<byte>(fz_de))
-                                in clang_deps(dd4, ph, phlen, fuel4 - 1) end
+                                in clang_deps(dd4, ph, phlen, rr, fuel4 - 1) end
                               end
                             end
-                          val () = clang_deps(dd4, ph, phlen, 200)
+                          val () = clang_deps(dd4, ph, phlen, rel, 200)
                           val dcr4 = $F.dir_close(dd4)
                           val () = $R.discard<int><int>(dcr4)
                         in end
@@ -1888,7 +2018,8 @@ in
                     val () = bput(cbin, "_dats.o build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cbin,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(cbin, "_dats.c -g -O0 -I")
+                    val () = (if rel > 0 then bput(cbin, "_dats.c -O2 -I")
+                      else bput(cbin, "_dats.c -g -O0 -I"))
                     val () = copy_to_builder(ph, 0, phlen, 512, cbin,
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cbin, " -I")
@@ -1905,7 +2036,8 @@ in
                     val () = bput(cent, "_dats.o build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cent,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(cent, "_dats.c -g -O0 -I")
+                    val () = (if rel > 0 then bput(cent, "_dats.c -O2 -I")
+                      else bput(cent, "_dats.c -g -O0 -I"))
                     val () = copy_to_builder(ph, 0, phlen, 512, cent,
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cent, " -I")
@@ -1916,7 +2048,9 @@ in
 
                     (* Step 8: Link *)
                     val link = $B.create()
-                    val () = bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/debug/")
+                    val () = (if rel > 0 then
+                      bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/release/")
+                      else bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/debug/"))
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(link, " build/_bats_entry_")
@@ -1966,7 +2100,8 @@ in
                           val () = $R.discard<int><int>(dcr5)
                         in end
                       | ~$R.err(_) => ())
-                    val () = bput(link, " -g -O0")
+                    val () = (if rel > 0 then bput(link, " -O2")
+                      else bput(link, " -g -O0"))
                     val rl = run_sh(link, 0)
 
                     val () = $A.drop<byte>(fz_sp, bv_sp)
@@ -1976,20 +2111,21 @@ in
                     val () = $A.drop<byte>(fz_sd, bv_sd)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sd))
                     val () = (if rl = 0 then let
-                      val () = print! ("  built: dist/debug/")
+                      val () = (if rel > 0 then print! ("  built: dist/release/")
+                        else print! ("  built: dist/debug/"))
                       val () = print_borrow(bv_e, 0, stem_len, 256,
                         $AR.checked_nat(stem_len + 1))
                     in print_newline() end
                     else println! ("error: link failed"))
                     val () = $A.drop<byte>(fz_e, bv_e)
                     val () = $A.free<byte>($A.thaw<byte>(fz_e))
-                  in scan_bins(d, ph, phlen, fuel - 1) end
+                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
                   else let
                     val () = $A.free<byte>(ent)
-                  in scan_bins(d, ph, phlen, fuel - 1) end
+                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
                 end
               end
-            val () = scan_bins(d2, bv_patshome, phlen, 100)
+            val () = scan_bins(d2, bv_patshome, phlen, release, 100)
             val dcr2 = $F.dir_close(d2)
             val () = $R.discard<int><int>(dcr2)
           in end
@@ -2219,6 +2355,42 @@ fn cmd_is_tree {l:agz}{n:pos}
     else false
   end
 
+fn cmd_is_add {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 3 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 2 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+      in (* "add" = 97,100,100 *)
+        $AR.eq_int_int(c0, 97) && $AR.eq_int_int(c1, 100) &&
+        $AR.eq_int_int(c2, 100)
+      end else false
+    else false
+  end
+
+fn cmd_is_remove {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 6 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 5 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+        val c4 = byte2int0($A.get<byte>(buf, o0 + 4))
+        val c5 = byte2int0($A.get<byte>(buf, o0 + 5))
+      in (* "remove" = 114,101,109,111,118,101 *)
+        $AR.eq_int_int(c0, 114) && $AR.eq_int_int(c1, 101) &&
+        $AR.eq_int_int(c2, 109) && $AR.eq_int_int(c3, 111) &&
+        $AR.eq_int_int(c4, 118) && $AR.eq_int_int(c5, 101)
+      end else false
+    else false
+  end
+
 fn cmd_is_version {l:agz}{n:pos}
   (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
   if len <> 9 then false
@@ -2380,6 +2552,105 @@ in
 end
 
 (* ============================================================
+   add: add a dependency to bats.toml
+   ============================================================ *)
+fn do_add {l:agz}{n:pos}
+  (bv: !$A.borrow(byte, l, n), pkg_start: int, pkg_len: int,
+   max: int n): void = let
+  (* Read bats.toml *)
+  val tp = str_to_path_arr("bats.toml")
+  val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
+  val tor = $F.file_open(bv_tp, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_tp, bv_tp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+in
+  case+ tor of
+  | ~$R.ok(tfd) => let
+      val tbuf = $A.alloc<byte>(4096)
+      val trr = $F.file_read(tfd, tbuf, 4096)
+      val tlen = (case+ trr of | ~$R.ok(nn) => nn | ~$R.err(_) => 0): int
+      val tcr = $F.file_close(tfd)
+      val () = $R.discard<int><int>(tcr)
+      val out = $A.alloc<byte>(8192)
+      val nlen = $UNSAFE begin
+        $extfcall(int, "_bpoc_inject_dep",
+          $UNSAFE.castvwtp1{ptr}(tbuf), tlen,
+          ptr_add<byte>($UNSAFE.castvwtp1{ptr}(bv), g1ofg0(pkg_start)), pkg_len,
+          "", 0,
+          $UNSAFE.castvwtp1{ptr}(out), 8192)
+      end
+      val () = $A.free<byte>(tbuf)
+    in
+      if nlen > 0 then let
+        val rc = $UNSAFE begin $extfcall(int, "_bpoc_write_file",
+          "bats.toml", $UNSAFE.castvwtp1{ptr}(out), nlen) end
+        val () = $A.free<byte>(out)
+      in
+        if rc = 0 then let
+            val () = print! ("added '")
+            val () = print_borrow(bv, pkg_start, pkg_start + pkg_len, max,
+              $AR.checked_nat(pkg_len + 1))
+          in println! ("' to [dependencies]") end
+        else println! ("error: cannot write bats.toml")
+      end
+      else let
+        val () = $A.free<byte>(out)
+      in println! ("error: failed to update bats.toml") end
+    end
+  | ~$R.err(_) => println! ("error: cannot open bats.toml")
+end
+
+(* ============================================================
+   remove: remove a dependency from bats.toml
+   ============================================================ *)
+fn do_remove {l:agz}{n:pos}
+  (bv: !$A.borrow(byte, l, n), pkg_start: int, pkg_len: int,
+   max: int n): void = let
+  val tp = str_to_path_arr("bats.toml")
+  val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
+  val tor = $F.file_open(bv_tp, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_tp, bv_tp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+in
+  case+ tor of
+  | ~$R.ok(tfd) => let
+      val tbuf = $A.alloc<byte>(4096)
+      val trr = $F.file_read(tfd, tbuf, 4096)
+      val tlen = (case+ trr of | ~$R.ok(nn) => nn | ~$R.err(_) => 0): int
+      val tcr = $F.file_close(tfd)
+      val () = $R.discard<int><int>(tcr)
+      val out = $A.alloc<byte>(8192)
+      val nlen = $UNSAFE begin
+        $extfcall(int, "_bpoc_strip_dep",
+          $UNSAFE.castvwtp1{ptr}(tbuf), tlen,
+          ptr_add<byte>($UNSAFE.castvwtp1{ptr}(bv), g1ofg0(pkg_start)), pkg_len,
+          $UNSAFE.castvwtp1{ptr}(out), 8192)
+      end
+      val () = $A.free<byte>(tbuf)
+    in
+      if nlen > 0 then let
+        val rc = $UNSAFE begin $extfcall(int, "_bpoc_write_file",
+          "bats.toml", $UNSAFE.castvwtp1{ptr}(out), nlen) end
+        val () = $A.free<byte>(out)
+      in
+        if rc = 0 then let
+            val () = print! ("removed '")
+            val () = print_borrow(bv, pkg_start, pkg_start + pkg_len, max,
+              $AR.checked_nat(pkg_len + 1))
+          in println! ("' from [dependencies]") end
+        else println! ("error: cannot write bats.toml")
+      end
+      else let
+        val () = $A.free<byte>(out)
+        val () = print! ("error: package '")
+        val () = print_borrow(bv, pkg_start, pkg_start + pkg_len, max,
+          $AR.checked_nat(pkg_len + 1))
+      in println! ("' not found in [dependencies]") end
+    end
+  | ~$R.err(_) => println! ("error: cannot open bats.toml")
+end
+
+(* ============================================================
    Process spawning
    ============================================================ *)
 
@@ -2465,7 +2736,8 @@ end
    run: build then execute the binary
    ============================================================ *)
 fn do_run(): void = let
-  val () = do_build()
+  val () = do_build(0)
+  val () = do_build(1)
   (* Read bats.toml to find the package name *)
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
@@ -2748,8 +3020,36 @@ in
             val () = $A.free<byte>(cl_buf)
           in do_check() end
           else if cmd_is_build(cl_buf, cmd_start, cmd_len, 4096) then let
-            val () = $A.free<byte>(cl_buf)
-          in do_build() end
+            val @(fz_cb, bv_cb) = $A.freeze<byte>(cl_buf)
+            val only_val = $A.alloc<byte>(32)
+            val olen = $UNSAFE begin
+              $extfcall(int, "_bpoc_get_flag_val",
+                $UNSAFE.castvwtp1{ptr}(bv_cb), cl_n, cmd_end + 1,
+                "--only", $UNSAFE.castvwtp1{ptr}(only_val), 32)
+            end
+            val () = $A.drop<byte>(fz_cb, bv_cb)
+            val () = $A.free<byte>($A.thaw<byte>(fz_cb))
+            (* Check if --only debug or --only release *)
+            val @(fz_ov, bv_ov) = $A.freeze<byte>(only_val)
+            val only_debug = (if olen = 5 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+              val b1 = byte2int0($A.read<byte>(bv_ov, 1))
+            in $AR.eq_int_int(b0, 100) && $AR.eq_int_int(b1, 101) end
+              else false): bool
+            val only_release = (if olen = 7 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+              val b1 = byte2int0($A.read<byte>(bv_ov, 1))
+            in $AR.eq_int_int(b0, 114) && $AR.eq_int_int(b1, 101) end
+              else false): bool
+            val () = $A.drop<byte>(fz_ov, bv_ov)
+            val () = $A.free<byte>($A.thaw<byte>(fz_ov))
+          in
+            if only_debug then do_build(0)
+            else if only_release then do_build(1)
+            else let
+              val () = do_build(0)
+            in do_build(1) end
+          end
           else if cmd_is_clean(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in do_clean() end
@@ -2765,12 +3065,44 @@ in
           else if cmd_is_tree(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in do_tree() end
+          else if cmd_is_add(cl_buf, cmd_start, cmd_len, 4096) then let
+            val pkg_start = cmd_end + 1
+            val pkg_end = find_null(cl_buf, pkg_start, 4096, 4096)
+            val pkg_len = pkg_end - pkg_start
+            val @(fz_ab, bv_ab) = $A.freeze<byte>(cl_buf)
+          in
+            if pkg_len > 0 then let
+              val () = do_add(bv_ab, pkg_start, pkg_len, 4096)
+              val () = $A.drop<byte>(fz_ab, bv_ab)
+              val () = $A.free<byte>($A.thaw<byte>(fz_ab))
+            in end
+            else let
+              val () = $A.drop<byte>(fz_ab, bv_ab)
+              val () = $A.free<byte>($A.thaw<byte>(fz_ab))
+            in println! ("error: specify a package name\nusage: bats-poc add <package>") end
+          end
+          else if cmd_is_remove(cl_buf, cmd_start, cmd_len, 4096) then let
+            val pkg_start = cmd_end + 1
+            val pkg_end = find_null(cl_buf, pkg_start, 4096, 4096)
+            val pkg_len = pkg_end - pkg_start
+            val @(fz_rb, bv_rb) = $A.freeze<byte>(cl_buf)
+          in
+            if pkg_len > 0 then let
+              val () = do_remove(bv_rb, pkg_start, pkg_len, 4096)
+              val () = $A.drop<byte>(fz_rb, bv_rb)
+              val () = $A.free<byte>($A.thaw<byte>(fz_rb))
+            in end
+            else let
+              val () = $A.drop<byte>(fz_rb, bv_rb)
+              val () = $A.free<byte>($A.thaw<byte>(fz_rb))
+            in println! ("error: specify a package name\nusage: bats-poc remove <package>") end
+          end
           else if cmd_is_version(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in println! ("bats-poc 0.1.0") end
           else let
             val () = $A.free<byte>(cl_buf)
-          in println! ("usage: bats-poc <check|build|clean|lock|run|init|tree|--version>") end
+          in println! ("usage: bats-poc <check|build|clean|lock|run|init|tree|add|remove|--version> [--only debug|release]") end
         end
       | ~$R.err(e) => let
           val cr = $F.file_close(cl_fd)
