@@ -33,23 +33,26 @@ fn is_test_mode(): bool = !g_test_mode
    String builder helper (safe, no $UNSAFE)
    ============================================================ *)
 
-(* Copy a string into a builder using string_get_at *)
-fun bput_loop {fuel:nat} .<fuel>.
-  (b: !$B.builder, s: string, i: int, n: int, fuel: int fuel): void =
+(* Copy a string into a builder using proof-tracked string length *)
+fun bput_loop {sn:nat}{fuel:nat} .<fuel>.
+  (b: !$B.builder, s: string sn, slen: int sn, i: int, fuel: int fuel): void =
   if fuel <= 0 then ()
-  else if i >= n then ()
   else let
     val ii = g1ofg0(i)
-    val c = (if $AR.gte_int_int(ii, 0) then char2int0(string_get_at(s, ii)) else 0): int
   in
-    if c = 0 then ()
-    else let val () = $B.put_byte(b, c)
-    in bput_loop(b, s, i + 1, n, fuel - 1) end
+    if ii >= 0 then
+      if $AR.lt1_int_int(ii, slen) then let
+        val c = char2int0(string_get_at(s, ii))
+        val () = $B.put_byte(b, c)
+      in bput_loop(b, s, slen, i + 1, fuel - 1) end
+      else ()
+    else ()
   end
 
-fn bput(b: !$B.builder, s: string): void = let
-  val n = sz2i(string_length(s))
-in bput_loop(b, s, 0, n + 1, $AR.checked_nat(n + 2)) end
+fn bput {sn:nat} (b: !$B.builder, s: string sn): void = let
+  val slen_sz = string1_length(s)
+  val slen = g1u2i(slen_sz)
+in bput_loop(b, s, slen, 0, $AR.checked_nat(g0ofg1(slen) + 1)) end
 
 
 fun print_arr {l:agz}{n:pos}{fuel:nat} .<fuel>.
@@ -1353,7 +1356,7 @@ fun arr_range_to_builder {l:agz}{fuel:nat} .<fuel>.
   else let
     val ii = g1ofg0(i)
   in
-    if $AR.gte_int_int(ii, 0) then
+    if ii >= 0 then
       if $AR.lt1_int_int(ii, 4096) then let
         val b = byte2int0($A.get<byte>(src, ii))
         val () = $B.put_byte(dst, b)
@@ -1362,36 +1365,32 @@ fun arr_range_to_builder {l:agz}{fuel:nat} .<fuel>.
     else ()
   end
 
-(* Fill helper for str_to_arr4096: passes linear arr explicitly *)
-fun str_fill_loop {lb:agz}{fuel:nat} .<fuel>.
-  (b: !$A.arr(byte, lb, 4096), s: string, i: int, fuel: int fuel): void =
+(* Fill helper for str_to_arr4096: uses proof-tracked string length *)
+fun str_fill_loop {lb:agz}{sn:nat}{fuel:nat} .<fuel>.
+  (b: !$A.arr(byte, lb, 4096), s: string sn, slen: int sn, i: int, fuel: int fuel): void =
   if fuel <= 0 then ()
   else let
     val ii = g1ofg0(i)
   in
-    if $AR.gte_int_int(ii, 0) then
-      if $AR.lt1_int_int(ii, 4096) then let
-        val c = char2int0(string_get_at(s, ii))
-        val () = $A.set<byte>(b, ii, int2byte0(c))
-      in
-        if $AR.eq_int_int(c, 0) then ()
-        else str_fill_loop(b, s, i + 1, fuel - 1)
-      end
+    if ii >= 0 then
+      if $AR.lt1_int_int(ii, slen) then
+        if $AR.lt1_int_int(ii, 4096) then let
+          val c = char2int0(string_get_at(s, ii))
+          val () = $A.set<byte>(b, ii, int2byte0(c))
+        in str_fill_loop(b, s, slen, i + 1, fuel - 1) end
+        else ()
       else ()
     else ()
   end
 
 (* Build a 4096-byte arr from a string literal *)
-fn str_to_arr4096(s: string): [ls:agz] $A.arr(byte, ls, 4096) = let
+fn str_to_arr4096 {sn:nat} (s: string sn): [ls:agz] $A.arr(byte, ls, 4096) = let
   val b = $A.alloc<byte>(4096)
-  val slen = sz2i(string_length(s))
-  val () = str_fill_loop(b, s, 0, $AR.checked_nat(slen + 2))
-  (* Ensure null termination *)
-  val slen1 = g1ofg0(slen)
+  val slen_sz = string1_length(s)
+  val slen = g1u2i(slen_sz)
+  val () = str_fill_loop(b, s, slen, 0, $AR.checked_nat(g0ofg1(slen) + 2))
 in
-  (if $AR.gte_int_int(slen1, 0) then
-    if $AR.lt1_int_int(slen1, 4096) then $A.set<byte>(b, slen1, int2byte0(0))
-    else ()
+  (if slen < 4096 then $A.set<byte>(b, slen, int2byte0(0))
   else ()); b
 end
 
@@ -1415,10 +1414,10 @@ fun has_flag_loop {l:agz}{ls:agz}{fuel:nat} .<fuel>.
     else has_flag_loop(buf, cl_n, tend + 1, sarr, flen, fuel - 1)
   end
 
-fn has_flag {l:agz}
-  (buf: !$A.arr(byte, l, 4096), cl_n: int, start: int, flag: string): int = let
+fn has_flag {l:agz}{sn:nat}
+  (buf: !$A.arr(byte, l, 4096), cl_n: int, start: int, flag: string sn): int = let
   val sarr = str_to_arr4096(flag)
-  val flen = sz2i(string_length(flag))
+  val flen = sz2i(string1_length(flag))
   val r = has_flag_loop(buf, cl_n, start, sarr, flen, 4096)
   val () = $A.free<byte>(sarr)
 in r end
@@ -1435,9 +1434,9 @@ fun copy_token_to_arr {l:agz}{lo:agz}{no:pos}{fuel:nat} .<fuel>.
     val ii = g1ofg0(i)
     val ji = g1ofg0(j)
   in
-    if $AR.gte_int_int(ii, 0) then
+    if ii >= 0 then
       if $AR.lt1_int_int(ii, 4096) then
-        if $AR.gte_int_int(ji, 0) then
+        if ji >= 0 then
           if $AR.lt1_int_int(ji, max_out) then let
             val bv = byte2int0($A.get<byte>(buf, ii))
             val () = $A.set<byte>(out, ji, int2byte0(bv))
@@ -1467,16 +1466,16 @@ fun get_flag_val_loop {l:agz}{ls:agz}{lo:agz}{no:pos}{fuel:nat} .<fuel>.
       val vlen = val_end - val_start
     in
       if $AR.lte_int_int(vlen, 0) then 0
-      else copy_token_to_arr(buf, val_start, val_end, out, 0, max_out, vlen + 1)
+      else copy_token_to_arr(buf, val_start, val_end, out, 0, max_out, $AR.checked_nat(vlen + 1))
     end
     else get_flag_val_loop(buf, cl_n, tend + 1, sarr, flen, out, max_out, fuel - 1)
   end
 
-fn get_flag_val {l:agz}{lo:agz}{no:pos}
-  (buf: !$A.arr(byte, l, 4096), cl_n: int, start: int, flag: string,
+fn get_flag_val {l:agz}{lo:agz}{no:pos}{sn:nat}
+  (buf: !$A.arr(byte, l, 4096), cl_n: int, start: int, flag: string sn,
    out: !$A.arr(byte, lo, no), max_out: int no): int = let
   val sarr = str_to_arr4096(flag)
-  val flen = sz2i(string_length(flag))
+  val flen = sz2i(string1_length(flag))
   val r = get_flag_val_loop(buf, cl_n, start, sarr, flen, out, max_out, 4096)
   val () = $A.free<byte>(sarr)
 in r end
@@ -1488,9 +1487,9 @@ fn handle_run_in {l:agz}
    first_start: int, first_end: int, first_len: int): int =
   let
     val ri_sarr = str_to_arr4096("--run-in")
-    val is_run_in = ($AR.eq_int_int(first_len, 8) &&
-      token_matches(buf, first_start, first_end, ri_sarr)): bool
+    val ri_match = token_matches(buf, first_start, first_end, ri_sarr)
     val () = $A.free<byte>(ri_sarr)
+    val is_run_in = $AR.eq_int_int(first_len, 8) && ri_match
   in
     if is_run_in then let
       val dir_start = first_end + 1
@@ -1680,7 +1679,7 @@ end end
 
 (* Build a null-terminated path array from string.
    Returns arr(byte, l, 65536) for some l. Caller must free. *)
-fn str_to_path_arr(s: string): [l:agz] $A.arr(byte, l, 65536) = let
+fn str_to_path_arr {sn:nat} (s: string sn): [l:agz] $A.arr(byte, l, 65536) = let
   val b = $B.create()
   val () = bput(b, s)
   val () = $B.put_byte(b, 0)
@@ -1700,6 +1699,42 @@ in
   else ()
 end
 
+(* Strip trailing newline from a 4096-byte buffer. Returns adjusted length. *)
+fn strip_newline_arr {l:agz}
+  (buf: !$A.arr(byte, l, 4096), len: int): int =
+  if len <= 0 then 0
+  else let val last = g1ofg0(len - 1) in
+    if last >= 0 then
+      if last < 4096 then
+        (if byte2int0($A.get<byte>(buf, last)) = 10 then len - 1 else len): int
+      else len
+    else len
+  end
+
+(* Strip trailing newline from a 65536-byte buffer. Returns adjusted length. *)
+fn strip_newline_arr65536 {l:agz}
+  (buf: !$A.arr(byte, l, 65536), len: int): int =
+  if len <= 0 then 0
+  else let val last = g1ofg0(len - 1) in
+    if last >= 0 then
+      if last < 65536 then
+        (if byte2int0($A.get<byte>(buf, last)) = 10 then len - 1 else len): int
+      else len
+    else len
+  end
+
+(* Strip trailing newline from a 256-byte buffer. Returns adjusted length. *)
+fn strip_newline_arr256 {l:agz}
+  (buf: !$A.arr(byte, l, 256), len: int): int =
+  if len <= 0 then 0
+  else let val last = g1ofg0(len - 1) in
+    if last >= 0 then
+      if last < 256 then
+        (if byte2int0($A.get<byte>(buf, last)) = 10 then len - 1 else len): int
+      else len
+    else len
+  end
+
 (* ============================================================
    lock: read bats.lock and verify it exists
    ============================================================ *)
@@ -1718,10 +1753,7 @@ fn do_lock(): void = let
         val rcr = $F.file_close(rfd)
         val () = $R.discard<int><int>(rcr)
         (* strip trailing newline *)
-        val rlen2 = (if rl > 0 then let val last2 = g1ofg0(rl - 1) in
-          if last2 >= 0 then if last2 < 4096 then
-            (if byte2int0($A.get<byte>(rb, last2)) = 10 then rl - 1 else rl): int
-          else rl else rl end else 0): int
+        val rlen2 = strip_newline_arr(rb, rl)
       in @(rb, rlen2) end
     | ~$R.err(_) => let val rb = $A.alloc<byte>(4096) in @(rb, 0) end): [lrb:agz] @($A.arr(byte, lrb, 4096), int)
 in
@@ -2925,10 +2957,7 @@ in
                 val url = (case+ urr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
                 val urcr = $F.file_close(urfd)
                 val () = $R.discard<int><int>(urcr)
-                val url2 = (if url > 0 then let val ulast = g1ofg0(url - 1) in
-                  if ulast >= 0 then if ulast < 65536 then
-                    (if byte2int0($A.get<byte>(repo_b2, ulast)) = 10 then url - 1 else url): int
-                  else url else url end else 0): int
+                val url2 = strip_newline_arr65536(repo_b2, url)
               in @(repo_b2, url2) end
             | ~$R.err(_) => let val repo_b2 = $A.alloc<byte>(65536) in @(repo_b2, 0) end): [lurb:agz] @($A.arr(byte, lurb, 65536), int)
         in
@@ -2937,8 +2966,7 @@ in
             if is_lib then
               if rplen > 0 then let
                 (* Get version: from git log or date *)
-                val verbuf = $A.alloc<byte>(64)
-                val verlen = let
+                val @(verbuf, verlen) = (let
                   val vcmd = $B.create()
                   val () = bput(vcmd, "git log -1 --format=%cd --date=format:%Y.%-m.%-d 2>/dev/null | tr -d '\\n' > /tmp/_bpoc_ver.txt || date +%Y.%-m.%-d > /tmp/_bpoc_ver.txt")
                   val _ = run_sh(vcmd, 0)
@@ -2949,13 +2977,14 @@ in
                   val () = $A.free<byte>($A.thaw<byte>(fz_vp))
                 in case+ vf of
                   | ~$R.ok(vfd) => let
-                      val vr = $F.file_read(vfd, verbuf, 64)
+                      val vb = $A.alloc<byte>(64)
+                      val vr = $F.file_read(vfd, vb, 64)
                       val vl = (case+ vr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
                       val vcr = $F.file_close(vfd)
                       val () = $R.discard<int><int>(vcr)
-                    in vl end
-                  | ~$R.err(_) => 0
-                end
+                    in @(vb, vl) end
+                  | ~$R.err(_) => let val vb = $A.alloc<byte>(64) in @(vb, 0) end
+                end): [lvb:agz] @($A.arr(byte, lvb, 64), int)
                 val @(fz_vb, bv_vb) = $A.freeze<byte>(verbuf)
                 (* Build output zip path: repo/pkg/prefix_ver.bats *)
                 val zip_path = $B.create()
@@ -3011,15 +3040,14 @@ in
                 in println! ("error: upload failed") end
                 else let
                   (* Write SHA-256 sidecar file: zip_path + ".sha256" *)
-                  val sha_buf = $A.alloc<byte>(65)
-                  val sha_rc = let
+                  val @(sha_buf, sha_rc) = (let
                     val sha_cmd = $B.create()
                     val () = bput(sha_cmd, "sha256sum ")
                     val () = copy_to_builder(bv_zp, 0, zpa_len - 1, 65536, sha_cmd, $AR.checked_nat(zpa_len + 1))
                     val () = bput(sha_cmd, " | head -c 64 > /tmp/_bpoc_sha.txt")
                     val sha_r = run_sh(sha_cmd, 0)
                   in
-                    if sha_r <> 0 then ~1
+                    if sha_r <> 0 then let val sb = $A.alloc<byte>(65) in @(sb, ~1) end
                     else let
                       val sp3 = str_to_path_arr("/tmp/_bpoc_sha.txt")
                       val @(fz_sp3, bv_sp3) = $A.freeze<byte>(sp3)
@@ -3028,14 +3056,15 @@ in
                       val () = $A.free<byte>($A.thaw<byte>(fz_sp3))
                     in case+ sf of
                       | ~$R.ok(sfd) => let
-                          val sr2 = $F.file_read(sfd, sha_buf, 65)
+                          val sb = $A.alloc<byte>(65)
+                          val sr2 = $F.file_read(sfd, sb, 65)
                           val slen2 = (case+ sr2 of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
                           val scr = $F.file_close(sfd)
                           val () = $R.discard<int><int>(scr)
-                        in (if slen2 >= 64 then 0 else ~1) end
-                      | ~$R.err(_) => ~1
+                        in @(sb, (if slen2 >= 64 then 0 else ~1): int) end
+                      | ~$R.err(_) => let val sb = $A.alloc<byte>(65) in @(sb, ~1) end
                     end
-                  end
+                  end): [lsb:agz] @($A.arr(byte, lsb, 65), int)
                   val () = (if sha_rc = 0 then let
                     val sidecar = $B.create()
                     val @(fz_sh, bv_sh) = $A.freeze<byte>(sha_buf)
@@ -3103,8 +3132,7 @@ fn do_completions(shell: int): void =
 fn do_init(kind: int): void = let
   (* kind: 0=binary, 1=library *)
   (* Get current directory name via readlink /proc/self/cwd *)
-  val cwd_buf = $A.alloc<byte>(4096)
-  val cwd_len = let
+  val @(cwd_buf, cwd_len) = (let
     val cc = $B.create()
     val () = bput(cc, "readlink /proc/self/cwd > /tmp/_bpoc_cwd.txt 2>/dev/null || pwd > /tmp/_bpoc_cwd.txt 2>/dev/null")
     val _ = run_sh(cc, 0)
@@ -3115,24 +3143,16 @@ fn do_init(kind: int): void = let
     val () = $A.free<byte>($A.thaw<byte>(fz_cp))
   in case+ cf of
     | ~$R.ok(cfd) => let
-        val cr2 = $F.file_read(cfd, cwd_buf, 4096)
+        val cb = $A.alloc<byte>(4096)
+        val cr2 = $F.file_read(cfd, cb, 4096)
         val clen = (case+ cr2 of | ~$R.ok(nn) => nn | ~$R.err(_) => 0): int
         val ccr = $F.file_close(cfd)
         val () = $R.discard<int><int>(ccr)
         (* strip trailing newline *)
-      in (if clen > 0 then let
-          val last = g1ofg0(clen - 1)
-        in
-          if last >= 0 then
-            if last < 4096 then
-              (if byte2int0($A.get<byte>(cwd_buf, last)) = 10 then clen - 1
-               else clen): int
-            else clen
-          else clen
-        end
-        else 0): int end
-    | ~$R.err(_) => 0
-  end
+        val clen2 = strip_newline_arr(cb, clen)
+      in @(cb, clen2) end
+    | ~$R.err(_) => let val cb = $A.alloc<byte>(4096) in @(cb, 0) end
+  end): [lcwd:agz] @($A.arr(byte, lcwd, 4096), int)
   val @(fz_cwd, bv_cwd) = $A.freeze<byte>(cwd_buf)
   (* Find last '/' in cwd path to extract basename *)
   fun find_last_slash {l2:agz}{fuel2:nat} .<fuel2>.
@@ -3460,10 +3480,7 @@ in
                     val brl = (case+ brr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
                     val bcr = $F.file_close(bfd2)
                     val () = $R.discard<int><int>(bcr)
-                    val brl2 = (if brl > 0 then let val blast = g1ofg0(brl - 1) in
-                      if blast >= 0 then if blast < 256 then
-                        (if byte2int0($A.get<byte>(bbn, blast)) = 10 then brl - 1 else brl): int
-                      else brl else brl end else 0): int
+                    val brl2 = strip_newline_arr256(bbn, brl)
                   in @(bbn, brl2) end
                 | ~$R.err(_) => let val bbn = $A.alloc<byte>(256) in @(bbn, 0) end): [lbbn:agz] @($A.arr(byte, lbbn, 256), int)
               val cmd = $B.create()
@@ -3732,10 +3749,10 @@ in
           val has_quiet = has_flag(cl_buf, cl_n, cmd_end + 1, "--quiet")
           val has_q = has_flag(cl_buf, cl_n, cmd_end + 1, "-q")
           val () = (if has_verbose > 0 orelse has_v > 0 then
-            (g_verbose := true)
+            (!g_verbose := true)
             else ())
           val () = (if has_quiet > 0 orelse has_q > 0 then
-            (g_quiet := true)
+            (!g_quiet := true)
             else ())
           (* Parse --repository flag: store in /tmp/_bpoc_repo.txt for later use *)
           val repo_buf = $A.alloc<byte>(4096)
@@ -3753,8 +3770,7 @@ in
               val () = $A.drop<byte>(fz_rtp, bv_rtp)
               val () = $A.free<byte>($A.thaw<byte>(fz_rtp))
             in end
-            else ())
-          val () = $A.free<byte>(repo_buf)
+            else $A.free<byte>(repo_buf))
         in
           if cmd_is_check(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
@@ -3812,8 +3828,7 @@ in
                 val () = $A.drop<byte>(fz_btp, bv_btp)
                 val () = $A.free<byte>($A.thaw<byte>(fz_btp))
               in end
-              else ())
-            val () = $A.free<byte>(bin_buf)
+              else $A.free<byte>(bin_buf))
             val () = $A.free<byte>(cl_buf)
           in do_run() end
           else if cmd_is_init(cl_buf, cmd_start, cmd_len, 4096) then let
@@ -3822,30 +3837,22 @@ in
             val arg_end = find_null(cl_buf, arg_start, 4096, 4096)
             val arg_len = arg_end - arg_start
             (* Check for "binary"(6) or "bin"(3) → 0, "library"(7) or "lib"(3) → 1 *)
-            val kind = (if arg_len = 6 orelse arg_len = 3 then let
-                val a0 = g1ofg0(arg_start)
-              in
-                if a0 >= 0 then
-                  if a0 < 4096 then let
-                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
-                  in
-                    if $AR.eq_int_int(c0, 98) then 0  (* 'b' = binary/bin *)
-                    else if $AR.eq_int_int(c0, 108) then 1  (* 'l' = library/lib *)
-                    else ~1
-                  end else ~1
-                else ~1
-              end
-            else if arg_len = 7 then let
-                val a0 = g1ofg0(arg_start)
-              in
-                if a0 >= 0 then
-                  if a0 < 4096 then let
-                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
-                  in if $AR.eq_int_int(c0, 108) then 1 else ~1 end
+            fn get_init_kind {l2:agz}
+              (buf: !$A.arr(byte, l2, 4096), astart: int, alen: int): int =
+              if alen = 3 orelse alen = 6 orelse alen = 7 then
+                let val a0 = g1ofg0(astart) in
+                  if a0 >= 0 then
+                    if a0 < 4096 then let
+                      val c0 = byte2int0($A.get<byte>(buf, a0))
+                    in
+                      if $AR.eq_int_int(c0, 98) then 0    (* 'b' = binary/bin *)
+                      else if $AR.eq_int_int(c0, 108) then 1  (* 'l' = library/lib *)
+                      else ~1
+                    end else ~1
                   else ~1
-                else ~1
-              end
-            else ~1): int
+                end
+              else ~1
+            val kind = get_init_kind(cl_buf, arg_start, arg_len)
             val () = $A.free<byte>(cl_buf)
           in
             if kind >= 0 then do_init(kind)
@@ -3897,30 +3904,24 @@ in
             val arg_end = find_null(cl_buf, arg_start, 4096, 4096)
             val arg_len = arg_end - arg_start
             (* "bash"=4: b=98, "zsh"=3: z=122, "fish"=4: f=102 *)
-            val shell = (if arg_len = 4 then let
-                val a0 = g1ofg0(arg_start)
-              in
+            fn get_shell_kind {l2:agz}
+              (buf: !$A.arr(byte, l2, 4096), astart: int, alen: int): int =
+              let val a0 = g1ofg0(astart) in
                 if a0 >= 0 then
                   if a0 < 4096 then let
-                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                    val c0 = byte2int0($A.get<byte>(buf, a0))
                   in
-                    if $AR.eq_int_int(c0, 98) then 0  (* 'b' = bash *)
-                    else if $AR.eq_int_int(c0, 102) then 2  (* 'f' = fish *)
+                    if alen = 4 then
+                      (if $AR.eq_int_int(c0, 98) then 0    (* 'b' = bash *)
+                       else if $AR.eq_int_int(c0, 102) then 2  (* 'f' = fish *)
+                       else ~1)
+                    else if alen = 3 then
+                      (if $AR.eq_int_int(c0, 122) then 1 else ~1)  (* 'z' = zsh *)
                     else ~1
                   end else ~1
                 else ~1
               end
-            else if arg_len = 3 then let
-                val a0 = g1ofg0(arg_start)
-              in
-                if a0 >= 0 then
-                  if a0 < 4096 then let
-                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
-                  in if $AR.eq_int_int(c0, 122) then 1 else ~1 end
-                  else ~1
-                else ~1
-              end
-            else ~1): int
+            val shell = get_shell_kind(cl_buf, arg_start, arg_len)
             val () = $A.free<byte>(cl_buf)
           in
             if shell >= 0 then do_completions(shell)
