@@ -1230,8 +1230,102 @@ fn do_emit {ls:agz}{ns:pos}{lp:agz}{np:pos}
   val () = emit_spans(src, src_max, spans, span_max, span_count, 0,
     sats_b, dats_b, $AR.checked_nat(span_count + 1))
 
+  (* Rename the entry point function in the .dats output *)
+  val @(dats_tmp, dats_tmp_len) = $B.to_arr(dats_b)
+  val @(fz_dt, bv_dt) = $A.freeze<byte>(dats_tmp)
+  (* Search for the entry point pattern: 15 chars starting with 'i' *)
+  fun find_impl_main0 {ld:agz}{nd:pos}{fuel:nat} .<fuel>.
+    (bv: !$A.borrow(byte, ld, nd), len: int, max: int nd, pos: int, fuel: int fuel): int =
+    if fuel <= 0 then ~1
+    else if pos + 15 > len then ~1
+    else let
+      val p = g1ofg0(pos)
+    in
+      if p >= 0 then if p + 14 < max then let
+        val b0 = byte2int0($A.read<byte>(bv, p))
+      in
+        if $AR.eq_int_int(b0, 105) then let (* 'i' *)
+          val b4 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 4, max)))
+          val b9 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 9, max)))
+          val b10 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 10, max)))
+          val b14 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 14, max)))
+        in
+          (* Check pattern: e=101@4, ' '=32@9, m=109@10, 0=48@14 *)
+          if $AR.eq_int_int(b4, 101) then
+            if $AR.eq_int_int(b9, 32) then
+              if $AR.eq_int_int(b10, 109) then
+                if $AR.eq_int_int(b14, 48) then let
+                  (* Verify full match: check remaining bytes *)
+                  val b1 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 1, max)))
+                  val b2 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 2, max)))
+                  val b3 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 3, max)))
+                  val b5 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 5, max)))
+                  val b6 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 6, max)))
+                  val b7 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 7, max)))
+                  val b8 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 8, max)))
+                  val b11 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 11, max)))
+                  val b12 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 12, max)))
+                  val b13 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 13, max)))
+                in
+                  (* m=109 p=112 l=108 e=101 m=109 e=101 n=110 t=116 a=97 i=105 n=110 *)
+                  if $AR.eq_int_int(b1, 109) then
+                    if $AR.eq_int_int(b2, 112) then
+                      if $AR.eq_int_int(b3, 108) then
+                        if $AR.eq_int_int(b5, 109) then
+                          if $AR.eq_int_int(b6, 101) then
+                            if $AR.eq_int_int(b7, 110) then
+                              if $AR.eq_int_int(b8, 116) then
+                                if $AR.eq_int_int(b11, 97) then
+                                  if $AR.eq_int_int(b12, 105) then
+                                    if $AR.eq_int_int(b13, 110) then pos
+                                    else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                                  else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                                else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                              else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                            else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                          else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                        else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                      else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                    else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                  else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+                end
+                else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+              else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+            else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+          else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+        end
+        else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
+      end else ~1 else ~1
+    end
+  val main0_pos = find_impl_main0(bv_dt, dats_tmp_len, 65536,
+    0, $AR.checked_nat(dats_tmp_len + 1))
+  val has_main0 = main0_pos >= 0
+
+  (* Build final dats with rename *)
+  val dats_final = $B.create()
+  val () = (if has_main0 then let
+    (* Copy before match *)
+    val () = emit_range(bv_dt, 0, main0_pos, 65536, dats_final,
+      $AR.checked_nat(main0_pos + 1))
+    (* Write replacement *)
+    val () = bput(dats_final, "implement __BATS_main0")
+    (* Copy after match+15 *)
+    val after = main0_pos + 15
+    val () = emit_range(bv_dt, after, dats_tmp_len, 65536, dats_final,
+      $AR.checked_nat(dats_tmp_len - after + 1))
+  in end
+  else (* No main0, just copy as-is *)
+    emit_range(bv_dt, 0, dats_tmp_len, 65536, dats_final,
+      $AR.checked_nat(dats_tmp_len + 1))
+  )
+  val () = $A.drop<byte>(fz_dt, bv_dt)
+  val () = $A.free<byte>($A.thaw<byte>(fz_dt))
+
+  (* If has main0, add declaration to sats *)
+  val () = (if has_main0 then bput(sats_b, "\nfun __BATS_main0 (): void\n") else ())
+
   val @(sats_arr, sats_len) = $B.to_arr(sats_b)
-  val @(dats_arr, dats_len) = $B.to_arr(dats_b)
+  val @(dats_arr, dats_len) = $B.to_arr(dats_final)
 in @(sats_arr, sats_len, dats_arr, dats_len, prelude_lines) end
 
 (* ============================================================
