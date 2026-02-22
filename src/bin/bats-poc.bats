@@ -1779,7 +1779,7 @@ in
                                 else let
                                   val @(fz_de, bv_de) = $A.freeze<byte>(de)
                                   val cc = $B.create()
-                                  val () = bput(cc, "cc -c -o build/bats_modules/")
+                                  val () = bput(cc, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, cc,
                                     $AR.checked_nat(dlen + 1))
                                   val () = bput(cc, "/src/lib_dats.o build/bats_modules/")
@@ -1811,7 +1811,7 @@ in
 
                     (* Compile binary *)
                     val cbin = $B.create()
-                    val () = bput(cbin, "cc -c -o build/src/bin/")
+                    val () = bput(cbin, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cbin,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(cbin, "_dats.o build/src/bin/")
@@ -1828,7 +1828,7 @@ in
 
                     (* Compile entry *)
                     val cent = $B.create()
-                    val () = bput(cent, "cc -c -o build/_bats_entry_")
+                    val () = bput(cent, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cent,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(cent, "_dats.o build/_bats_entry_")
@@ -1845,7 +1845,7 @@ in
 
                     (* Step 8: Link *)
                     val link = $B.create()
-                    val () = bput(link, "cc -o dist/debug/")
+                    val () = bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/debug/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(link, " build/_bats_entry_")
@@ -2113,6 +2113,166 @@ fn cmd_is_run {l:agz}{n:pos}
       end else false
     else false
   end
+
+fn cmd_is_init {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 4 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 3 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+      in (* "init" = 105,110,105,116 *)
+        $AR.eq_int_int(c0, 105) && $AR.eq_int_int(c1, 110) &&
+        $AR.eq_int_int(c2, 105) && $AR.eq_int_int(c3, 116)
+      end else false
+    else false
+  end
+
+fn cmd_is_tree {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 4 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 3 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+        val c2 = byte2int0($A.get<byte>(buf, o0 + 2))
+        val c3 = byte2int0($A.get<byte>(buf, o0 + 3))
+      in (* "tree" = 116,114,101,101 *)
+        $AR.eq_int_int(c0, 116) && $AR.eq_int_int(c1, 114) &&
+        $AR.eq_int_int(c2, 101) && $AR.eq_int_int(c3, 101)
+      end else false
+    else false
+  end
+
+fn cmd_is_version {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), off: int, len: int, max: int n): bool =
+  if len <> 9 then false
+  else let val o0 = g1ofg0(off) in
+    if o0 >= 0 then
+      if o0 + 8 < max then let
+        val c0 = byte2int0($A.get<byte>(buf, o0))
+        val c1 = byte2int0($A.get<byte>(buf, o0 + 1))
+      in (* "--version" = 45,45,118,101,114,115,105,111,110 *)
+        $AR.eq_int_int(c0, 45) && $AR.eq_int_int(c1, 45) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 2)), 118) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 3)), 101) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 4)), 114) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 5)), 115) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 6)), 105) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 7)), 111) &&
+        $AR.eq_int_int(byte2int0($A.get<byte>(buf, o0 + 8)), 110)
+      end else false
+    else false
+  end
+
+(* ============================================================
+   init: create a new bats project
+   ============================================================ *)
+fn do_init(): void = let
+  (* Create bats.toml with a basic template *)
+  val cmd1 = $B.create()
+  val () = bput(cmd1, "mkdir -p src/bin")
+  val _ = run_sh(cmd1)
+  (* Write bats.toml *)
+  val toml = $B.create()
+  val () = bput(toml, "[package]\nname = \"my-project\"\nkind = \"bin\"\n\n[dependencies]\n")
+  val tp = str_to_path_arr("bats.toml")
+  val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
+  val rc = write_file_from_builder(bv_tp, 65536, toml)
+  val () = $A.drop<byte>(fz_tp, bv_tp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+  (* Write src/bin/my-project.bats *)
+  val src = $B.create()
+  val () = bput(src, "implement ")
+  val () = bput(src, "main0 () = println! (\"hello, world!\")\n")
+  val sp = str_to_path_arr("src/bin/my-project.bats")
+  val @(fz_sp, bv_sp) = $A.freeze<byte>(sp)
+  val rc2 = write_file_from_builder(bv_sp, 65536, src)
+  val () = $A.drop<byte>(fz_sp, bv_sp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+  (* Write .gitignore *)
+  val gi = $B.create()
+  val () = bput(gi, "build/\ndist/\nbats_modules/\n")
+  val gp = str_to_path_arr(".gitignore")
+  val @(fz_gp, bv_gp) = $A.freeze<byte>(gp)
+  val rc3 = write_file_from_builder(bv_gp, 65536, gi)
+  val () = $A.drop<byte>(fz_gp, bv_gp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_gp))
+in
+  if rc = 0 then
+    if rc2 = 0 then
+      if rc3 = 0 then println! ("initialized bats project in current directory")
+      else println! ("error: failed to write .gitignore")
+    else println! ("error: failed to write source file")
+  else println! ("error: failed to write bats.toml")
+end
+
+(* ============================================================
+   tree: display dependency tree from bats.lock
+   ============================================================ *)
+fn do_tree(): void = let
+  val la = str_to_path_arr("bats.lock")
+  val @(fz_la, bv_la) = $A.freeze<byte>(la)
+  val lock_or = $F.file_open(bv_la, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_la, bv_la)
+  val () = $A.free<byte>($A.thaw<byte>(fz_la))
+in
+  case+ lock_or of
+  | ~$R.ok(lfd) => let
+      val lock_buf = $A.alloc<byte>(65536)
+      val lr = $F.file_read(lfd, lock_buf, 65536)
+      val lock_len = (case+ lr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val lcr = $F.file_close(lfd)
+      val () = $R.discard<int><int>(lcr)
+    in
+      if lock_len > 0 then let
+        (* Parse lock file: each line is "pkg version sha256" *)
+        (* Just display as a flat tree for now *)
+        val @(fz_lb, bv_lb) = $A.freeze<byte>(lock_buf)
+        val () = println! (".")
+        fun print_tree {l2:agz}{fuel2:nat} .<fuel2>.
+          (bv: !$A.borrow(byte, l2, 65536), pos: int, len: int,
+           fuel2: int fuel2): void =
+          if fuel2 <= 0 then ()
+          else if pos >= len then ()
+          else let
+            val b = src_byte(bv, pos, 65536)
+          in
+            if b = 10 then let (* newline *)
+              val () = print_newline()
+              val next = pos + 1
+            in
+              if next < len then let
+                val nb = src_byte(bv, next, 65536)
+              in
+                if nb <> 10 then let
+                  val () = print! ("|-- ")
+                in print_tree(bv, next, len, fuel2 - 1) end
+                else print_tree(bv, next, len, fuel2 - 1)
+              end
+              else ()
+            end
+            else let
+              (* print chars until space (pkg name), skip rest of line *)
+              val () = print_char(int2char0(b))
+            in print_tree(bv, pos + 1, len, fuel2 - 1) end
+          end
+        val () = print! ("|-- ")
+        val () = print_tree(bv_lb, 0, lock_len, $AR.checked_nat(lock_len + 1))
+        val () = print_newline()
+        val () = $A.drop<byte>(fz_lb, bv_lb)
+        val () = $A.free<byte>($A.thaw<byte>(fz_lb))
+      in end
+      else let
+        val () = $A.free<byte>(lock_buf)
+      in println! ("no dependencies") end
+    end
+  | ~$R.err(_) => println! ("error: no bats.lock found (run lock first)")
+end
 
 (* ============================================================
    Process spawning
@@ -2494,9 +2654,18 @@ in
           else if cmd_is_run(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in do_run() end
+          else if cmd_is_init(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in do_init() end
+          else if cmd_is_tree(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in do_tree() end
+          else if cmd_is_version(cl_buf, cmd_start, cmd_len, 4096) then let
+            val () = $A.free<byte>(cl_buf)
+          in println! ("bats-poc 0.1.0") end
           else let
             val () = $A.free<byte>(cl_buf)
-          in println! ("usage: bats-poc <check|build|clean|lock|run>") end
+          in println! ("usage: bats-poc <check|build|clean|lock|run|init|tree|--version>") end
         end
       | ~$R.err(e) => let
           val cr = $F.file_close(cl_fd)
