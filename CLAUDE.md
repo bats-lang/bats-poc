@@ -24,7 +24,9 @@ Dependencies: array, arith, builder, env, file, path, process, result, sha256, s
 
 ## Workflow
 
-All changes via PRs (never direct to main). Use `gh pr merge --merge` (no squash).
+All changes, even one byte, in ANY repo in bats-lang, must go through branch -> PR -> green -> merge. NEVER commit directly to main. Use `gh pr merge --merge` (no squash).
+
+Never blocked by another PR — add finishing that PR to the task list instead.
 
 ## Task Rules
 
