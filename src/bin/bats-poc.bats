@@ -22,10 +22,19 @@ $UNSAFE begin
 #include <string.h>
 static int _bpoc_g_verbose = 0;
 static int _bpoc_g_quiet = 0;
+static char _bpoc_g_repo[4096] = "";
+static int _bpoc_g_repo_len = 0;
 static int _bpoc_is_verbose(void) { return _bpoc_g_verbose; }
 static int _bpoc_is_quiet(void) { return _bpoc_g_quiet; }
 static void _bpoc_set_verbose(int v) { _bpoc_g_verbose = v; }
 static void _bpoc_set_quiet(int v) { _bpoc_g_quiet = v; }
+static void _bpoc_set_repo(const char *r, int len) {
+  if (len > 0 && len < 4096) { memcpy(_bpoc_g_repo, r, len); _bpoc_g_repo[len] = '\0'; _bpoc_g_repo_len = len; }
+}
+static int _bpoc_get_repo(char *out, int max) {
+  if (_bpoc_g_repo_len > 0 && _bpoc_g_repo_len < max) { memcpy(out, _bpoc_g_repo, _bpoc_g_repo_len); return _bpoc_g_repo_len; }
+  return 0;
+}
 /* Handle --run-in <dir> flag: if first arg is "--run-in", chdir and return
    offset past the dir arg. Otherwise return first_start unchanged. */
 static int _bpoc_handle_run_in(const char *buf, int len,
@@ -2444,7 +2453,8 @@ fn cmd_is_version {l:agz}{n:pos}
 (* ============================================================
    init: create a new bats project
    ============================================================ *)
-fn do_init(): void = let
+fn do_init(kind: int): void = let
+  (* kind: 0=binary, 1=library *)
   (* Get current directory name via readlink /proc/self/cwd *)
   val cwd_buf = $A.alloc<byte>(4096)
   val cwd_len = $UNSAFE begin
@@ -2468,30 +2478,37 @@ fn do_init(): void = let
     $AR.checked_nat(cwd_len + 1))
   val name_start = last_slash + 1
   val name_len = cwd_len - name_start
-  (* mkdir -p src/bin *)
+  (* mkdir *)
   val cmd1 = $B.create()
-  val () = bput(cmd1, "mkdir -p src/bin")
+  val () = (if kind = 0 then bput(cmd1, "mkdir -p src/bin")
+    else bput(cmd1, "mkdir -p src"))
   val _ = run_sh(cmd1, 0)
-  (* Write bats.toml with actual directory name *)
+  (* Write bats.toml *)
   val toml = $B.create()
   val () = bput(toml, "[package]\nname = \"")
   val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, toml,
     $AR.checked_nat(name_len + 1))
-  val () = bput(toml, "\"\nkind = \"bin\"\n\n[dependencies]\n")
+  val () = (if kind = 0 then bput(toml, "\"\nkind = \"bin\"\n\n[dependencies]\n")
+    else bput(toml, "\"\nkind = \"lib\"\n\n[dependencies]\n"))
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
   val rc = write_file_from_builder(bv_tp, 65536, toml)
   val () = $A.drop<byte>(fz_tp, bv_tp)
   val () = $A.free<byte>($A.thaw<byte>(fz_tp))
-  (* Write src/bin/<name>.bats *)
+  (* Write source file *)
   val src = $B.create()
-  val () = bput(src, "implement ")
-  val () = bput(src, "main0 () = println! (\"hello, world!\")\n")
   val src_path = $B.create()
-  val () = bput(src_path, "src/bin/")
-  val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, src_path,
-    $AR.checked_nat(name_len + 1))
-  val () = bput(src_path, ".bats")
+  val () = (if kind = 0 then let
+    val () = bput(src, "implement ")
+    val () = bput(src, "main0 () = println! (\"hello, world!\")\n")
+    val () = bput(src_path, "src/bin/")
+    val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, src_path,
+      $AR.checked_nat(name_len + 1))
+  in bput(src_path, ".bats") end
+  else let
+    val () = bput(src, "#pub fun hello(): void\n\n")
+    val () = bput(src, "implement hello () = println! (\"hello from library\")\n")
+  in bput(src_path, "src/lib.bats") end)
   val () = $B.put_byte(src_path, 0)
   val @(src_pa, _) = $B.to_arr(src_path)
   val @(fz_sp, bv_sp) = $A.freeze<byte>(src_pa)
@@ -3079,6 +3096,18 @@ in
           val () = (if has_quiet > 0 orelse has_q > 0 then
             $UNSAFE begin $extfcall(void, "_bpoc_set_quiet", 1) end
             else ())
+          (* Parse --repository flag *)
+          val repo_buf = $A.alloc<byte>(4096)
+          val rlen = $UNSAFE begin
+            $extfcall(int, "_bpoc_get_flag_val",
+              $UNSAFE.castvwtp1{ptr}(cl_buf), cl_n, cmd_end + 1,
+              "--repository", $UNSAFE.castvwtp1{ptr}(repo_buf), 4096)
+          end
+          val () = (if rlen > 0 then
+            $UNSAFE begin $extfcall(void, "_bpoc_set_repo",
+              $UNSAFE.castvwtp1{ptr}(repo_buf), rlen) end
+            else ())
+          val () = $A.free<byte>(repo_buf)
         in
           if cmd_is_check(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
@@ -3124,8 +3153,40 @@ in
             val () = $A.free<byte>(cl_buf)
           in do_run() end
           else if cmd_is_init(cl_buf, cmd_start, cmd_len, 4096) then let
+            (* Parse init argument: "binary"|"bin" or "library"|"lib" *)
+            val arg_start = cmd_end + 1
+            val arg_end = find_null(cl_buf, arg_start, 4096, 4096)
+            val arg_len = arg_end - arg_start
+            (* Check for "binary"(6) or "bin"(3) → 0, "library"(7) or "lib"(3) → 1 *)
+            val kind = (if arg_len = 6 orelse arg_len = 3 then let
+                val a0 = g1ofg0(arg_start)
+              in
+                if a0 >= 0 then
+                  if a0 < 4096 then let
+                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                  in
+                    if $AR.eq_int_int(c0, 98) then 0  (* 'b' = binary/bin *)
+                    else if $AR.eq_int_int(c0, 108) then 1  (* 'l' = library/lib *)
+                    else ~1
+                  end else ~1
+                else ~1
+              end
+            else if arg_len = 7 then let
+                val a0 = g1ofg0(arg_start)
+              in
+                if a0 >= 0 then
+                  if a0 < 4096 then let
+                    val c0 = byte2int0($A.get<byte>(cl_buf, a0))
+                  in if $AR.eq_int_int(c0, 108) then 1 else ~1 end
+                  else ~1
+                else ~1
+              end
+            else ~1): int
             val () = $A.free<byte>(cl_buf)
-          in do_init() end
+          in
+            if kind >= 0 then do_init(kind)
+            else println! ("error: specify 'binary' or 'library'\nusage: bats-poc init binary|library")
+          end
           else if cmd_is_tree(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
           in do_tree() end
