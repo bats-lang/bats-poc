@@ -1,3 +1,9 @@
 [package]
 name = "bats-poc"
 kind = "bin"
+
+[dependencies]
+"builder" = ""
+"dict" = ""
+"env" = ""
+"path" = ""
