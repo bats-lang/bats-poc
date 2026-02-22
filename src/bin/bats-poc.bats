@@ -239,6 +239,96 @@ static int _bpoc_strip_dep(const char *src, int slen,
   }
   return found ? oi : -1;
 }
+/* Build cache: check if output is fresh given input mtime */
+#include <sys/stat.h>
+static long _bpoc_file_mtime(const char *path) {
+  struct stat st;
+  if (stat(path, &st) == 0) return (long)st.st_mtime;
+  return -1;
+}
+/* Cache file: build/.bats_build_cache
+   Format: header line, then input\toutput\tmtime per entry
+   Returns 1 if cached and fresh, 0 if needs rebuild */
+static int _bpoc_cache_fresh(const char *cache_path,
+                              const char *input, const char *output) {
+  long cur_mtime = _bpoc_file_mtime(input);
+  if (cur_mtime < 0) return 0;
+  struct stat ost;
+  if (stat(output, &ost) != 0) return 0;
+  int cfd = open(cache_path, O_RDONLY);
+  if (cfd < 0) return 0;
+  char buf[65536];
+  int nr = (int)read(cfd, buf, sizeof(buf) - 1);
+  close(cfd);
+  if (nr <= 0) return 0;
+  buf[nr] = '\0';
+  int ilen = _bpoc_slen(input);
+  int olen = _bpoc_slen(output);
+  int i = 0;
+  while (i < nr && buf[i] != '\n') i++;
+  if (i < nr) i++;
+  while (i < nr) {
+    int ls = i;
+    while (i < nr && buf[i] != '\n') i++;
+    int le = i;
+    if (i < nr) i++;
+    int t1 = ls;
+    while (t1 < le && buf[t1] != '\t') t1++;
+    if (t1 >= le) continue;
+    int t2 = t1 + 1;
+    while (t2 < le && buf[t2] != '\t') t2++;
+    if (t2 >= le) continue;
+    if (t1 - ls != ilen) continue;
+    if (memcmp(buf + ls, input, ilen) != 0) continue;
+    if (t2 - (t1 + 1) != olen) continue;
+    if (memcmp(buf + t1 + 1, output, olen) != 0) continue;
+    long cached_mt = 0;
+    int k = t2 + 1;
+    while (k < le && buf[k] >= '0' && buf[k] <= '9') {
+      cached_mt = cached_mt * 10 + (buf[k] - '0');
+      k++;
+    }
+    if (cached_mt == cur_mtime) return 1;
+  }
+  return 0;
+}
+/* Record a cache entry (appends to file, creating with header if new) */
+static void _bpoc_cache_record(const char *cache_path,
+                                const char *input, const char *output) {
+  long mt = _bpoc_file_mtime(input);
+  if (mt < 0) return;
+  struct stat cst;
+  int needs_hdr = (stat(cache_path, &cst) != 0);
+  int fd = open(cache_path, O_WRONLY|O_CREAT|O_APPEND, 0644);
+  if (fd < 0) return;
+  if (needs_hdr) {
+    const char *hdr = "bats-poc 0.1.0\n";
+    write(fd, hdr, _bpoc_slen(hdr));
+  }
+  write(fd, input, _bpoc_slen(input));
+  write(fd, "\t", 1);
+  write(fd, output, _bpoc_slen(output));
+  write(fd, "\t", 1);
+  char mtbuf[32];
+  int mi = 0;
+  long tmp = mt;
+  if (tmp == 0) mtbuf[mi++] = '0';
+  else {
+    char rev[32]; int ri = 0;
+    while (tmp > 0) { rev[ri++] = '0' + (int)(tmp % 10); tmp /= 10; }
+    while (ri > 0) mtbuf[mi++] = rev[--ri];
+  }
+  write(fd, mtbuf, mi);
+  write(fd, "\n", 1);
+  close(fd);
+}
+/* Quick freshness check: returns 1 if output exists and is newer than input */
+static int _bpoc_is_newer(const char *output, const char *input) {
+  long out_mt = _bpoc_file_mtime(output);
+  long in_mt = _bpoc_file_mtime(input);
+  if (out_mt < 0 || in_mt < 0) return 0;
+  return (out_mt >= in_mt) ? 1 : 0;
+}
 static void _bpoc_print_completions_bash(void) {
     fputs(
         "_bats_poc() {\n"
@@ -1842,6 +1932,15 @@ fn preprocess_one
   (src_bv: !$A.borrow(byte, l1, 65536),
    sats_bv: !$A.borrow(byte, l2, 65536),
    dats_bv: !$A.borrow(byte, l3, 65536)): int = let
+  (* Cache check: if .sats is newer than .bats source, skip preprocessing *)
+  val fresh = $UNSAFE begin
+    $extfcall(int, "_bpoc_is_newer",
+      $UNSAFE.castvwtp1{ptr}(sats_bv),
+      $UNSAFE.castvwtp1{ptr}(src_bv))
+  end
+in
+  if fresh > 0 then 0
+  else let
   val or = $F.file_open(src_bv, 65536, 0, 0)
 in
   case+ or of
@@ -1886,7 +1985,7 @@ in
       if r1 = 0 then (if r2 = 0 then 0 else ~1) else ~1
     end
   | ~$R.err(_) => ~1
-end
+end end
 
 (* ============================================================
    Build pipeline: do_build
