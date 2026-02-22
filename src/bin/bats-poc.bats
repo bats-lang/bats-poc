@@ -18,6 +18,8 @@ $UNSAFE begin
 %{
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <string.h>
 static int _bpoc_byte_at(const char *s, int i) {
   return (unsigned char)s[i];
 }
@@ -32,6 +34,41 @@ static int _bpoc_write_file(const char *path, const char *data, int len) {
   int written = (int)write(fd, data, (unsigned)len);
   close(fd);
   return (written == len) ? 0 : -1;
+}
+static void _bpoc_remap_errors(const char *buf, int len, int offset) {
+  int i = 0;
+  while (i < len) {
+    int ls = i, j;
+    while (i < len && buf[i] != '\n') i++;
+    int le = i;
+    if (i < len) i++;
+    int skip = 0;
+    for (j = ls; j + 11 <= le; j++)
+      if (memcmp(buf + j, "_bats_entry", 11) == 0) { skip = 1; break; }
+    if (skip) { fwrite(buf + ls, 1, le - ls, stderr); fputc('\n', stderr); continue; }
+    int has_dats = 0;
+    for (j = ls; j + 5 <= le; j++)
+      if (memcmp(buf + j, ".dats", 5) == 0) { has_dats = 1; break; }
+    for (j = ls; j < le; ) {
+      if (j + 6 <= le && memcmp(buf + j, "build/", 6) == 0) { j += 6; continue; }
+      if (j + 5 <= le && memcmp(buf + j, ".sats", 5) == 0) { fputs(".bats", stderr); j += 5; continue; }
+      if (j + 5 <= le && memcmp(buf + j, ".dats", 5) == 0) { fputs(".bats", stderr); j += 5; continue; }
+      if (has_dats && j + 5 <= le && memcmp(buf + j, "line=", 5) == 0) {
+        int num = 0, k = j + 5;
+        while (k < le && buf[k] >= '0' && buf[k] <= '9') { num = num * 10 + (buf[k] - '0'); k++; }
+        num = num > offset ? num - offset : 0;
+        fprintf(stderr, "line=%d", num);
+        j = k; continue;
+      }
+      fputc(buf[j], stderr);
+      j++;
+    }
+    if (le > ls) fputc('\n', stderr);
+  }
+}
+static void _bpoc_handle_stderr(const char *buf, int len, int offset) {
+  if (offset > 0) _bpoc_remap_errors(buf, len, offset);
+  else write(2, buf, (unsigned)len);
 }
 %}
 
@@ -1204,8 +1241,35 @@ fun copy_to_builder {l:agz}{n:pos}{fuel:nat} .<fuel>.
     val () = $B.put_byte(dst, b)
   in copy_to_builder(src, start + 1, len, max, dst, fuel - 1) end
 
-(* Run a shell command. cmd_b is CONSUMED. Returns exit code *)
-fn run_sh(cmd_b: $B.builder): int = let
+(* Find start of basename in a null-terminated path (after last '/') *)
+fun find_basename_start {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (bv: !$A.borrow(byte, l, n), pos: int, max: int n,
+   last: int, fuel: int fuel): int =
+  if fuel <= 0 then last + 1
+  else let
+    val b = src_byte(bv, pos, max)
+  in
+    if $AR.eq_int_int(b, 0) then last + 1
+    else if $AR.eq_int_int(b, 47) then
+      find_basename_start(bv, pos + 1, max, pos, fuel - 1)
+    else find_basename_start(bv, pos + 1, max, last, fuel - 1)
+  end
+
+(* Find null terminator in a borrow *)
+fun find_null_bv {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (bv: !$A.borrow(byte, l, n), pos: int, max: int n,
+   fuel: int fuel): int =
+  if fuel <= 0 then pos
+  else let
+    val b = src_byte(bv, pos, max)
+  in
+    if $AR.eq_int_int(b, 0) then pos
+    else find_null_bv(bv, pos + 1, max, fuel - 1)
+  end
+
+(* Run a shell command. cmd_b is CONSUMED. Returns exit code.
+   When remap_offset > 0, stderr is remapped: strip build/, .dats->.bats, adjust line=N *)
+fn run_sh(cmd_b: $B.builder, remap_offset: int): int = let
   val @(cmd_arr, cmd_len) = $B.to_arr(cmd_b)
   val @(fz_cmd, bv_cmd) = $A.freeze<byte>(cmd_arr)
   (* /bin/sh = 7 bytes *)
@@ -1263,7 +1327,8 @@ in
         | ~$R.ok(n) => n | ~$R.err(_) => ~1): int
     in
       if ec <> 0 then let
-        val () = print_arr(eb, 0, elen, 4096, $AR.checked_nat(elen + 1))
+        val () = $UNSAFE begin $extfcall(void, "_bpoc_handle_stderr",
+          $UNSAFE.castvwtp1{ptr}(eb), elen, remap_offset) end
         val () = $A.free<byte>(eb)
       in ec end
       else let
@@ -1321,8 +1386,14 @@ in
       val () = $A.drop<byte>(fz_s, bv_s)
       val () = $A.free<byte>($A.thaw<byte>(fz_s))
       val r1 = write_file_from_builder(sats_bv, 65536, sb)
-      (* Write .dats *)
+      (* Write .dats - prepend self-staload *)
       val db = $B.create()
+      val bn_start = find_basename_start(sats_bv, 0, 65536, ~1, 4096)
+      val bn_end = find_null_bv(sats_bv, bn_start, 65536, 4096)
+      val () = bput(db, "staload \"./")
+      val () = copy_to_builder(sats_bv, bn_start, bn_end, 65536, db,
+        $AR.checked_nat(bn_end - bn_start + 1))
+      val () = bput(db, "\"\n")
       val @(fz_d, bv_d) = $A.freeze<byte>(dats_arr)
       val () = copy_to_builder(bv_d, 0, dats_len, 65536, db,
         $AR.checked_nat(dats_len + 1))
@@ -1353,11 +1424,11 @@ in arr end
    ============================================================ *)
 fn do_clean(): void = let
   val cmd = $B.create()
-  val () = bput(cmd, "rm -rf build dist")
-  val rc = run_sh(cmd)
+  val () = bput(cmd, "rm -rf build dist docs")
+  val rc = run_sh(cmd, 0)
 in
   if rc <> 0 then println! ("error: clean failed")
-  else println! ("cleaned build/ and dist/")
+  else println! ("cleaned build/, dist/, and docs/")
 end
 
 (* ============================================================
@@ -1402,7 +1473,7 @@ fn do_build(): void = let
   (* Step 1: mkdir build directories *)
   val cmd = $B.create()
   val () = bput(cmd, "mkdir -p build/src/bin build/bats_modules dist/debug")
-  val r0 = run_sh(cmd)
+  val r0 = run_sh(cmd, 0)
   val () = (if r0 <> 0 then println! ("error: mkdir failed") else ())
 in
   if r0 <> 0 then ()
@@ -1463,7 +1534,7 @@ in
                     val () = copy_to_builder(bv_e, 0, elen, 256, mc,
                       $AR.checked_nat(elen + 1))
                     val () = bput(mc, "/src")
-                    val _ = run_sh(mc)
+                    val _ = run_sh(mc, 0)
                     (* source: bats_modules/<name>/src/lib.bats *)
                     val sp = $B.create()
                     val () = bput(sp, "bats_modules/")
@@ -1688,7 +1759,7 @@ in
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, pc,
                                     $AR.checked_nat(dlen + 1))
                                   val () = bput(pc, "/src/lib.dats")
-                                  val rc = run_sh(pc)
+                                  val rc = run_sh(pc, 1)
                                   val () = (if rc <> 0 then let
                                     val () = print! ("error: patsopt failed for dep ")
                                     val () = print_borrow(bv_de, 0, dlen, 256,
@@ -1725,7 +1796,7 @@ in
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, pbin,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(pbin, ".dats")
-                    val rbp = run_sh(pbin)
+                    val rbp = run_sh(pbin, 1)
                     val () = (if rbp <> 0 then
                       println! ("error: patsopt failed for binary")
                       else println! ("  patsopt: binary"))
@@ -1745,7 +1816,7 @@ in
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, pent,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(pent, ".dats")
-                    val rep = run_sh(pent)
+                    val rep = run_sh(pent, 0)
                     val () = (if rep <> 0 then
                       println! ("error: patsopt failed for entry")
                       else println! ("  patsopt: entry"))
@@ -1792,7 +1863,7 @@ in
                                   val () = copy_to_builder(ph, 0, phlen, 512, cc,
                                     $AR.checked_nat(phlen + 1))
                                   val () = bput(cc, "/ccomp/runtime")
-                                  val rc = run_sh(cc)
+                                  val rc = run_sh(cc, 0)
                                   val () = (if rc <> 0 then let
                                     val () = print! ("error: cc failed for dep ")
                                     val () = print_borrow(bv_de, 0, dlen, 256,
@@ -1824,7 +1895,7 @@ in
                     val () = copy_to_builder(ph, 0, phlen, 512, cbin,
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cbin, "/ccomp/runtime")
-                    val _ = run_sh(cbin)
+                    val _ = run_sh(cbin, 0)
 
                     (* Compile entry *)
                     val cent = $B.create()
@@ -1841,7 +1912,7 @@ in
                     val () = copy_to_builder(ph, 0, phlen, 512, cent,
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cent, "/ccomp/runtime")
-                    val _ = run_sh(cent)
+                    val _ = run_sh(cent, 0)
 
                     (* Step 8: Link *)
                     val link = $B.create()
@@ -1896,7 +1967,7 @@ in
                         in end
                       | ~$R.err(_) => ())
                     val () = bput(link, " -g -O0")
-                    val rl = run_sh(link)
+                    val rl = run_sh(link, 0)
 
                     val () = $A.drop<byte>(fz_sp, bv_sp)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sp))
@@ -2173,30 +2244,64 @@ fn cmd_is_version {l:agz}{n:pos}
    init: create a new bats project
    ============================================================ *)
 fn do_init(): void = let
-  (* Create bats.toml with a basic template *)
+  (* Get current directory name via readlink /proc/self/cwd *)
+  val cwd_buf = $A.alloc<byte>(4096)
+  val cwd_len = $UNSAFE begin
+    $extfcall(int, "readlink", "/proc/self/cwd",
+      $UNSAFE.castvwtp1{ptr}(cwd_buf), 4095)
+  end
+  val @(fz_cwd, bv_cwd) = $A.freeze<byte>(cwd_buf)
+  (* Find last '/' in cwd path to extract basename *)
+  fun find_last_slash {l2:agz}{fuel2:nat} .<fuel2>.
+    (bv: !$A.borrow(byte, l2, 4096), pos: int, len: int,
+     last: int, fuel2: int fuel2): int =
+    if fuel2 <= 0 then last
+    else if pos >= len then last
+    else let
+      val b = src_byte(bv, pos, 4096)
+    in
+      if b = 47 then find_last_slash(bv, pos + 1, len, pos, fuel2 - 1)
+      else find_last_slash(bv, pos + 1, len, last, fuel2 - 1)
+    end
+  val last_slash = find_last_slash(bv_cwd, 0, cwd_len, ~1,
+    $AR.checked_nat(cwd_len + 1))
+  val name_start = last_slash + 1
+  val name_len = cwd_len - name_start
+  (* mkdir -p src/bin *)
   val cmd1 = $B.create()
   val () = bput(cmd1, "mkdir -p src/bin")
-  val _ = run_sh(cmd1)
-  (* Write bats.toml *)
+  val _ = run_sh(cmd1, 0)
+  (* Write bats.toml with actual directory name *)
   val toml = $B.create()
-  val () = bput(toml, "[package]\nname = \"my-project\"\nkind = \"bin\"\n\n[dependencies]\n")
+  val () = bput(toml, "[package]\nname = \"")
+  val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, toml,
+    $AR.checked_nat(name_len + 1))
+  val () = bput(toml, "\"\nkind = \"bin\"\n\n[dependencies]\n")
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
   val rc = write_file_from_builder(bv_tp, 65536, toml)
   val () = $A.drop<byte>(fz_tp, bv_tp)
   val () = $A.free<byte>($A.thaw<byte>(fz_tp))
-  (* Write src/bin/my-project.bats *)
+  (* Write src/bin/<name>.bats *)
   val src = $B.create()
   val () = bput(src, "implement ")
   val () = bput(src, "main0 () = println! (\"hello, world!\")\n")
-  val sp = str_to_path_arr("src/bin/my-project.bats")
-  val @(fz_sp, bv_sp) = $A.freeze<byte>(sp)
+  val src_path = $B.create()
+  val () = bput(src_path, "src/bin/")
+  val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, src_path,
+    $AR.checked_nat(name_len + 1))
+  val () = bput(src_path, ".bats")
+  val () = $B.put_byte(src_path, 0)
+  val @(src_pa, _) = $B.to_arr(src_path)
+  val @(fz_sp, bv_sp) = $A.freeze<byte>(src_pa)
   val rc2 = write_file_from_builder(bv_sp, 65536, src)
   val () = $A.drop<byte>(fz_sp, bv_sp)
   val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+  val () = $A.drop<byte>(fz_cwd, bv_cwd)
+  val () = $A.free<byte>($A.thaw<byte>(fz_cwd))
   (* Write .gitignore *)
   val gi = $B.create()
-  val () = bput(gi, "build/\ndist/\nbats_modules/\n")
+  val () = bput(gi, "build/\ndist/\nbats_modules/\ndocs/\n")
   val gp = str_to_path_arr(".gitignore")
   val @(fz_gp, bv_gp) = $A.freeze<byte>(gp)
   val rc3 = write_file_from_builder(bv_gp, 65536, gi)
@@ -2406,7 +2511,7 @@ in
                 $AR.checked_nat(nlen + 1))
               val () = $A.drop<byte>(fz_nb, bv_nb)
               val () = $A.free<byte>($A.thaw<byte>(fz_nb))
-              val rc = run_sh(cmd)
+              val rc = run_sh(cmd, 0)
             in
               if rc <> 0 then println! ("error: run failed")
               else ()
