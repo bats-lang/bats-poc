@@ -1,0 +1,3 @@
+[package]
+name = "bats-poc"
+kind = "bin"
