@@ -4605,15 +4605,15 @@ in
                 $UNSAFE.castvwtp1{ptr}(bv_cb), cl_n, cmd_end + 1,
                 "--only", $UNSAFE.castvwtp1{ptr}(only_val), 32)
             end
-            val has_release_f = $UNSAFE begin
-              $extfcall(int, "_bpoc_has_flag",
-                $UNSAFE.castvwtp1{ptr}(bv_cb), cl_n, cmd_end + 1,
-                "--release")
-            end
             val () = $A.drop<byte>(fz_cb, bv_cb)
             val () = $A.free<byte>($A.thaw<byte>(fz_cb))
             (* Check if --only debug|release|native|wasm *)
             val @(fz_ov, bv_ov) = $A.freeze<byte>(only_val)
+            val only_debug = (if olen = 5 then let
+              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
+              val b1 = byte2int0($A.read<byte>(bv_ov, 1))
+            in $AR.eq_int_int(b0, 100) && $AR.eq_int_int(b1, 101) end
+              else false): bool
             val only_release = (if olen = 7 then let
               val b0 = byte2int0($A.read<byte>(bv_ov, 0))
               val b1 = byte2int0($A.read<byte>(bv_ov, 1))
@@ -4628,8 +4628,11 @@ in
             val () = $A.free<byte>($A.thaw<byte>(fz_ov))
           in
             if only_wasm then println! ("error: wasm target is not yet supported")
-            else if only_release || has_release_f > 0 then do_build(1)
-            else do_build(0)
+            else if only_debug then do_build(0)
+            else if only_release then do_build(1)
+            else let
+              val () = do_build(0)
+            in do_build(1) end
           end
           else if cmd_is_clean(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
