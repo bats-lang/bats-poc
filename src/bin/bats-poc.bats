@@ -32,7 +32,7 @@ static void _bpoc_set_repo(const char *r, int len) {
   if (len > 0 && len < 4096) { memcpy(_bpoc_g_repo, r, len); _bpoc_g_repo[len] = '\0'; _bpoc_g_repo_len = len; }
 }
 static int _bpoc_get_repo(char *out, int max) {
-  if (_bpoc_g_repo_len > 0 && _bpoc_g_repo_len < max) { memcpy(out, _bpoc_g_repo, _bpoc_g_repo_len); return _bpoc_g_repo_len; }
+  if (_bpoc_g_repo_len > 0 && _bpoc_g_repo_len < max) { memcpy(out, _bpoc_g_repo, _bpoc_g_repo_len); out[_bpoc_g_repo_len] = '\0'; return _bpoc_g_repo_len; }
   return 0;
 }
 static char _bpoc_g_bin[256] = "";
@@ -329,6 +329,364 @@ static int _bpoc_is_newer(const char *output, const char *input) {
   if (out_mt < 0 || in_mt < 0) return 0;
   return (out_mt >= in_mt) ? 1 : 0;
 }
+/* Scan a .bats file for #use directives and enqueue package names */
+static void _bpoc_scan_uses_to_queue(const char *fpath,
+    char queue[][256], int *qt_ptr, int max_q) {
+  int fd2 = open(fpath, O_RDONLY);
+  if (fd2 < 0) return;
+  char fbuf[65536];
+  int flen = (int)read(fd2, fbuf, sizeof(fbuf) - 1);
+  close(fd2);
+  if (flen <= 0) return;
+  fbuf[flen] = '\0';
+  int fi = 0;
+  while (fi < flen) {
+    int fls = fi;
+    while (fi < flen && fbuf[fi] != '\n') fi++;
+    int fle = fi;
+    if (fi < flen) fi++;
+    int fll = fle - fls;
+    if (fll < 8 || fbuf[fls] != '#') continue;
+    if (memcmp(fbuf + fls, "#use ", 5) != 0) continue;
+    int ups = fls + 5;
+    while (ups < fle && fbuf[ups] == ' ') ups++;
+    int upe = ups;
+    while (upe < fle && fbuf[upe] != ' ') upe++;
+    int uplen = upe - ups;
+    if (uplen <= 0 || uplen >= 256) continue;
+    char upkg[256];
+    memcpy(upkg, fbuf + ups, uplen);
+    upkg[uplen] = '\0';
+    int qt = *qt_ptr;
+    int udup = 0;
+    for (int q = 0; q < qt; q++) {
+      if (strcmp(queue[q], upkg) == 0) { udup = 1; break; }
+    }
+    if (!udup && qt < max_q) {
+      strcpy(queue[qt], upkg);
+      *qt_ptr = qt + 1;
+    }
+  }
+}
+
+/* Lock resolution: resolve deps from repository, extract, write bats.lock.
+   repo_path: null-terminated path to repository directory.
+   Returns 0 on success, -1 on error. */
+#include <dirent.h>
+static int _bpoc_version_cmp(const char *a, const char *b) {
+  /* Compare dot-separated numeric versions */
+  while (*a && *b) {
+    int va = 0, vb = 0;
+    while (*a >= '0' && *a <= '9') { va = va * 10 + (*a - '0'); a++; }
+    while (*b >= '0' && *b <= '9') { vb = vb * 10 + (*b - '0'); b++; }
+    if (va != vb) return va - vb;
+    if (*a == '.') a++;
+    if (*b == '.') b++;
+    /* If one has 'dev' suffix, it's less than a clean version */
+    if (*a == 'd' && *b != 'd') return -1;
+    if (*b == 'd' && *a != 'd') return 1;
+    if (*a == 'd' && *b == 'd') {
+      /* Both dev: compare as strings */
+      return strcmp(a, b);
+    }
+  }
+  if (*a) return 1;
+  if (*b) return -1;
+  return 0;
+}
+
+/* Resolved package entry */
+typedef struct {
+  char name[256];
+  char version[64];
+} _bpoc_resolved_t;
+
+static int _bpoc_resolve_lock(const char *repo_path) {
+  /* Read bats.toml to get [dependencies] */
+  int tfd = open("bats.toml", O_RDONLY);
+  if (tfd < 0) { fprintf(stderr, "error: cannot open bats.toml\n"); return -1; }
+  char toml[8192];
+  int tlen = (int)read(tfd, toml, sizeof(toml) - 1);
+  close(tfd);
+  if (tlen <= 0) { fprintf(stderr, "error: empty bats.toml\n"); return -1; }
+  toml[tlen] = '\0';
+
+  /* Parse [dependencies] section to find package names */
+  char deps[64][256]; /* max 64 deps */
+  int ndeps = 0;
+
+  int in_deps = 0;
+  int si = 0;
+  while (si < tlen && ndeps < 64) {
+    int ls = si;
+    while (si < tlen && toml[si] != '\n') si++;
+    int le = si;
+    if (si < tlen) si++;
+    int ll = le - ls;
+    if (ll == 14 && memcmp(toml + ls, "[dependencies]", 14) == 0) {
+      in_deps = 1; continue;
+    }
+    if (ll > 0 && toml[ls] == '[') { in_deps = 0; continue; }
+    if (!in_deps || ll < 3) continue;
+    /* Line should be "pkgname" = "constraint" */
+    if (toml[ls] != '"') continue;
+    int ne = ls + 1;
+    while (ne < le && toml[ne] != '"') ne++;
+    int nlen = ne - ls - 1;
+    if (nlen <= 0 || nlen >= 256) continue;
+    memcpy(deps[ndeps], toml + ls + 1, nlen);
+    deps[ndeps][nlen] = '\0';
+    ndeps++;
+  }
+
+  /* Resolve each dependency */
+  _bpoc_resolved_t resolved[256];
+  int nresolved = 0;
+  char queue[256][256];
+  int qh = 0, qt = 0;
+
+  /* Enqueue direct deps from bats.toml */
+  for (int i = 0; i < ndeps && qt < 256; i++) {
+    strcpy(queue[qt++], deps[i]);
+  }
+
+  /* Also scan own source files for #use directives */
+  _bpoc_scan_uses_to_queue("src/lib.bats", queue, &qt, 256);
+  {
+    DIR *bd = opendir("src/bin");
+    if (bd) {
+      struct dirent *be;
+      while ((be = readdir(bd)) != NULL) {
+        const char *bn = be->d_name;
+        int bnlen = _bpoc_slen(bn);
+        if (bnlen > 5 && memcmp(bn + bnlen - 5, ".bats", 5) == 0) {
+          char bpath[512];
+          snprintf(bpath, sizeof(bpath), "src/bin/%s", bn);
+          _bpoc_scan_uses_to_queue(bpath, queue, &qt, 256);
+        }
+      }
+      closedir(bd);
+    }
+  }
+
+  if (qt == 0) {
+    _bpoc_write_file("bats.lock", "", 0);
+    fprintf(stderr, "locked 0 packages\n");
+    return 0;
+  }
+
+  while (qh < qt && nresolved < 256) {
+    char pkg[256];
+    strcpy(pkg, queue[qh++]);
+
+    /* Check if already resolved */
+    int already = 0;
+    for (int r = 0; r < nresolved; r++) {
+      if (strcmp(resolved[r].name, pkg) == 0) { already = 1; break; }
+    }
+    if (already) continue;
+
+    /* Build repository path: repo_path/pkg/ */
+    char pkg_dir[4096];
+    snprintf(pkg_dir, sizeof(pkg_dir), "%s/%s", repo_path, pkg);
+
+    /* Scan for latest version */
+    DIR *d = opendir(pkg_dir);
+    if (!d) {
+      fprintf(stderr, "error: package '%s' not found in repository\n", pkg);
+      return -1;
+    }
+
+    /* Build prefix: replace / with _ in pkg name */
+    char prefix[256];
+    int pi = 0;
+    for (int j = 0; pkg[j] && pi < 254; j++) {
+      prefix[pi++] = (pkg[j] == '/') ? '_' : pkg[j];
+    }
+    prefix[pi] = '\0';
+    int prefix_len = pi;
+
+    char best_ver[64] = "";
+    char best_file[4096] = "";
+    struct dirent *de_ptr;
+    while ((de_ptr = readdir(d)) != NULL) {
+      const char *fn = de_ptr->d_name;
+      int fnlen = _bpoc_slen(fn);
+      /* Match: prefix_VERSION.bats (not .sha256) */
+      if (fnlen < prefix_len + 7) continue; /* prefix_ + X.bats */
+      if (memcmp(fn, prefix, prefix_len) != 0) continue;
+      if (fn[prefix_len] != '_') continue;
+      /* Check suffix is .bats (not .bats.sha256) */
+      if (fnlen < 5) continue;
+      if (memcmp(fn + fnlen - 5, ".bats", 5) != 0) continue;
+      if (fnlen > 7 && memcmp(fn + fnlen - 7, ".sha256", 7) == 0) continue;
+      /* Extract version string */
+      int vstart = prefix_len + 1;
+      int vte = fnlen - 5; /* before .bats */
+      int vlen = vte - vstart;
+      if (vlen <= 0 || vlen >= 64) continue;
+      char ver[64];
+      memcpy(ver, fn + vstart, vlen);
+      ver[vlen] = '\0';
+      /* Skip dev versions */
+      int is_dev = 0;
+      for (int k = 0; k < vlen - 2; k++) {
+        if (ver[k] == 'd' && ver[k+1] == 'e' && ver[k+2] == 'v') {
+          is_dev = 1; break;
+        }
+      }
+      if (is_dev) continue;
+      /* Compare to current best */
+      if (best_ver[0] == '\0' || _bpoc_version_cmp(ver, best_ver) > 0) {
+        strcpy(best_ver, ver);
+        snprintf(best_file, sizeof(best_file), "%s/%s", pkg_dir, fn);
+      }
+    }
+    closedir(d);
+
+    if (best_ver[0] == '\0') {
+      fprintf(stderr, "error: no version found for '%s'\n", pkg);
+      return -1;
+    }
+
+    /* Record resolved */
+    strcpy(resolved[nresolved].name, pkg);
+    strcpy(resolved[nresolved].version, best_ver);
+    nresolved++;
+
+    /* Extract to bats_modules/pkg/ if not already there */
+    char check_path[4096];
+    snprintf(check_path, sizeof(check_path), "bats_modules/%s/src/lib.bats", pkg);
+    struct stat cst;
+    if (stat(check_path, &cst) != 0) {
+      /* Need to extract */
+      char mkdir_cmd[4096];
+      snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p bats_modules/%s", pkg);
+      system(mkdir_cmd);
+      char unzip_cmd[8192];
+      snprintf(unzip_cmd, sizeof(unzip_cmd),
+        "unzip -o -q '%s' -d 'bats_modules/%s'", best_file, pkg);
+      if (system(unzip_cmd) != 0) {
+        fprintf(stderr, "error: failed to extract '%s'\n", best_file);
+        return -1;
+      }
+    }
+
+    /* Scan transitive deps from extracted bats.toml */
+    char dep_toml_path[4096];
+    snprintf(dep_toml_path, sizeof(dep_toml_path),
+      "bats_modules/%s/bats.toml", pkg);
+    int dtfd = open(dep_toml_path, O_RDONLY);
+    if (dtfd >= 0) {
+      char dt[4096];
+      int dtlen = (int)read(dtfd, dt, sizeof(dt) - 1);
+      close(dtfd);
+      if (dtlen > 0) {
+        dt[dtlen] = '\0';
+        int dt_in_deps = 0;
+        int dsi = 0;
+        while (dsi < dtlen) {
+          int dls = dsi;
+          while (dsi < dtlen && dt[dsi] != '\n') dsi++;
+          int dle = dsi;
+          if (dsi < dtlen) dsi++;
+          int dll = dle - dls;
+          if (dll == 14 && memcmp(dt + dls, "[dependencies]", 14) == 0) {
+            dt_in_deps = 1; continue;
+          }
+          if (dll > 0 && dt[dls] == '[') { dt_in_deps = 0; continue; }
+          if (!dt_in_deps || dll < 3 || dt[dls] != '"') continue;
+          int dne = dls + 1;
+          while (dne < dle && dt[dne] != '"') dne++;
+          int dnlen = dne - dls - 1;
+          if (dnlen <= 0 || dnlen >= 256) continue;
+          char tdep[256];
+          memcpy(tdep, dt + dls + 1, dnlen);
+          tdep[dnlen] = '\0';
+          /* Check not already queued or resolved */
+          int dup = 0;
+          for (int r = 0; r < nresolved; r++) {
+            if (strcmp(resolved[r].name, tdep) == 0) { dup = 1; break; }
+          }
+          if (!dup) {
+            for (int q = qh; q < qt; q++) {
+              if (strcmp(queue[q], tdep) == 0) { dup = 1; break; }
+            }
+          }
+          if (!dup && qt < 256) {
+            strcpy(queue[qt++], tdep);
+          }
+        }
+      }
+    }
+
+    /* Also scan src/lib.bats for #use directives (transitive deps) */
+    char src_path[4096];
+    snprintf(src_path, sizeof(src_path),
+      "bats_modules/%s/src/lib.bats", pkg);
+    int sfd = open(src_path, O_RDONLY);
+    if (sfd >= 0) {
+      char sbuf[65536];
+      int slen = (int)read(sfd, sbuf, sizeof(sbuf) - 1);
+      close(sfd);
+      if (slen > 0) {
+        sbuf[slen] = '\0';
+        int si2 = 0;
+        while (si2 < slen) {
+          /* Look for "#use " at start of line */
+          int lstart = si2;
+          while (si2 < slen && sbuf[si2] != '\n') si2++;
+          int lte = si2;
+          if (si2 < slen) si2++;
+          int llen = lte - lstart;
+          if (llen < 10 || sbuf[lstart] != '#') continue;
+          if (memcmp(sbuf + lstart, "#use ", 5) != 0) continue;
+          /* Extract package name: #use <pkg> as <alias> */
+          int ps = lstart + 5;
+          /* Skip leading whitespace */
+          while (ps < lte && sbuf[ps] == ' ') ps++;
+          int pe = ps;
+          while (pe < lte && sbuf[pe] != ' ') pe++;
+          int plen = pe - ps;
+          if (plen <= 0 || plen >= 256) continue;
+          char use_pkg[256];
+          memcpy(use_pkg, sbuf + ps, plen);
+          use_pkg[plen] = '\0';
+          /* Check not already queued or resolved */
+          int dup2 = 0;
+          for (int r = 0; r < nresolved; r++) {
+            if (strcmp(resolved[r].name, use_pkg) == 0) { dup2 = 1; break; }
+          }
+          if (!dup2) {
+            for (int q = qh; q < qt; q++) {
+              if (strcmp(queue[q], use_pkg) == 0) { dup2 = 1; break; }
+            }
+          }
+          if (!dup2 && qt < 256) {
+            strcpy(queue[qt++], use_pkg);
+          }
+        }
+      }
+    }
+  }
+
+  /* Write bats.lock */
+  char lock[65536];
+  int li = 0;
+  for (int r = 0; r < nresolved; r++) {
+    int nlen = _bpoc_slen(resolved[r].name);
+    int vlen = _bpoc_slen(resolved[r].version);
+    if (li + nlen + 1 + vlen + 1 >= 65536) break;
+    memcpy(lock + li, resolved[r].name, nlen); li += nlen;
+    lock[li++] = ' ';
+    memcpy(lock + li, resolved[r].version, vlen); li += vlen;
+    lock[li++] = '\n';
+  }
+  _bpoc_write_file("bats.lock", lock, li);
+  fprintf(stderr, "locked %d packages\n", nresolved);
+  return 0;
+}
+
 static void _bpoc_print_completions_bash(void) {
     fputs(
         "_bats_poc() {\n"
@@ -2016,38 +2374,60 @@ end
    lock: read bats.lock and verify it exists
    ============================================================ *)
 fn do_lock(): void = let
-  val la = str_to_path_arr("bats.lock")
-  val @(fz_la, bv_la) = $A.freeze<byte>(la)
-  val lock_or = $F.file_open(bv_la, 65536, 0, 0)
-  val () = $A.drop<byte>(fz_la, bv_la)
-  val () = $A.free<byte>($A.thaw<byte>(fz_la))
+  (* Check if --repository was specified *)
+  val repo_buf = $A.alloc<byte>(4096)
+  val rplen = $UNSAFE begin
+    $extfcall(int, "_bpoc_get_repo",
+      $UNSAFE.castvwtp1{ptr}(repo_buf), 4096)
+  end
 in
-  case+ lock_or of
-  | ~$R.ok(lfd) => let
-      val lock_buf = $A.alloc<byte>(65536)
-      val lr = $F.file_read(lfd, lock_buf, 65536)
-      val lock_len = (case+ lr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
-      val lcr = $F.file_close(lfd)
-      val () = $R.discard<int><int>(lcr)
-    in
-      if lock_len > 0 then let
-        val @(fz_lb, bv_lb) = $A.freeze<byte>(lock_buf)
-        val () = println! ("bats.lock:")
-        val () = print_borrow(bv_lb, 0, lock_len, 65536,
-          $AR.checked_nat(lock_len + 1))
-        val () = $A.drop<byte>(fz_lb, bv_lb)
-        val () = $A.free<byte>($A.thaw<byte>(fz_lb))
-      in
-        println! ("lock: verified (existing lockfile)")
-      end
-      else let
-        val () = $A.free<byte>(lock_buf)
-      in
-        println! ("lock: empty lockfile")
-      end
+  if rplen > 0 then let
+    (* Full lock resolution with repository *)
+    val rc = $UNSAFE begin
+      $extfcall(int, "_bpoc_resolve_lock",
+        $UNSAFE.castvwtp1{ptr}(repo_buf))
     end
-  | ~$R.err(_) =>
-      println! ("lock: no bats.lock found, full resolution not yet implemented")
+    val () = $A.free<byte>(repo_buf)
+  in
+    if rc <> 0 then println! ("error: lock resolution failed")
+    else ()
+  end
+  else let
+    (* No repository - just read existing lockfile *)
+    val () = $A.free<byte>(repo_buf)
+    val la = str_to_path_arr("bats.lock")
+    val @(fz_la, bv_la) = $A.freeze<byte>(la)
+    val lock_or = $F.file_open(bv_la, 65536, 0, 0)
+    val () = $A.drop<byte>(fz_la, bv_la)
+    val () = $A.free<byte>($A.thaw<byte>(fz_la))
+  in
+    case+ lock_or of
+    | ~$R.ok(lfd) => let
+        val lock_buf = $A.alloc<byte>(65536)
+        val lr = $F.file_read(lfd, lock_buf, 65536)
+        val lock_len = (case+ lr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+        val lcr = $F.file_close(lfd)
+        val () = $R.discard<int><int>(lcr)
+      in
+        if lock_len > 0 then let
+          val @(fz_lb, bv_lb) = $A.freeze<byte>(lock_buf)
+          val () = println! ("bats.lock:")
+          val () = print_borrow(bv_lb, 0, lock_len, 65536,
+            $AR.checked_nat(lock_len + 1))
+          val () = $A.drop<byte>(fz_lb, bv_lb)
+          val () = $A.free<byte>($A.thaw<byte>(fz_lb))
+        in
+          println! ("lock: verified")
+        end
+        else let
+          val () = $A.free<byte>(lock_buf)
+        in
+          println! ("lock: empty lockfile")
+        end
+      end
+    | ~$R.err(_) =>
+        println! ("lock: no bats.lock found (use --repository to resolve)")
+  end
 end
 
 fn do_build(release: int): void = let
