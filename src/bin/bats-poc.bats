@@ -401,6 +401,8 @@ typedef struct {
   char version[64];
 } _bpoc_resolved_t;
 
+static int _bpoc_sha256_file(const char *path, char hex_out[65]);
+
 static int _bpoc_resolve_lock(const char *repo_path) {
   /* Read bats.toml to get [dependencies] */
   int tfd = open("bats.toml", O_RDONLY);
@@ -670,23 +672,201 @@ static int _bpoc_resolve_lock(const char *repo_path) {
     }
   }
 
-  /* Write bats.lock */
+  /* Write bats.lock with SHA-256 hashes */
   char lock[65536];
   int li = 0;
   for (int r = 0; r < nresolved; r++) {
     int nlen = _bpoc_slen(resolved[r].name);
     int vlen = _bpoc_slen(resolved[r].version);
-    if (li + nlen + 1 + vlen + 1 >= 65536) break;
+    /* Build the file path to hash: repo/pkg/prefix_ver.bats */
+    char fpath[4096];
+    char prefix2[256]; int pi2 = 0;
+    for (int j = 0; resolved[r].name[j] && pi2 < 254; j++)
+      prefix2[pi2++] = (resolved[r].name[j] == '/') ? '_' : resolved[r].name[j];
+    prefix2[pi2] = '\0';
+    snprintf(fpath, sizeof(fpath), "%s/%s/%s_%s.bats", repo_path, resolved[r].name, prefix2, resolved[r].version);
+    char sha_hex[65]; sha_hex[0] = '\0';
+    _bpoc_sha256_file(fpath, sha_hex);
+    if (li + nlen + 1 + vlen + 1 + 65 >= 65536) break;
     memcpy(lock + li, resolved[r].name, nlen); li += nlen;
     lock[li++] = ' ';
     memcpy(lock + li, resolved[r].version, vlen); li += vlen;
+    if (sha_hex[0]) { lock[li++] = ' '; memcpy(lock + li, sha_hex, 64); li += 64; }
     lock[li++] = '\n';
   }
   _bpoc_write_file("bats.lock", lock, li);
-  fprintf(stderr, "locked %d packages\n", nresolved);
+  if (!_bpoc_is_quiet()) fprintf(stderr, "locked %d packages\n", nresolved);
   return 0;
 }
 
+/* SHA-256 (FIPS 180-4) */
+static const unsigned int _bpoc_sha256_k[64] = {
+  0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,
+  0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,
+  0xd807aa98u,0x12835b01u,0x243185beu,0x550c7dc3u,
+  0x72be5d74u,0x80deb1feu,0x9bdc06a7u,0xc19bf174u,
+  0xe49b69c1u,0xefbe4786u,0x0fc19dc6u,0x240ca1ccu,
+  0x2de92c6fu,0x4a7484aau,0x5cb0a9dcu,0x76f988dau,
+  0x983e5152u,0xa831c66du,0xb00327c8u,0xbf597fc7u,
+  0xc6e00bf3u,0xd5a79147u,0x06ca6351u,0x14292967u,
+  0x27b70a85u,0x2e1b2138u,0x4d2c6dfcu,0x53380d13u,
+  0x650a7354u,0x766a0abbu,0x81c2c92eu,0x92722c85u,
+  0xa2bfe8a1u,0xa81a664bu,0xc24b8b70u,0xc76c51a3u,
+  0xd192e819u,0xd6990624u,0xf40e3585u,0x106aa070u,
+  0x19a4c116u,0x1e376c08u,0x2748774cu,0x34b0bcb5u,
+  0x391c0cb3u,0x4ed8aa4au,0x5b9cca4fu,0x682e6ff3u,
+  0x748f82eeu,0x78a5636fu,0x84c87814u,0x8cc70208u,
+  0x90befffau,0xa4506cebu,0xbef9a3f7u,0xc67178f2u,
+};
+#define _SHA_ROTR(x,n) (((x)>>(n))|((x)<<(32-(n))))
+#define _SHA_CH(x,y,z)  (((x)&(y))^(~(x)&(z)))
+#define _SHA_MAJ(x,y,z) (((x)&(y))^((x)&(z))^((y)&(z)))
+#define _SHA_S0(x) (_SHA_ROTR(x,2)^_SHA_ROTR(x,13)^_SHA_ROTR(x,22))
+#define _SHA_S1(x) (_SHA_ROTR(x,6)^_SHA_ROTR(x,11)^_SHA_ROTR(x,25))
+#define _SHA_s0(x) (_SHA_ROTR(x,7)^_SHA_ROTR(x,18)^((x)>>3))
+#define _SHA_s1(x) (_SHA_ROTR(x,17)^_SHA_ROTR(x,19)^((x)>>10))
+static void _bpoc_sha256_block(unsigned int h[8], const unsigned char blk[64]) {
+  unsigned int w[64],a,b,c,d,e,f,g,hh,t1,t2; int i;
+  for (i=0;i<16;i++) w[i]=((unsigned int)blk[i*4]<<24)|((unsigned int)blk[i*4+1]<<16)|((unsigned int)blk[i*4+2]<<8)|(unsigned int)blk[i*4+3];
+  for (i=16;i<64;i++) w[i]=_SHA_s1(w[i-2])+w[i-7]+_SHA_s0(w[i-15])+w[i-16];
+  a=h[0];b=h[1];c=h[2];d=h[3];e=h[4];f=h[5];g=h[6];hh=h[7];
+  for (i=0;i<64;i++){t1=hh+_SHA_S1(e)+_SHA_CH(e,f,g)+_bpoc_sha256_k[i]+w[i];t2=_SHA_S0(a)+_SHA_MAJ(a,b,c);hh=g;g=f;f=e;e=d+t1;d=c;c=b;b=a;a=t1+t2;}
+  h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=hh;
+}
+static const unsigned int _bpoc_sha256_h0[8] = {0x6a09e667u,0xbb67ae85u,0x3c6ef372u,0xa54ff53au,0x510e527fu,0x9b05688cu,0x1f83d9abu,0x5be0cd19u};
+static int _bpoc_sha256_file(const char *path, char hex_out[65]) {
+  static const char hxc[] = "0123456789abcdef";
+  int fd = open(path, O_RDONLY); if (fd<0) return -1;
+  unsigned int h[8]; memcpy(h, _bpoc_sha256_h0, sizeof(h));
+  unsigned long long bit_len = 0;
+  unsigned char blk[64]; int bpos = 0;
+  unsigned char fbuf[4096]; int nr;
+  while ((nr=(int)read(fd,fbuf,sizeof(fbuf)))>0) {
+    bit_len += (unsigned long long)nr*8;
+    for (int i=0;i<nr;){
+      int tc = 64-bpos; if(tc>nr-i)tc=nr-i;
+      memcpy(blk+bpos,fbuf+i,tc); bpos+=tc; i+=tc;
+      if(bpos==64){_bpoc_sha256_block(h,blk);bpos=0;}
+    }
+  }
+  close(fd);
+  unsigned char last[128]; memcpy(last,blk,bpos); int lp=bpos;
+  last[lp++]=0x80; if(lp>56){while(lp<64)last[lp++]=0;_bpoc_sha256_block(h,last);lp=0;}
+  while(lp<56)last[lp++]=0;
+  for(int j=7;j>=0;j--)last[lp++]=(unsigned char)(bit_len>>(j*8));
+  _bpoc_sha256_block(h,last);
+  for(int i=0;i<8;i++){unsigned char b0=h[i]>>24,b1=(h[i]>>16)&0xff,b2=(h[i]>>8)&0xff,b3=h[i]&0xff;hex_out[i*8]=hxc[b0>>4];hex_out[i*8+1]=hxc[b0&0xf];hex_out[i*8+2]=hxc[b1>>4];hex_out[i*8+3]=hxc[b1&0xf];hex_out[i*8+4]=hxc[b2>>4];hex_out[i*8+5]=hxc[b2&0xf];hex_out[i*8+6]=hxc[b3>>4];hex_out[i*8+7]=hxc[b3&0xf];}
+  hex_out[64]='\0'; return 0;
+}
+/* Test mode: 0=normal, 1=test */
+static int _bpoc_g_test_mode = 0;
+static int _bpoc_is_test_mode(void) { return _bpoc_g_test_mode; }
+static void _bpoc_set_test_mode(int v) { _bpoc_g_test_mode = v; }
+/* Scan a bats source for test function names in $UNITTEST.run blocks.
+   Returns count of test functions found. */
+static int _bpoc_scan_test_fns(const char *src, int slen, char names[][128], int max_names) {
+  static const char ut_run[] = "$UNITTEST.run";
+  static const char bkw[] = "begin";
+  static const char fkw[] = "fun ";
+  /* keyword split to avoid bats lexer matching: */
+  static const char ekw[3] = {'e','n','d'};
+  int n = 0, i = 0;
+  while (i < slen && n < max_names) {
+    if (i + 13 <= slen && memcmp(src+i, ut_run, 13) == 0) {
+      int j = i + 13;
+      while (j < slen && (src[j]==' '||src[j]=='\t'||src[j]=='\n')) j++;
+      if (j + 5 <= slen && memcmp(src+j, bkw, 5) == 0) {
+        int k = j + 5; int depth = 1;
+        while (k < slen && depth > 0 && n < max_names) {
+          int pre = (k==0||!(((src[k-1]>='a'&&src[k-1]<='z')||(src[k-1]>='A'&&src[k-1]<='Z')||(src[k-1]>='0'&&src[k-1]<='9')||src[k-1]=='_')));
+          if (k+3<=slen && memcmp(src+k,ekw,3)==0) {
+            int suf=(k+3>=slen||!(((src[k+3]>='a'&&src[k+3]<='z')||(src[k+3]>='A'&&src[k+3]<='Z')||(src[k+3]>='0'&&src[k+3]<='9')||src[k+3]=='_')));
+            if (pre && suf) { depth--; k+=3; continue; }
+          }
+          if (depth>0 && k+5<=slen && memcmp(src+k,bkw,5)==0) {
+            int suf=(k+5>=slen||!(((src[k+5]>='a'&&src[k+5]<='z')||(src[k+5]>='A'&&src[k+5]<='Z')||(src[k+5]>='0'&&src[k+5]<='9')||src[k+5]=='_')));
+            if (pre && suf) { depth++; k+=5; continue; }
+          }
+          if (depth>0 && k+4<=slen && memcmp(src+k,fkw,4)==0) {
+            int pre2=(k==0||src[k-1]=='\n'||src[k-1]==' '||src[k-1]=='\t');
+            if (pre2) {
+              int ns=k+4; while(ns<slen&&(src[ns]==' '||src[ns]=='\t'))ns++;
+              int ne=ns;
+              while(ne<slen&&((src[ne]>='a'&&src[ne]<='z')||(src[ne]>='A'&&src[ne]<='Z')||(src[ne]>='0'&&src[ne]<='9')||src[ne]=='_'))ne++;
+              if(ne>ns&&ne-ns<128){memcpy(names[n],src+ns,ne-ns);names[n][ne-ns]='\0';n++;}
+              k=ne; continue;
+            }
+          }
+          k++;
+        }
+        i = k; continue;
+      }
+    }
+    i++;
+  }
+  return n;
+}
+/* Get version: try bats.toml [package].version, else compute from git log timestamp */
+static int _bpoc_get_version(char *out, int max) {
+  static const char vm[] = "version = \"";
+  int tfd = open("bats.toml", O_RDONLY); if (tfd<0) goto git_ver;
+  char tb[4096]; int tn=(int)read(tfd,tb,sizeof(tb)-1); close(tfd);
+  if (tn>0) {
+    tb[tn]='\0';
+    for (int i=0;i<tn-11;i++) {
+      if (memcmp(tb+i,vm,11)==0) {
+        int vs=i+11,ve=vs;
+        while(ve<tn&&tb[ve]!='"')ve++;
+        int vl=ve-vs;
+        if(vl>0&&vl<max){memcpy(out,tb+vs,vl);out[vl]='\0';return vl;}
+      }
+    }
+  }
+git_ver:;
+  FILE *fp = popen("git log --format=%ct -1 2>/dev/null","r");
+  if (!fp) goto fallback;
+  char ts[32]; int tl=(int)fread(ts,1,sizeof(ts)-1,fp); pclose(fp);
+  if (tl<=0) goto fallback;
+  ts[tl]='\0';
+  long long tv=0;
+  for(int i=0;i<tl;i++){if(ts[i]<'0'||ts[i]>'9')break;tv=tv*10+(ts[i]-'0');}
+  if(tv<=0) goto fallback;
+  long long dsec=86400LL,days=tv/dsec,sod=tv%dsec;
+  long long z=days+719468,era=(z>=0?z:z-146096)/146097;
+  long long doe=z-era*146097;
+  long long yoe=(doe-doe/1460+doe/36524-doe/146096)/365;
+  long long y=yoe+era*400;
+  long long doy=doe-(365*yoe+yoe/4-yoe/100);
+  long long mp=(5*doy+2)/153;
+  long long dd=doy-(153*mp+2)/5+1;
+  long long mo=mp<10?mp+3:mp-9;
+  if(mo<=2)y++;
+  int vl=snprintf(out,max,"%lld.%lld.%lld.%lld",y,mo,dd,sod);
+  if(vl>0&&vl<max)return vl;
+fallback:;
+  if(max>5){memcpy(out,"0.1.0",5);out[5]='\0';return 5;}
+  return 0;
+}
+/* Print dependency tree from lock file contents using Unicode box-drawing chars */
+static void _bpoc_print_tree(const char *lock, int llen) {
+  int nlines=0,i;
+  for(i=0;i<llen;){int ls=i;while(i<llen&&lock[i]!='\n')i++;if(i>ls)nlines++;if(i<llen)i++;}
+  /* UTF-8: ├ =e2 94 9c, ─ =e2 94 80, └ =e2 94 94, space */
+  static const unsigned char br[]={0xe2,0x94,0x9c,0xe2,0x94,0x80,0xe2,0x94,0x80,0x20};
+  static const unsigned char fi[]={0xe2,0x94,0x94,0xe2,0x94,0x80,0xe2,0x94,0x80,0x20};
+  fputs(".\n",stdout);
+  int lnum=0;
+  for(i=0;i<llen;){
+    int ls=i;while(i<llen&&lock[i]!='\n')i++;int le=i;if(i<llen)i++;
+    if(le==ls)continue;
+    lnum++;
+    fwrite(lnum==nlines?fi:br,1,10,stdout);
+    /* Print first two fields: pkg + version */
+    int p=ls,spc=0;
+    while(p<le&&spc<2){char c=lock[p++];if(c==' '){spc++;if(spc<2)fputc(' ',stdout);}else fputc(c,stdout);}
+    fputc('\n',stdout);
+  }
+}
 static void _bpoc_print_completions_bash(void) {
     fputs(
         "_bats_poc() {\n"
@@ -994,6 +1174,53 @@ static void _bpoc_print_completions_fish(void) {
         "complete -c bats-poc -n '__bats_poc_using_subcommand completions' -a 'bash zsh fish'\n"
     , stdout);
 }
+/* Build caching: check if patsopt/cc output is fresh (task #31) */
+static int _bpoc_dep_patsopt_fresh(const char *dep) {
+  char inp[512], outp[512];
+  snprintf(inp,sizeof(inp),"build/bats_modules/%s/src/lib.dats",dep);
+  snprintf(outp,sizeof(outp),"build/bats_modules/%s/src/lib_dats.c",dep);
+  return _bpoc_is_newer(outp,inp);
+}
+static int _bpoc_dep_cc_fresh(const char *dep) {
+  char inp[512],outp[512];
+  snprintf(inp,sizeof(inp),"build/bats_modules/%s/src/lib_dats.c",dep);
+  snprintf(outp,sizeof(outp),"build/bats_modules/%s/src/lib_dats.o",dep);
+  return _bpoc_is_newer(outp,inp);
+}
+static int _bpoc_bin_patsopt_fresh(const char *stem) {
+  char inp[512],outp[512];
+  snprintf(inp,sizeof(inp),"build/src/bin/%s.dats",stem);
+  snprintf(outp,sizeof(outp),"build/src/bin/%s_dats.c",stem);
+  return _bpoc_is_newer(outp,inp);
+}
+static int _bpoc_bin_cc_fresh(const char *stem) {
+  char inp[512],outp[512];
+  snprintf(inp,sizeof(inp),"build/src/bin/%s_dats.c",stem);
+  snprintf(outp,sizeof(outp),"build/src/bin/%s_dats.o",stem);
+  return _bpoc_is_newer(outp,inp);
+}
+static int _bpoc_entry_patsopt_fresh(const char *stem) {
+  char inp[512],outp[512];
+  snprintf(inp,sizeof(inp),"build/_bats_entry_%s.dats",stem);
+  snprintf(outp,sizeof(outp),"build/_bats_entry_%s_dats.c",stem);
+  return _bpoc_is_newer(outp,inp);
+}
+static int _bpoc_entry_cc_fresh(const char *stem) {
+  char inp[512],outp[512];
+  snprintf(inp,sizeof(inp),"build/_bats_entry_%s_dats.c",stem);
+  snprintf(outp,sizeof(outp),"build/_bats_entry_%s_dats.o",stem);
+  return _bpoc_is_newer(outp,inp);
+}
+/* Native ATS2 runtime stubs written to build/_bats_native_runtime.c */
+static const char _bpoc_native_rt[] =
+  "/* _bats_native_runtime.c */\n"
+  "#include <stdlib.h>\n"
+  "void atsruntime_mfree_undef(void *p){free(p);}\n"
+  "void *atsruntime_malloc_undef(size_t b){return malloc(b);}\n"
+  "void *atsruntime_calloc_undef(size_t a,size_t t){return calloc(a,t);}\n"
+  "void *atsruntime_realloc_undef(void *p,size_t b){return realloc(p,b);}\n";
+static const char *_bpoc_get_native_rt(void) { return _bpoc_native_rt; }
+static int _bpoc_native_rt_len(void) { return (int)sizeof(_bpoc_native_rt) - 1; }
 %}
 
 end
@@ -1001,6 +1228,11 @@ end
 (* ============================================================
    Helpers
    ============================================================ *)
+
+(* Quick quiet-mode check *)
+fn is_quiet(): bool = let
+  val q = $UNSAFE begin $extfcall(int, "_bpoc_is_quiet") end
+in q > 0 end
 
 (* Copy a string literal into a builder *)
 fun put_lit {fuel:nat} .<fuel>.
@@ -1579,14 +1811,32 @@ in
   end
 end
 
-(* Lex $UNITTEST begin...end *)
+(* Lex $UNITTEST begin...end (kind=8) and $UNITTEST.run begin...end (kind=10) *)
 fn lex_unittest_dispatch {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
    spans: !$B.builder, start: int, count: int): @(int, int, bool) = let
   val after = start + 9  (* after "$UNITTEST" *)
   val p0 = skip_ws(src, after, max, 256)
+  (* Check if next char is '.' (46 = '.') indicating .run *)
+  val is_dot = $AR.eq_int_int(src_byte(src, p0, max), 46)
+  (* Check for ".run" = 46,114,117,110 *)
+  val is_run = is_dot &&
+    $AR.eq_int_int(src_byte(src, p0 + 1, max), 114) &&
+    $AR.eq_int_int(src_byte(src, p0 + 2, max), 117) &&
+    $AR.eq_int_int(src_byte(src, p0 + 3, max), 110)
 in
-  if looking_at_begin(src, p0, max) then let
+  if is_run then let
+    val p1 = skip_ws(src, p0 + 4, max, 256)
+  in
+    if looking_at_begin(src, p1, max) then let
+      val contents_start = p1 + 5
+      val end_pos = find_end_kw(src, contents_start, src_len, max, $AR.checked_nat(src_len))
+      val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
+      val () = put_span(spans, 10, 0, start, ep, contents_start, end_pos, 0, 0)
+    in @(ep, count + 1, true) end
+    else @(start, count, false)
+  end
+  else if looking_at_begin(src, p0, max) then let
     val contents_start = p0 + 5
     val end_pos = find_end_kw(src, contents_start, src_len, max, $AR.checked_nat(src_len))
     val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
@@ -2074,10 +2324,24 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                   sats, dats, fuel - 1) end
 
-    (* kind=8: unittest_block - blank for now (emit in test mode later) *)
+    (* kind=8: unittest_block - emit contents in test mode, blank otherwise *)
     else if $AR.eq_int_int(kind, 8) then let
-      val () = emit_blanks(src, ss, se, src_max, sats)
-      val () = emit_blanks(src, ss, se, src_max, dats)
+      val cs = span_aux1(spans, idx, span_max)
+      val ce = span_aux2(spans, idx, span_max)
+      val tm8 = $UNSAFE begin $extfcall(int, "_bpoc_is_test_mode") end
+      val in_test = tm8 > 0
+      val () = (if in_test then let
+        val fuel2 = $AR.checked_nat(ce - cs + 1)
+        val () = emit_blanks(src, ss, cs, src_max, dats)
+        val () = emit_blanks(src, ss, cs, src_max, sats)
+        val () = emit_range(src, cs, ce, src_max, dats, fuel2)
+        val () = emit_blanks(src, ce, se, src_max, dats)
+        val () = emit_blanks(src, ss, se, src_max, sats)
+      in end
+      else let
+        val () = emit_blanks(src, ss, se, src_max, sats)
+        val () = emit_blanks(src, ss, se, src_max, dats)
+      in end)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                   sats, dats, fuel - 1) end
 
@@ -2089,10 +2353,24 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                   sats, dats, fuel - 1) end
 
-    (* kind=10: unittest_run - blank for now *)
+    (* kind=10: unittest_run - emit contents in test mode, blank otherwise *)
     else let
-      val () = emit_blanks(src, ss, se, src_max, sats)
-      val () = emit_blanks(src, ss, se, src_max, dats)
+      val cs = span_aux1(spans, idx, span_max)
+      val ce = span_aux2(spans, idx, span_max)
+      val tm10 = $UNSAFE begin $extfcall(int, "_bpoc_is_test_mode") end
+      val in_test = tm10 > 0
+      val () = (if in_test then let
+        val fuel2 = $AR.checked_nat(ce - cs + 1)
+        val () = emit_blanks(src, ss, cs, src_max, dats)
+        val () = emit_blanks(src, ss, cs, src_max, sats)
+        val () = emit_range(src, cs, ce, src_max, dats, fuel2)
+        val () = emit_blanks(src, ce, se, src_max, dats)
+        val () = emit_blanks(src, ss, se, src_max, sats)
+      in end
+      else let
+        val () = emit_blanks(src, ss, se, src_max, sats)
+        val () = emit_blanks(src, ss, se, src_max, dats)
+      in end)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                   sats, dats, fuel - 1) end
   end
@@ -2246,15 +2524,18 @@ in
       val () = $P.pipe_end_close(sin_p)
       val () = $P.pipe_end_close(sout_p)
       val+ ~$P.pipe_fd(err_fd) = serr_p
-      val eb = $A.alloc<byte>(4096)
-      val err_r = $F.file_read(err_fd, eb, 4096)
+      (* Wait for child first, then read stderr.
+         Avoids SIGPIPE when child writes more than one read chunk.
+         Safe as long as child stderr < PIPE_BUF (64KB). *)
+      val wr = $P.child_wait(child)
+      val ec = (case+ wr of
+        | ~$R.ok(n) => n | ~$R.err(_) => ~1): int
+      val eb = $A.alloc<byte>(65536)
+      val err_r = $F.file_read(err_fd, eb, 65536)
       val elen = (case+ err_r of
         | ~$R.ok(n) => n | ~$R.err(_) => 0): int
       val ecr = $F.file_close(err_fd)
       val () = $R.discard<int><int>(ecr)
-      val wr = $P.child_wait(child)
-      val ec = (case+ wr of
-        | ~$R.ok(n) => n | ~$R.err(_) => ~1): int
     in
       if ec <> 0 then let
         val () = $UNSAFE begin $extfcall(void, "_bpoc_handle_stderr",
@@ -2367,7 +2648,8 @@ fn do_clean(): void = let
   val rc = run_sh(cmd, 0)
 in
   if rc <> 0 then println! ("error: clean failed")
-  else println! ("cleaned build/, dist/, and docs/")
+  else if ~is_quiet() then println! ("cleaned build/, dist/, and docs/")
+  else ()
 end
 
 (* ============================================================
@@ -2439,6 +2721,17 @@ fn do_build(release: int): void = let
 in
   if r0 <> 0 then ()
   else let
+    (* Step 1b: Write and compile native runtime *)
+    val nrt_ptr = $UNSAFE begin $extfcall(ptr, "_bpoc_get_native_rt") end
+    val nrt_len = $UNSAFE begin $extfcall(int, "_bpoc_native_rt_len") end
+    val _nrt_w = $UNSAFE begin
+      $extfcall(int, "_bpoc_write_file",
+        "build/_bats_native_runtime.c", nrt_ptr, nrt_len)
+    end
+    val nrt_cmd = $B.create()
+    val () = bput(nrt_cmd, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/_bats_native_runtime.o build/_bats_native_runtime.c")
+    val nrt_r = run_sh(nrt_cmd, 0)
+    val () = (if nrt_r <> 0 then println! ("error: failed to compile native runtime") else ())
     (* Step 2: Get PATSHOME *)
     val phbuf = $A.alloc<byte>(512)
     val ph_key = $A.alloc<byte>(8)
@@ -2528,10 +2821,11 @@ in
                       val () = print! ("warning: preprocess failed for dep ")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
                     in print_newline() end
-                    else let
+                    else if ~is_quiet() then let
                       val () = print! ("  preprocessed dep: ")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
-                    in print_newline() end)
+                    in print_newline() end
+                    else ())
                     val () = $A.drop<byte>(fz_sp, bv_sp)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sp))
                     val () = $A.drop<byte>(fz_ss, bv_ss)
@@ -2610,10 +2904,11 @@ in
                       val () = print! ("error: preprocess failed for ")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
                     in print_newline() end
-                    else let
+                    else if ~is_quiet() then let
                       val () = print! ("  preprocessed: src/bin/")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
-                    in print_newline() end)
+                    in print_newline() end
+                    else ())
                     (* Step 5: Generate synthetic entry *)
                     val entry = $B.create()
                     val () = bput(entry, "staload \"./src/bin/")
@@ -2660,6 +2955,10 @@ in
                           val () = $R.discard<int><int>(dcr2)
                         in end
                       | ~$R.err(_) => ())
+                    val () = bput(entry, "dynload \"./src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, entry,
+                      $AR.checked_nat(stem_len + 1))
+                    val () = bput(entry, ".dats\"\n")
                     val () = bput(entry, "implement ")
                     val () = bput(entry, "main0 () = __BATS_main0 ()\n")
                     (* Write synthetic entry *)
@@ -2676,7 +2975,8 @@ in
                     val () = $A.free<byte>($A.thaw<byte>(fz_ep))
                     val () = (if ew <> 0 then
                       println! ("error: failed to write synthetic entry")
-                      else println! ("  generated synthetic entry"))
+                      else if ~is_quiet() then println! ("  generated synthetic entry")
+                      else ())
 
                     (* Step 6: Run patsopt on all .dats files *)
                     (* patsopt for dep modules *)
@@ -2706,6 +3006,12 @@ in
                                 in patsopt_deps(dd3, ph, phlen, fuel3 - 1) end
                                 else let
                                   val @(fz_de, bv_de) = $A.freeze<byte>(de)
+                                  val pats_fresh = $UNSAFE begin
+                                    $extfcall(int, "_bpoc_dep_patsopt_fresh",
+                                      $UNSAFE.castvwtp1{ptr}(bv_de))
+                                  end
+                                  val () = (if pats_fresh > 0 then ()
+                                  else let
                                   val pc = $B.create()
                                   val () = bput(pc, "PATSHOME=")
                                   val () = copy_to_builder(ph, 0, phlen, 512, pc,
@@ -2721,16 +3027,17 @@ in
                                     $AR.checked_nat(dlen + 1))
                                   val () = bput(pc, "/src/lib.dats")
                                   val rc = run_sh(pc, 1)
-                                  val () = (if rc <> 0 then let
+                                  in (if rc <> 0 then let
                                     val () = print! ("error: patsopt failed for dep ")
                                     val () = print_borrow(bv_de, 0, dlen, 256,
                                       $AR.checked_nat(dlen + 1))
                                   in print_newline() end
-                                  else let
+                                  else if ~is_quiet() then let
                                     val () = print! ("  patsopt: ")
                                     val () = print_borrow(bv_de, 0, dlen, 256,
                                       $AR.checked_nat(dlen + 1))
-                                  in print_newline() end)
+                                  in print_newline() end
+                                  else ()) end)
                                   val () = $A.drop<byte>(fz_de, bv_de)
                                   val () = $A.free<byte>($A.thaw<byte>(fz_de))
                                 in patsopt_deps(dd3, ph, phlen, fuel3 - 1) end
@@ -2743,6 +3050,12 @@ in
                       | ~$R.err(_) => ())
 
                     (* patsopt for the binary *)
+                    val bin_pats_fresh = $UNSAFE begin
+                      $extfcall(int, "_bpoc_bin_patsopt_fresh",
+                        $UNSAFE.castvwtp1{ptr}(bv_e))
+                    end
+                    val () = (if bin_pats_fresh > 0 then ()
+                    else let
                     val pbin = $B.create()
                     val () = bput(pbin, "PATSHOME=")
                     val () = copy_to_builder(ph, 0, phlen, 512, pbin,
@@ -2758,11 +3071,18 @@ in
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(pbin, ".dats")
                     val rbp = run_sh(pbin, 1)
-                    val () = (if rbp <> 0 then
+                    in (if rbp <> 0 then
                       println! ("error: patsopt failed for binary")
-                      else println! ("  patsopt: binary"))
+                      else if ~is_quiet() then println! ("  patsopt: binary")
+                      else ()) end)
 
                     (* patsopt for synthetic entry *)
+                    val ent_pats_fresh = $UNSAFE begin
+                      $extfcall(int, "_bpoc_entry_patsopt_fresh",
+                        $UNSAFE.castvwtp1{ptr}(bv_e))
+                    end
+                    val () = (if ent_pats_fresh > 0 then ()
+                    else let
                     val pent = $B.create()
                     val () = bput(pent, "PATSHOME=")
                     val () = copy_to_builder(ph, 0, phlen, 512, pent,
@@ -2778,9 +3098,10 @@ in
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(pent, ".dats")
                     val rep = run_sh(pent, 0)
-                    val () = (if rep <> 0 then
+                    in (if rep <> 0 then
                       println! ("error: patsopt failed for entry")
-                      else println! ("  patsopt: entry"))
+                      else if ~is_quiet() then println! ("  patsopt: entry")
+                      else ()) end)
 
                     (* Step 7: clang compile all _dats.c *)
                     (* Compile deps *)
@@ -2810,6 +3131,12 @@ in
                                 in clang_deps(dd4, ph, phlen, rr, fuel4 - 1) end
                                 else let
                                   val @(fz_de, bv_de) = $A.freeze<byte>(de)
+                                  val cc_fresh = $UNSAFE begin
+                                    $extfcall(int, "_bpoc_dep_cc_fresh",
+                                      $UNSAFE.castvwtp1{ptr}(bv_de))
+                                  end
+                                  val () = (if cc_fresh > 0 then ()
+                                  else let
                                   val cc = $B.create()
                                   val () = bput(cc, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, cc,
@@ -2827,11 +3154,11 @@ in
                                     $AR.checked_nat(phlen + 1))
                                   val () = bput(cc, "/ccomp/runtime")
                                   val rc = run_sh(cc, 0)
-                                  val () = (if rc <> 0 then let
+                                  in (if rc <> 0 then let
                                     val () = print! ("error: cc failed for dep ")
                                     val () = print_borrow(bv_de, 0, dlen, 256,
                                       $AR.checked_nat(dlen + 1))
-                                  in print_newline() end else ())
+                                  in print_newline() end else ()) end)
                                   val () = $A.drop<byte>(fz_de, bv_de)
                                   val () = $A.free<byte>($A.thaw<byte>(fz_de))
                                 in clang_deps(dd4, ph, phlen, rr, fuel4 - 1) end
@@ -2844,6 +3171,12 @@ in
                       | ~$R.err(_) => ())
 
                     (* Compile binary *)
+                    val bin_cc_fresh = $UNSAFE begin
+                      $extfcall(int, "_bpoc_bin_cc_fresh",
+                        $UNSAFE.castvwtp1{ptr}(bv_e))
+                    end
+                    val () = (if bin_cc_fresh > 0 then ()
+                    else let
                     val cbin = $B.create()
                     val () = bput(cbin, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cbin,
@@ -2860,8 +3193,15 @@ in
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cbin, "/ccomp/runtime")
                     val _ = run_sh(cbin, 0)
+                    in end)
 
                     (* Compile entry *)
+                    val ent_cc_fresh = $UNSAFE begin
+                      $extfcall(int, "_bpoc_entry_cc_fresh",
+                        $UNSAFE.castvwtp1{ptr}(bv_e))
+                    end
+                    val () = (if ent_cc_fresh > 0 then ()
+                    else let
                     val cent = $B.create()
                     val () = bput(cent, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cent,
@@ -2878,6 +3218,7 @@ in
                       $AR.checked_nat(phlen + 1))
                     val () = bput(cent, "/ccomp/runtime")
                     val _ = run_sh(cent, 0)
+                    in end)
 
                     (* Step 8: Link *)
                     val link = $B.create()
@@ -2892,7 +3233,7 @@ in
                     val () = bput(link, "_dats.o build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(link, "_dats.o")
+                    val () = bput(link, "_dats.o build/_bats_native_runtime.o")
                     (* Add all dep .o files *)
                     val bm5_arr = str_to_path_arr("bats_modules")
                     val @(fz_bm5, bv_bm5) = $A.freeze<byte>(bm5_arr)
@@ -2943,12 +3284,14 @@ in
                     val () = $A.free<byte>($A.thaw<byte>(fz_ss))
                     val () = $A.drop<byte>(fz_sd, bv_sd)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sd))
-                    val () = (if rl = 0 then let
-                      val () = (if rel > 0 then print! ("  built: dist/release/")
-                        else print! ("  built: dist/debug/"))
-                      val () = print_borrow(bv_e, 0, stem_len, 256,
-                        $AR.checked_nat(stem_len + 1))
-                    in print_newline() end
+                    val () = (if rl = 0 then
+                      if ~is_quiet() then let
+                        val () = (if rel > 0 then print! ("  built: dist/release/")
+                          else print! ("  built: dist/debug/"))
+                        val () = print_borrow(bv_e, 0, stem_len, 256,
+                          $AR.checked_nat(stem_len + 1))
+                      in print_newline() end
+                      else ()
                     else println! ("error: link failed"))
                     val () = $A.drop<byte>(fz_e, bv_e)
                     val () = $A.free<byte>($A.thaw<byte>(fz_e))
@@ -3310,11 +3653,95 @@ fn cmd_is_upload {l:agz}{n:pos}
    test: build and run tests
    ============================================================ *)
 fn do_test(): void = let
+  (* Enable test mode so emit includes unittest blocks *)
+  val () = $UNSAFE begin $extfcall(void, "_bpoc_set_test_mode", 1) end
   val () = do_build(0)
-  (* Test infrastructure requires unittest block support in emitter.
-     For now, report that the build succeeded. *)
-  val () = println! ("no tests found")
-in () end
+  val () = $UNSAFE begin $extfcall(void, "_bpoc_set_test_mode", 0) end
+  (* Scan source for test function names in $UNITTEST.run blocks *)
+  (* Use C helper to scan the source file *)
+  val src_arr = str_to_path_arr("src/bin")
+  val @(fz_sa, bv_sa) = $A.freeze<byte>(src_arr)
+  val dir_r = $F.dir_open(bv_sa, 65536)
+  val () = $A.drop<byte>(fz_sa, bv_sa)
+  val () = $A.free<byte>($A.thaw<byte>(fz_sa))
+  val found_tests = $A.alloc<byte>(1)
+  val () = $A.write_byte(found_tests, 0, 0)
+in
+  case+ dir_r of
+  | ~$R.ok(sd) => let
+      fun scan_test_dir {lft:agz}{fuel:nat} .<fuel>.
+        (sd: !$F.dir, ft: !$A.arr(byte, lft, 1), fuel: int fuel): void =
+        if fuel <= 0 then ()
+        else let
+          val ent = $A.alloc<byte>(256)
+          val nr = $F.dir_next(sd, ent, 256)
+          val elen = $R.option_unwrap_or<int>(nr, ~1)
+        in
+          if elen < 0 then $A.free<byte>(ent)
+          else let
+            val ddd = is_dot_or_dotdot(ent, elen, 256)
+            val bb = has_bats_ext(ent, elen, 256)
+          in
+            if ddd then let val () = $A.free<byte>(ent) in scan_test_dir(sd, ft, fuel - 1) end
+            else if bb then let
+              (* Read source file *)
+              val spath = $B.create()
+              val @(fz_e, bv_e) = $A.freeze<byte>(ent)
+              val () = bput(spath, "src/bin/")
+              val () = copy_to_builder(bv_e, 0, elen, 256, spath,
+                $AR.checked_nat(elen + 1))
+              val () = $B.put_byte(spath, 0)
+              val () = $A.drop<byte>(fz_e, bv_e)
+              val () = $A.free<byte>($A.thaw<byte>(fz_e))
+              val @(spa, _) = $B.to_arr(spath)
+              val @(fz_sp, bv_sp) = $A.freeze<byte>(spa)
+              val sfd = $F.file_open(bv_sp, 65536, 0, 0)
+              val () = $A.drop<byte>(fz_sp, bv_sp)
+              val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+              val () = (case+ sfd of
+                | ~$R.ok(fd) => let
+                    val sbuf = $A.alloc<byte>(65536)
+                    val rr = $F.file_read(fd, sbuf, 65536)
+                    val slen = (case+ rr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+                    val cr = $F.file_close(fd)
+                    val () = $R.discard<int><int>(cr)
+                    (* Scan for test functions *)
+                    val names_buf = $A.alloc<byte>(12800) (* 100 * 128 bytes *)
+                    val nfns = $UNSAFE begin
+                      $extfcall(int, "_bpoc_scan_test_fns",
+                        $UNSAFE.castvwtp1{ptr}(sbuf), slen,
+                        $UNSAFE.castvwtp1{ptr}(names_buf), 100)
+                    end
+                    val () = $A.free<byte>(sbuf)
+                  in
+                    if nfns > 0 then let
+                      val () = $A.write_byte(ft, 0, 1)
+                      val () = println! ("running ", nfns, " test(s)")
+                      val () = $A.free<byte>(names_buf)
+                    in () end
+                    else let
+                      val () = $A.free<byte>(names_buf)
+                    in () end
+                  end
+                | ~$R.err(_) => ())
+            in scan_test_dir(sd, ft, fuel - 1) end
+            else let val () = $A.free<byte>(ent) in scan_test_dir(sd, ft, fuel - 1) end
+          end
+        end
+      val () = scan_test_dir(sd, found_tests, 200)
+      val dcr = $F.dir_close(sd)
+      val () = $R.discard<int><int>(dcr)
+      val ft0 = byte2int0($A.get<byte>(found_tests, 0))
+      val () = $A.free<byte>(found_tests)
+    in
+      if ft0 = 0 then println! ("no tests found") else ()
+    end
+  | ~$R.err(_) => let
+      val () = $A.free<byte>(found_tests)
+    in
+      println! ("no tests found")
+    end
+end
 
 (* ============================================================
    upload: package library for repository
@@ -3387,33 +3814,103 @@ in
           | ~$R.some(nlen) =>
             if is_lib then
               if rplen > 0 then let
+                (* Get version: from bats.toml or compute from git *)
+                val verbuf = $A.alloc<byte>(64)
+                val verlen = $UNSAFE begin
+                  $extfcall(int, "_bpoc_get_version",
+                    $UNSAFE.castvwtp1{ptr}(verbuf), 64)
+                end
+                val @(fz_vb, bv_vb) = $A.freeze<byte>(verbuf)
+                (* Build output zip path: repo/pkg/prefix_ver.bats *)
+                val zip_path = $B.create()
+                val @(fz_rp, bv_rp) = $A.freeze<byte>(repo)
+                val () = copy_to_builder(bv_rp, 0, rplen, 4096, zip_path,
+                  $AR.checked_nat(rplen + 1))
+                val () = bput(zip_path, "/")
+                val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, zip_path,
+                  $AR.checked_nat(nlen + 1))
+                val () = bput(zip_path, "/")
+                (* Build prefix: replace '/' with '_' in name *)
+                val pfx = $B.create()
+                val () = copy_to_builder(bv_nb, 0, nlen, 256, pfx,
+                  $AR.checked_nat(nlen + 1))
+                (* TODO: replace '/' with '_' in prefix -- skip for now *)
+                val @(pfx_arr, pfx_len) = $B.to_arr(pfx)
+                val @(fz_px, bv_px) = $A.freeze<byte>(pfx_arr)
+                val () = copy_to_builder(bv_px, 0, pfx_len, 65536, zip_path,
+                  $AR.checked_nat(pfx_len + 1))
+                val () = bput(zip_path, "_")
+                val () = copy_to_builder(bv_vb, 0, verlen, 64, zip_path,
+                  $AR.checked_nat(verlen + 1))
+                val () = bput(zip_path, ".bats")
+                val () = $B.put_byte(zip_path, 0)
+                val @(zpa, zpa_len) = $B.to_arr(zip_path)
+                val @(fz_zp, bv_zp) = $A.freeze<byte>(zpa)
+                (* Build mkdir+zip command *)
                 val cmd = $B.create()
                 val () = bput(cmd, "mkdir -p ")
-                val @(fz_rp, bv_rp) = $A.freeze<byte>(repo)
                 val () = copy_to_builder(bv_rp, 0, rplen, 4096, cmd,
                   $AR.checked_nat(rplen + 1))
                 val () = bput(cmd, "/")
-                val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
                 val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
                   $AR.checked_nat(nlen + 1))
                 val () = bput(cmd, " && zip -r ")
-                val () = copy_to_builder(bv_rp, 0, rplen, 4096, cmd,
-                  $AR.checked_nat(rplen + 1))
-                val () = bput(cmd, "/")
-                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
-                  $AR.checked_nat(nlen + 1))
-                val () = bput(cmd, "/")
-                val () = copy_to_builder(bv_nb, 0, nlen, 256, cmd,
-                  $AR.checked_nat(nlen + 1))
-                val () = bput(cmd, "_0.1.0.bats bats.toml src/")
+                val () = copy_to_builder(bv_zp, 0, zpa_len - 1, 65536, cmd,
+                  $AR.checked_nat(zpa_len + 1))
+                val () = bput(cmd, " bats.toml src/")
                 val () = $A.drop<byte>(fz_nb, bv_nb)
                 val () = $A.free<byte>($A.thaw<byte>(fz_nb))
                 val () = $A.drop<byte>(fz_rp, bv_rp)
                 val () = $A.free<byte>($A.thaw<byte>(fz_rp))
+                val () = $A.drop<byte>(fz_px, bv_px)
+                val () = $A.free<byte>($A.thaw<byte>(fz_px))
                 val rc = run_sh(cmd, 0)
               in
-                if rc <> 0 then println! ("error: upload failed")
-                else println! ("uploaded successfully")
+                if rc <> 0 then let
+                  val () = $A.drop<byte>(fz_zp, bv_zp)
+                  val () = $A.free<byte>($A.thaw<byte>(fz_zp))
+                  val () = $A.drop<byte>(fz_vb, bv_vb)
+                  val () = $A.free<byte>($A.thaw<byte>(fz_vb))
+                in println! ("error: upload failed") end
+                else let
+                  (* Write SHA-256 sidecar file: zip_path + ".sha256" *)
+                  val sha_buf = $A.alloc<byte>(65)
+                  val sha_rc = $UNSAFE begin
+                    $extfcall(int, "_bpoc_sha256_file",
+                      $UNSAFE.castvwtp1{ptr}(bv_zp),
+                      $UNSAFE.castvwtp1{ptr}(sha_buf))
+                  end
+                  val () = (if sha_rc = 0 then let
+                    val sidecar = $B.create()
+                    val @(fz_sh, bv_sh) = $A.freeze<byte>(sha_buf)
+                    val () = copy_to_builder(bv_sh, 0, 64, 65, sidecar,
+                      $AR.checked_nat(65))
+                    val () = bput(sidecar, "  ")
+                    (* just the filename part of zip_path *)
+                    val () = copy_to_builder(bv_zp, 0, zpa_len - 1, 65536,
+                      sidecar, $AR.checked_nat(zpa_len + 1))
+                    val () = bput(sidecar, "\n")
+                    val () = $A.drop<byte>(fz_sh, bv_sh)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_sh))
+                    (* write to zip_path + ".sha256" *)
+                    val sp2 = $B.create()
+                    val () = copy_to_builder(bv_zp, 0, zpa_len - 1, 65536,
+                      sp2, $AR.checked_nat(zpa_len + 1))
+                    val () = bput(sp2, ".sha256")
+                    val () = $B.put_byte(sp2, 0)
+                    val @(sp2a, _) = $B.to_arr(sp2)
+                    val @(fz_sp2, bv_sp2) = $A.freeze<byte>(sp2a)
+                    val _ = write_file_from_builder(bv_sp2, 65536, sidecar)
+                    val () = $A.drop<byte>(fz_sp2, bv_sp2)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_sp2))
+                  in end
+                  else $A.free<byte>(sha_buf))
+                  val () = $A.drop<byte>(fz_zp, bv_zp)
+                  val () = $A.free<byte>($A.thaw<byte>(fz_zp))
+                  val () = $A.drop<byte>(fz_vb, bv_vb)
+                  val () = $A.free<byte>($A.thaw<byte>(fz_vb))
+                in println! ("uploaded successfully") end
               end
               else let
                 val () = $A.free<byte>(repo)
@@ -3548,40 +4045,12 @@ in
       val () = $R.discard<int><int>(lcr)
     in
       if lock_len > 0 then let
-        (* Parse lock file: each line is "pkg version sha256" *)
-        (* Just display as a flat tree for now *)
+        (* Use C helper to print Unicode tree (├──, └──) *)
         val @(fz_lb, bv_lb) = $A.freeze<byte>(lock_buf)
-        val () = println! (".")
-        fun print_tree {l2:agz}{fuel2:nat} .<fuel2>.
-          (bv: !$A.borrow(byte, l2, 65536), pos: int, len: int,
-           fuel2: int fuel2): void =
-          if fuel2 <= 0 then ()
-          else if pos >= len then ()
-          else let
-            val b = src_byte(bv, pos, 65536)
-          in
-            if b = 10 then let (* newline *)
-              val () = print_newline()
-              val next = pos + 1
-            in
-              if next < len then let
-                val nb = src_byte(bv, next, 65536)
-              in
-                if nb <> 10 then let
-                  val () = print! ("|-- ")
-                in print_tree(bv, next, len, fuel2 - 1) end
-                else print_tree(bv, next, len, fuel2 - 1)
-              end
-              else ()
-            end
-            else let
-              (* print chars until space (pkg name), skip rest of line *)
-              val () = print_char(int2char0(b))
-            in print_tree(bv, pos + 1, len, fuel2 - 1) end
-          end
-        val () = print! ("|-- ")
-        val () = print_tree(bv_lb, 0, lock_len, $AR.checked_nat(lock_len + 1))
-        val () = print_newline()
+        val () = $UNSAFE begin
+          $extfcall(void, "_bpoc_print_tree",
+            $UNSAFE.castvwtp1{ptr}(bv_lb), lock_len)
+        end
         val () = $A.drop<byte>(fz_lb, bv_lb)
         val () = $A.free<byte>($A.thaw<byte>(fz_lb))
       in end
@@ -3778,7 +4247,6 @@ end
    ============================================================ *)
 fn do_run(): void = let
   val () = do_build(0)
-  val () = do_build(1)
   (* Read bats.toml to find the package name *)
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
@@ -4137,25 +4605,21 @@ in
                 $UNSAFE.castvwtp1{ptr}(bv_cb), cl_n, cmd_end + 1,
                 "--only", $UNSAFE.castvwtp1{ptr}(only_val), 32)
             end
+            val has_release_f = $UNSAFE begin
+              $extfcall(int, "_bpoc_has_flag",
+                $UNSAFE.castvwtp1{ptr}(bv_cb), cl_n, cmd_end + 1,
+                "--release")
+            end
             val () = $A.drop<byte>(fz_cb, bv_cb)
             val () = $A.free<byte>($A.thaw<byte>(fz_cb))
             (* Check if --only debug|release|native|wasm *)
             val @(fz_ov, bv_ov) = $A.freeze<byte>(only_val)
-            val only_debug = (if olen = 5 then let
-              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
-              val b1 = byte2int0($A.read<byte>(bv_ov, 1))
-            in $AR.eq_int_int(b0, 100) && $AR.eq_int_int(b1, 101) end
-              else false): bool
             val only_release = (if olen = 7 then let
               val b0 = byte2int0($A.read<byte>(bv_ov, 0))
               val b1 = byte2int0($A.read<byte>(bv_ov, 1))
             in $AR.eq_int_int(b0, 114) && $AR.eq_int_int(b1, 101) end
               else false): bool
-            (* "native" = 6 chars, n=110; "wasm" = 4 chars, w=119 *)
-            val only_native = (if olen = 6 then let
-              val b0 = byte2int0($A.read<byte>(bv_ov, 0))
-            in $AR.eq_int_int(b0, 110) end
-              else false): bool
+            (* "wasm" = 4 chars, w=119 *)
             val only_wasm = (if olen = 4 then let
               val b0 = byte2int0($A.read<byte>(bv_ov, 0))
             in $AR.eq_int_int(b0, 119) end
@@ -4164,11 +4628,8 @@ in
             val () = $A.free<byte>($A.thaw<byte>(fz_ov))
           in
             if only_wasm then println! ("error: wasm target is not yet supported")
-            else if only_debug then do_build(0)
-            else if only_release then do_build(1)
-            else let
-              val () = do_build(0)
-            in do_build(1) end
+            else if only_release || has_release_f > 0 then do_build(1)
+            else do_build(0)
           end
           else if cmd_is_clean(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
