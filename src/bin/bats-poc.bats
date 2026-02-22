@@ -740,6 +740,407 @@ fn do_lex {l:agz}{n:pos}
 in @(span_arr, span_arr_len, span_count) end
 
 (* ============================================================
+   Emitter: read span records
+   ============================================================ *)
+
+fn read_i32 {l:agz}{n:pos}
+  (bv: !$A.borrow(byte, l, n), off: int, max: int n): int =
+  let val o = g1ofg0(off) in
+    if o >= 0 then
+      if o + 3 < max then let
+        val b0 = byte2int0($A.read<byte>(bv, o))
+        val b1 = byte2int0($A.read<byte>(bv, o + 1))
+        val b2 = byte2int0($A.read<byte>(bv, o + 2))
+        val b3 = byte2int0($A.read<byte>(bv, o + 3))
+      in b0 + b1 * 256 + b2 * 65536 + b3 * 16777216 end
+      else 0
+    else 0
+  end
+
+fn span_kind {l:agz}{n:pos}
+  (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
+  src_byte(spans, idx * 28, max)
+
+fn span_dest {l:agz}{n:pos}
+  (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
+  src_byte(spans, idx * 28 + 1, max)
+
+fn span_start {l:agz}{n:pos}
+  (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
+  read_i32(spans, idx * 28 + 2, max)
+
+fn span_end {l:agz}{n:pos}
+  (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
+  read_i32(spans, idx * 28 + 6, max)
+
+fn span_aux1 {l:agz}{n:pos}
+  (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
+  read_i32(spans, idx * 28 + 10, max)
+
+fn span_aux2 {l:agz}{n:pos}
+  (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
+  read_i32(spans, idx * 28 + 14, max)
+
+fn span_aux3 {l:agz}{n:pos}
+  (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
+  read_i32(spans, idx * 28 + 18, max)
+
+fn span_aux4 {l:agz}{n:pos}
+  (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
+  read_i32(spans, idx * 28 + 22, max)
+
+(* ============================================================
+   Emitter: copy source range to builder, count newlines
+   ============================================================ *)
+
+(* Copy bytes from source borrow to builder *)
+fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
+   max: int ns, out: !$B.builder, fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if start >= end_pos then ()
+  else let
+    val b = src_byte(src, start, max)
+    val () = $B.put_byte(out, b)
+  in emit_range(src, start + 1, end_pos, max, out, fuel - 1) end
+
+(* Count newlines in source range, emit that many newlines *)
+fun emit_blanks_count {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
+   max: int ns, fuel: int fuel): int =
+  if fuel <= 0 then 0
+  else if start >= end_pos then 0
+  else let
+    val b = src_byte(src, start, max)
+    val rest = emit_blanks_count(src, start + 1, end_pos, max, fuel - 1)
+  in
+    if $AR.eq_int_int(b, 10) then rest + 1
+    else rest
+  end
+
+fun emit_newlines {fuel:nat} .<fuel>.
+  (out: !$B.builder, count: int, fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if count <= 0 then ()
+  else let
+    val () = $B.put_byte(out, 10)
+  in emit_newlines(out, count - 1, fuel - 1) end
+
+fn emit_blanks {ls:agz}{ns:pos}
+  (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
+   max: int ns, out: !$B.builder): void = let
+  val nl_count = emit_blanks_count(src, start, end_pos, max,
+    $AR.checked_nat(end_pos - start + 1))
+  val () = emit_newlines(out, nl_count, $AR.checked_nat(nl_count + 1))
+in end
+
+(* ============================================================
+   Emitter: name mangling (__BATS__<mangled_pkg>_<member>)
+   ============================================================ *)
+
+(* Emit __BATS__ prefix: 95,95,66,65,84,83,95,95 *)
+fn emit_bats_prefix(out: !$B.builder): void = let
+  val () = $B.put_byte(out, 95)   (* _ *)
+  val () = $B.put_byte(out, 95)   (* _ *)
+  val () = $B.put_byte(out, 66)   (* B *)
+  val () = $B.put_byte(out, 65)   (* A *)
+  val () = $B.put_byte(out, 84)   (* T *)
+  val () = $B.put_byte(out, 83)   (* S *)
+  val () = $B.put_byte(out, 95)   (* _ *)
+  val () = $B.put_byte(out, 95)   (* _ *)
+in end
+
+(* Emit hex digit for a nibble *)
+fn emit_hex_nibble(out: !$B.builder, v: int): void =
+  if v < 10 then $B.put_byte(out, v + 48)  (* '0' + v *)
+  else $B.put_byte(out, v - 10 + 97)  (* 'a' + v-10 *)
+
+(* Mangle a single byte: alnum passes through, / becomes __, else _XX *)
+fn emit_mangled_byte(out: !$B.builder, b: int): void =
+  if (b >= 97 && b <= 122) || (b >= 65 && b <= 90) ||
+     (b >= 48 && b <= 57) then
+    $B.put_byte(out, b)
+  else if $AR.eq_int_int(b, 47) then let  (* '/' -> __ *)
+    val () = $B.put_byte(out, 95)
+    val () = $B.put_byte(out, 95)
+  in end
+  else let  (* _XX hex *)
+    val () = $B.put_byte(out, 95)
+    val () = emit_hex_nibble(out, b / 16)
+    val () = emit_hex_nibble(out, b mod 16)
+  in end
+
+(* Emit mangled package name from source range *)
+fun emit_mangled_pkg {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
+   max: int ns, out: !$B.builder, fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if start >= end_pos then ()
+  else let
+    val b = src_byte(src, start, max)
+    val () = emit_mangled_byte(out, b)
+  in emit_mangled_pkg(src, start + 1, end_pos, max, out, fuel - 1) end
+
+(* Emit qualified access: __BATS__<mangled_pkg>_<member> *)
+fn emit_qualified {ls:agz}{ns:pos}{lp:agz}{np:pos}
+  (src: !$A.borrow(byte, ls, ns), src_max: int ns,
+   spans: !$A.borrow(byte, lp, np), span_idx: int, span_max: int np,
+   out: !$B.builder): void = let
+  val alias_s = span_aux1(spans, span_idx, span_max)
+  val alias_e = span_aux2(spans, span_idx, span_max)
+  val member_s = span_aux3(spans, span_idx, span_max)
+  val member_e = span_aux4(spans, span_idx, span_max)
+  (* For now, emit $alias.member as-is since we need the use-table
+     to look up which package the alias maps to.
+     TODO: implement use-table lookup for proper mangling *)
+  val () = $B.put_byte(out, 36)  (* $ *)
+  val () = emit_range(src, alias_s, alias_e, src_max, out,
+    $AR.checked_nat(alias_e - alias_s + 1))
+  val () = $B.put_byte(out, 46)  (* . *)
+  val () = emit_range(src, member_s, member_e, src_max, out,
+    $AR.checked_nat(member_e - member_s + 1))
+in end
+
+(* ============================================================
+   Emitter: generate dats prelude (staload self + dependencies)
+   ============================================================ *)
+
+(* Emit: staload "./FILENAME.sats"\n *)
+fn emit_self_staload(out: !$B.builder, filename_len: int): void = let
+  (* "staload " = 115,116,97,108,111,97,100,32 *)
+  val () = $B.put_byte(out, 115)
+  val () = $B.put_byte(out, 116)
+  val () = $B.put_byte(out, 97)
+  val () = $B.put_byte(out, 108)
+  val () = $B.put_byte(out, 111)
+  val () = $B.put_byte(out, 97)
+  val () = $B.put_byte(out, 100)
+  val () = $B.put_byte(out, 32)
+  (* "./ *)
+  val () = $B.put_byte(out, 34)
+  val () = $B.put_byte(out, 46)
+  val () = $B.put_byte(out, 47)
+in end
+
+(* Emit one staload line for a #use dependency *)
+fn emit_dep_staload {ls:agz}{ns:pos}{lp:agz}{np:pos}
+  (src: !$A.borrow(byte, ls, ns), src_max: int ns,
+   spans: !$A.borrow(byte, lp, np), span_idx: int, span_max: int np,
+   out: !$B.builder): void = let
+  val pkg_s = span_aux1(spans, span_idx, span_max)
+  val pkg_e = span_aux2(spans, span_idx, span_max)
+  (* staload " *)
+  val () = $B.put_byte(out, 115)
+  val () = $B.put_byte(out, 116)
+  val () = $B.put_byte(out, 97)
+  val () = $B.put_byte(out, 108)
+  val () = $B.put_byte(out, 111)
+  val () = $B.put_byte(out, 97)
+  val () = $B.put_byte(out, 100)
+  val () = $B.put_byte(out, 32)
+  val () = $B.put_byte(out, 34)
+  (* package path *)
+  val () = emit_range(src, pkg_s, pkg_e, src_max, out,
+    $AR.checked_nat(pkg_e - pkg_s + 1))
+  (* /src/lib.dats" + newline *)
+  val () = $B.put_byte(out, 47)   (* / *)
+  val () = $B.put_byte(out, 115)  (* s *)
+  val () = $B.put_byte(out, 114)  (* r *)
+  val () = $B.put_byte(out, 99)   (* c *)
+  val () = $B.put_byte(out, 47)   (* / *)
+  val () = $B.put_byte(out, 108)  (* l *)
+  val () = $B.put_byte(out, 105)  (* i *)
+  val () = $B.put_byte(out, 98)   (* b *)
+  val () = $B.put_byte(out, 46)   (* . *)
+  val () = $B.put_byte(out, 100)  (* d *)
+  val () = $B.put_byte(out, 97)   (* a *)
+  val () = $B.put_byte(out, 116)  (* t *)
+  val () = $B.put_byte(out, 115)  (* s *)
+  val () = $B.put_byte(out, 34)   (* " *)
+  val () = $B.put_byte(out, 10)   (* \n *)
+in end
+
+(* ============================================================
+   Emitter: main emit loop
+   ============================================================ *)
+
+fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), src_max: int ns,
+   spans: !$A.borrow(byte, lp, np), span_max: int np,
+   span_count: int, idx: int,
+   sats: !$B.builder, dats: !$B.builder,
+   fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if idx >= span_count then ()
+  else let
+    val kind = span_kind(spans, idx, span_max)
+    val dest = span_dest(spans, idx, span_max)
+    val ss = span_start(spans, idx, span_max)
+    val se = span_end(spans, idx, span_max)
+  in
+    (* kind=0: passthrough *)
+    if $AR.eq_int_int(kind, 0) then let
+      val fuel2 = $AR.checked_nat(se - ss + 1)
+      val () = (if $AR.eq_int_int(dest, 0) || $AR.eq_int_int(dest, 2) then
+                  emit_range(src, ss, se, src_max, dats, fuel2)
+                else ())
+      val () = (if $AR.eq_int_int(dest, 1) || $AR.eq_int_int(dest, 2) then
+                  emit_range(src, ss, se, src_max, sats, fuel2)
+                else ())
+      val () = (if $AR.eq_int_int(dest, 0) then
+                  emit_blanks(src, ss, se, src_max, sats)
+                else ())
+      val () = (if $AR.eq_int_int(dest, 1) then
+                  emit_blanks(src, ss, se, src_max, dats)
+                else ())
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=1: hash_use - blank out in both, staloads go in prelude *)
+    else if $AR.eq_int_int(kind, 1) then let
+      val () = emit_blanks(src, ss, se, src_max, sats)
+      val () = emit_blanks(src, ss, se, src_max, dats)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=2: pub_decl - content to sats, blanks to dats *)
+    else if $AR.eq_int_int(kind, 2) then let
+      val cs = span_aux1(spans, idx, span_max)
+      val ce = span_aux2(spans, idx, span_max)
+      (* Blank the #pub prefix in sats *)
+      val () = emit_blanks(src, ss, cs, src_max, sats)
+      (* Emit contents to sats *)
+      val () = emit_range(src, cs, ce, src_max, sats,
+        $AR.checked_nat(ce - cs + 1))
+      (* Blank everything in dats *)
+      val () = emit_blanks(src, ss, se, src_max, dats)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=3: qualified_access - emit $alias.member to both *)
+    else if $AR.eq_int_int(kind, 3) then let
+      val () = emit_qualified(src, src_max, spans, idx, span_max, dats)
+      val () = emit_qualified(src, src_max, spans, idx, span_max, sats)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=4: unsafe_block - emit contents only *)
+    else if $AR.eq_int_int(kind, 4) then let
+      val cs = span_aux1(spans, idx, span_max)
+      val ce = span_aux2(spans, idx, span_max)
+      (* Blank the $UNSAFE begin marker *)
+      val () = emit_blanks(src, ss, cs, src_max, dats)
+      val () = emit_blanks(src, ss, cs, src_max, sats)
+      (* Emit contents *)
+      val fuel2 = $AR.checked_nat(ce - cs + 1)
+      val () = emit_range(src, cs, ce, src_max, dats, fuel2)
+      val () = emit_range(src, cs, ce, src_max, sats, fuel2)
+      (* Blank the end marker *)
+      val () = emit_blanks(src, ce, se, src_max, dats)
+      val () = emit_blanks(src, ce, se, src_max, sats)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=5: unsafe_construct - emit as-is *)
+    else if $AR.eq_int_int(kind, 5) then let
+      val fuel2 = $AR.checked_nat(se - ss + 1)
+      val () = emit_range(src, ss, se, src_max, dats, fuel2)
+      val () = emit_range(src, ss, se, src_max, sats, fuel2)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=6: extcode_block - emit as-is to dats *)
+    else if $AR.eq_int_int(kind, 6) then let
+      val fuel2 = $AR.checked_nat(se - ss + 1)
+      val () = emit_range(src, ss, se, src_max, dats, fuel2)
+      val () = emit_blanks(src, ss, se, src_max, sats)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=7: target_decl - blank everything *)
+    else if $AR.eq_int_int(kind, 7) then let
+      val () = emit_blanks(src, ss, se, src_max, sats)
+      val () = emit_blanks(src, ss, se, src_max, dats)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=8: unittest_block - blank for now (emit in test mode later) *)
+    else if $AR.eq_int_int(kind, 8) then let
+      val () = emit_blanks(src, ss, se, src_max, sats)
+      val () = emit_blanks(src, ss, se, src_max, dats)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=9: restricted_keyword - emit as-is for now *)
+    else if $AR.eq_int_int(kind, 9) then let
+      val fuel2 = $AR.checked_nat(se - ss + 1)
+      val () = emit_range(src, ss, se, src_max, dats, fuel2)
+      val () = emit_range(src, ss, se, src_max, sats, fuel2)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+
+    (* kind=10: unittest_run - blank for now *)
+    else let
+      val () = emit_blanks(src, ss, se, src_max, sats)
+      val () = emit_blanks(src, ss, se, src_max, dats)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, fuel - 1) end
+  end
+
+(* Build dats prelude: self-staload + dependency staloads *)
+fun build_prelude {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), src_max: int ns,
+   spans: !$A.borrow(byte, lp, np), span_max: int np,
+   span_count: int, idx: int,
+   prelude: !$B.builder, fuel: int fuel): int =
+  if fuel <= 0 then 0
+  else if idx >= span_count then 0
+  else let
+    val kind = span_kind(spans, idx, span_max)
+  in
+    if $AR.eq_int_int(kind, 1) then let  (* hash_use *)
+      val () = emit_dep_staload(src, src_max, spans, idx, span_max, prelude)
+      val rest = build_prelude(src, src_max, spans, span_max, span_count,
+        idx + 1, prelude, fuel - 1)
+    in rest + 1 end
+    else
+      build_prelude(src, src_max, spans, span_max, span_count,
+        idx + 1, prelude, fuel - 1)
+  end
+
+(* Top-level emit: takes source + spans, returns (sats_arr, sats_len, dats_arr, dats_len, prelude_lines) *)
+fn do_emit {ls:agz}{ns:pos}{lp:agz}{np:pos}
+  (src: !$A.borrow(byte, ls, ns), src_len: int, src_max: int ns,
+   spans: !$A.borrow(byte, lp, np), span_max: int np,
+   span_count: int
+  ): @([la:agz] $A.arr(byte, la, 65536), int,
+      [lb:agz] $A.arr(byte, lb, 65536), int, int) = let
+  val sats_b = $B.create()
+  val dats_b = $B.create()
+  val prelude_b = $B.create()
+
+  (* Build prelude: self-staload line is always 1 line *)
+  val dep_count = build_prelude(src, src_max, spans, span_max,
+    span_count, 0, prelude_b, $AR.checked_nat(span_count + 1))
+  val prelude_lines = dep_count + 1  (* self-staload + dep staloads *)
+
+  (* Emit the prelude into dats *)
+  val @(pre_arr, pre_len) = $B.to_arr(prelude_b)
+  val @(fz_pre, bv_pre) = $A.freeze<byte>(pre_arr)
+  val () = emit_range(bv_pre, 0, pre_len, 65536, dats_b,
+    $AR.checked_nat(pre_len + 1))
+  val () = $A.drop<byte>(fz_pre, bv_pre)
+  val () = $A.free<byte>($A.thaw<byte>(fz_pre))
+
+  (* Emit all spans *)
+  val () = emit_spans(src, src_max, spans, span_max, span_count, 0,
+    sats_b, dats_b, $AR.checked_nat(span_count + 1))
+
+  val @(sats_arr, sats_len) = $B.to_arr(sats_b)
+  val @(dats_arr, dats_len) = $B.to_arr(dats_b)
+in @(sats_arr, sats_len, dats_arr, dats_len, prelude_lines) end
+
+(* ============================================================
    String constant builders
    ============================================================ *)
 
@@ -1162,11 +1563,21 @@ in
                     val @(fz_lb, bv_lb) = $A.freeze<byte>(lbuf)
                     val @(span_arr, span_len, span_count) =
                       do_lex(bv_lb, lbytes, 65536)
-                    val () = $A.drop<byte>(fz_lb, bv_lb)
-                    val () = $A.free<byte>($A.thaw<byte>(fz_lb))
                     val () = println! ("  lexed ", lbytes, " bytes -> ",
                                        span_count, " spans")
-                    val () = $A.free<byte>(span_arr)
+                    (* Now emit .sats/.dats *)
+                    val @(fz_sp, bv_sp) = $A.freeze<byte>(span_arr)
+                    val @(sats_arr, sats_len, dats_arr, dats_len, pre_lines) =
+                      do_emit(bv_lb, lbytes, 65536, bv_sp, 65536, span_count)
+                    val () = $A.drop<byte>(fz_sp, bv_sp)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+                    val () = $A.drop<byte>(fz_lb, bv_lb)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_lb))
+                    val () = println! ("  emitted sats: ", sats_len,
+                                       " bytes, dats: ", dats_len,
+                                       " bytes (", pre_lines, " prelude lines)")
+                    val () = $A.free<byte>(sats_arr)
+                    val () = $A.free<byte>(dats_arr)
                   in end
                 | ~$R.err(_) =>
                     println! ("  could not open source for lexing"))
