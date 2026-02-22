@@ -20,6 +20,29 @@ $UNSAFE begin
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+static int _bpoc_g_verbose = 0;
+static int _bpoc_g_quiet = 0;
+static int _bpoc_is_verbose(void) { return _bpoc_g_verbose; }
+static int _bpoc_is_quiet(void) { return _bpoc_g_quiet; }
+static void _bpoc_set_verbose(int v) { _bpoc_g_verbose = v; }
+static void _bpoc_set_quiet(int v) { _bpoc_g_quiet = v; }
+/* Handle --run-in <dir> flag: if first arg is "--run-in", chdir and return
+   offset past the dir arg. Otherwise return first_start unchanged. */
+static int _bpoc_handle_run_in(const char *buf, int len,
+                                int fs, int fe, int fl) {
+  if (fl == 8 && memcmp(buf + fs, "--run-in", 8) == 0) {
+    int dir_start = fe + 1;
+    /* dir_start points to null-terminated dir string in buf */
+    if (chdir(buf + dir_start) != 0) {
+      fprintf(stderr, "error: cannot change to '%s'\n", buf + dir_start);
+    }
+    /* Locate dir token terminator */
+    int de = dir_start;
+    while (de < len && buf[de] != '\0') de++;
+    return de + 1;
+  }
+  return fs;
+}
 static int _bpoc_byte_at(const char *s, int i) {
   return (unsigned char)s[i];
 }
@@ -1400,6 +1423,12 @@ fun find_null_bv {l:agz}{n:pos}{fuel:nat} .<fuel>.
 fn run_sh(cmd_b: $B.builder, remap_offset: int): int = let
   val @(cmd_arr, cmd_len) = $B.to_arr(cmd_b)
   val @(fz_cmd, bv_cmd) = $A.freeze<byte>(cmd_arr)
+  val _verbose = $UNSAFE begin $extfcall(int, "_bpoc_is_verbose") end
+  val () = (if _verbose > 0 then let
+    val () = print! ("  + ")
+    val () = print_borrow(bv_cmd, 0, cmd_len, 65536,
+      $AR.checked_nat(cmd_len + 1))
+  in print_newline() end else ())
   (* /bin/sh = 7 bytes *)
   val sh_path = $A.alloc<byte>(7)
   val () = $A.write_byte(sh_path, 0, 47)
@@ -3012,9 +3041,44 @@ in
           val cr = $F.file_close(cl_fd)
           val () = $R.discard<int><int>(cr)
           val tok0_end = find_null(cl_buf, 0, 4096, 4096)
-          val cmd_start = tok0_end + 1
+          (* Check for --run-in <dir> global flag before subcommand *)
+          val first_start = tok0_end + 1
+          val first_end = find_null(cl_buf, first_start, 4096, 4096)
+          val first_len = first_end - first_start
+          (* Use C helper to handle --run-in; returns offset to actual command *)
+          val cmd_start = $UNSAFE begin
+            $extfcall(int, "_bpoc_handle_run_in",
+              $UNSAFE.castvwtp1{ptr}(cl_buf), cl_n,
+              first_start, first_end, first_len)
+          end
           val cmd_end = find_null(cl_buf, cmd_start, 4096, 4096)
           val cmd_len = cmd_end - cmd_start
+          (* Parse global flags --verbose/-v and --quiet/-q *)
+          val @(fz_flags, bv_flags) = $A.freeze<byte>(cl_buf)
+          val has_verbose = $UNSAFE begin
+            $extfcall(int, "_bpoc_has_flag",
+              $UNSAFE.castvwtp1{ptr}(bv_flags), cl_n, cmd_end + 1, "--verbose")
+          end
+          val has_v = $UNSAFE begin
+            $extfcall(int, "_bpoc_has_flag",
+              $UNSAFE.castvwtp1{ptr}(bv_flags), cl_n, cmd_end + 1, "-v")
+          end
+          val has_quiet = $UNSAFE begin
+            $extfcall(int, "_bpoc_has_flag",
+              $UNSAFE.castvwtp1{ptr}(bv_flags), cl_n, cmd_end + 1, "--quiet")
+          end
+          val has_q = $UNSAFE begin
+            $extfcall(int, "_bpoc_has_flag",
+              $UNSAFE.castvwtp1{ptr}(bv_flags), cl_n, cmd_end + 1, "-q")
+          end
+          val () = $A.drop<byte>(fz_flags, bv_flags)
+          val cl_buf = $A.thaw<byte>(fz_flags)
+          val () = (if has_verbose > 0 orelse has_v > 0 then
+            $UNSAFE begin $extfcall(void, "_bpoc_set_verbose", 1) end
+            else ())
+          val () = (if has_quiet > 0 orelse has_q > 0 then
+            $UNSAFE begin $extfcall(void, "_bpoc_set_quiet", 1) end
+            else ())
         in
           if cmd_is_check(cl_buf, cmd_start, cmd_len, 4096) then let
             val () = $A.free<byte>(cl_buf)
