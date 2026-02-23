@@ -32,7 +32,7 @@ Never ask permission to keep going. Keep going until the success criterion is me
 
 ## Allowed Divergences from Rust bats
 
-bats-poc uses `--only debug|release` instead of the Rust bats' `--release` flag and `--only native|wasm`. This is the only allowed divergence. All other flags and behaviors must match the Rust bats exactly.
+bats-poc uses `--only <value>` (repeatable) instead of the Rust bats' `--release` flag and `--only native|wasm`. Values: `debug`, `release`, `native`, `wasm`. Multiple `--only` flags narrow the build matrix. Default (no `--only`): build all. Example: `--only debug --only native` builds only debug native. This is the only allowed divergence. All other flags and behaviors must match the Rust bats exactly.
 
 ## Task Rules
 

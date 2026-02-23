@@ -1713,7 +1713,7 @@ fn strip_newline_arr256 {l:agz}
 (* ============================================================
    lock: read bats.lock and verify it exists
    ============================================================ *)
-fn do_lock(): void = let
+fn do_lock(dev: int, dry_run: int): void = let
   (* Check if --repository was specified (stored in /tmp/_bpoc_repo.txt) *)
   val repo_path = str_to_path_arr("/tmp/_bpoc_repo.txt")
   val @(fz_rp2, bv_rp2) = $A.freeze<byte>(repo_path)
@@ -1740,6 +1740,8 @@ in
     val () = copy_to_builder(bv_rb3, 0, rplen, 4096, cmd, $AR.checked_nat(rplen + 1))
     val () = $A.drop<byte>(fz_rb3, bv_rb3)
     val () = $A.free<byte>($A.thaw<byte>(fz_rb3))
+    val () = (if dev > 0 then bput(cmd, " --dev") else ())
+    val () = (if dry_run > 0 then bput(cmd, " --dry-run") else ())
     val rc = run_sh(cmd, 0)
   in
     if rc <> 0 then println! ("error: lock resolution failed")
@@ -2621,6 +2623,128 @@ in
 end
 
 (* ============================================================
+   generate docs: scan lib.bats for #pub and write docs/
+   ============================================================ *)
+fn do_generate_docs(pkg_name_len: int, kind_is_lib: int): void =
+  if kind_is_lib = 0 then ()
+  else let
+    val cmd = $B.create()
+    val () = bput(cmd, "mkdir -p docs")
+    val _ = run_sh(cmd, 0)
+    val lp = str_to_path_arr("src/lib.bats")
+    val @(fz_lp, bv_lp) = $A.freeze<byte>(lp)
+    val lib_or = $F.file_open(bv_lp, 65536, 0, 0)
+    val () = $A.drop<byte>(fz_lp, bv_lp)
+    val () = $A.free<byte>($A.thaw<byte>(fz_lp))
+  in
+    case+ lib_or of
+    | ~$R.ok(lfd) => let
+        val lbuf = $A.alloc<byte>(65536)
+        val lrr = $F.file_read(lfd, lbuf, 65536)
+        val llen = (case+ lrr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+        val lcr = $F.file_close(lfd)
+        val () = $R.discard<int><int>(lcr)
+        val doc_b = $B.create()
+        val () = bput(doc_b, "# API Reference\n\n")
+        (* Scan for #pub lines: 35,112,117,98,32 *)
+        fun scan_pub {l2:agz}{fuel:nat} .<fuel>.
+          (buf: !$A.arr(byte, l2, 65536), doc: !$B.builder,
+           pos: int, len: int, fuel: int fuel): void =
+          if fuel <= 0 then ()
+          else if pos >= len then ()
+          else let
+            val p = g1ofg0(pos)
+          in
+            if p >= 0 then
+              if p + 4 < 65536 then let
+                val b0 = byte2int0($A.get<byte>(buf, p))
+                val b1 = byte2int0($A.get<byte>(buf, p + 1))
+                val b2 = byte2int0($A.get<byte>(buf, p + 2))
+                val b3 = byte2int0($A.get<byte>(buf, p + 3))
+                val b4 = byte2int0($A.get<byte>(buf, p + 4))
+              in
+                if $AR.eq_int_int(b0, 35) then
+                  if $AR.eq_int_int(b1, 112) then
+                    if $AR.eq_int_int(b2, 117) then
+                      if $AR.eq_int_int(b3, 98) then
+                        if $AR.eq_int_int(b4, 32) then let
+                          (* Found #pub , copy rest of line *)
+                          val () = bput(doc, "```\n")
+                          fun copy_line {l3:agz}{fuel2:nat} .<fuel2>.
+                            (buf: !$A.arr(byte, l3, 65536), doc: !$B.builder,
+                             pos: int, fuel2: int fuel2): int =
+                            if fuel2 <= 0 then pos
+                            else let val pp = g1ofg0(pos) in
+                              if pp >= 0 then
+                                if pp < 65536 then let
+                                  val b = byte2int0($A.get<byte>(buf, pp))
+                                in
+                                  if $AR.eq_int_int(b, 10) then (pos + 1)
+                                  else let
+                                    val () = $B.put_byte(doc, b)
+                                  in copy_line(buf, doc, pos + 1, fuel2 - 1) end
+                                end
+                                else pos
+                              else pos
+                            end
+                          val np = copy_line(buf, doc, p + 5, $AR.checked_nat(len - p))
+                          val () = bput(doc, "\n```\n\n")
+                        in scan_pub(buf, doc, np, len, fuel - 1) end
+                        else let
+                          val np = find_null(buf, pos, 65536, $AR.checked_nat(len - pos + 1))
+                        in scan_pub(buf, doc, np + 1, len, fuel - 1) end
+                      else let
+                        val np = find_null(buf, pos, 65536, $AR.checked_nat(len - pos + 1))
+                      in scan_pub(buf, doc, np + 1, len, fuel - 1) end
+                    else let
+                      val np = find_null(buf, pos, 65536, $AR.checked_nat(len - pos + 1))
+                    in scan_pub(buf, doc, np + 1, len, fuel - 1) end
+                  else let
+                    val np = find_null(buf, pos, 65536, $AR.checked_nat(len - pos + 1))
+                  in scan_pub(buf, doc, np + 1, len, fuel - 1) end
+                else let
+                  (* Skip to next newline *)
+                  fun skip_line {l4:agz}{fuel3:nat} .<fuel3>.
+                    (buf: !$A.arr(byte, l4, 65536), pos: int, len: int,
+                     fuel3: int fuel3): int =
+                    if fuel3 <= 0 then pos
+                    else let val pp = g1ofg0(pos) in
+                      if pp >= 0 then
+                        if pp < 65536 then let
+                          val b = byte2int0($A.get<byte>(buf, pp))
+                        in
+                          if $AR.eq_int_int(b, 10) then pos + 1
+                          else skip_line(buf, pos + 1, len, fuel3 - 1)
+                        end
+                        else pos
+                      else pos
+                    end
+                  val np = skip_line(buf, pos, len, $AR.checked_nat(len - pos + 1))
+                in scan_pub(buf, doc, np, len, fuel - 1) end
+              end
+              else ()
+            else ()
+          end
+        val () = scan_pub(lbuf, doc_b, 0, llen, $AR.checked_nat(llen + 1))
+        val () = $A.free<byte>(lbuf)
+        val dp = str_to_path_arr("docs/lib.md")
+        val @(fz_dp, bv_dp) = $A.freeze<byte>(dp)
+        val _ = write_file_from_builder(bv_dp, 65536, doc_b)
+        val () = $A.drop<byte>(fz_dp, bv_dp)
+        val () = $A.free<byte>($A.thaw<byte>(fz_dp))
+        (* Write docs/index.md *)
+        val idx_b = $B.create()
+        val () = bput(idx_b, "# Documentation\n\n- [API Reference](lib.md)\n")
+        val ip = str_to_path_arr("docs/index.md")
+        val @(fz_ip, bv_ip) = $A.freeze<byte>(ip)
+        val _ = write_file_from_builder(bv_ip, 65536, idx_b)
+        val () = $A.drop<byte>(fz_ip, bv_ip)
+        val () = $A.free<byte>($A.thaw<byte>(fz_ip))
+      in end
+    | ~$R.err(_) => ()
+  end
+
+(* ============================================================
    upload: package library for repository
    ============================================================ *)
 fn do_upload(): void = let
@@ -2830,6 +2954,7 @@ in
                   val () = $A.free<byte>($A.thaw<byte>(fz_zp))
                   val () = $A.drop<byte>(fz_vb, bv_vb)
                   val () = $A.free<byte>($A.thaw<byte>(fz_vb))
+                  val () = do_generate_docs(0, 1)
                 in println! ("uploaded successfully") end
               end
               else let
@@ -2862,10 +2987,76 @@ fn do_completions(shell: int): void =
     print_string "# fish completions\nfor c in build check clean lock run test tree add remove upload init completions; complete -c bats-poc -n __fish_use_subcommand -a $c; end\n"
   else println! ("error: specify a shell (bash, zsh, fish)")
 
+(* Check if a file exists by trying to open it *)
+fn file_exists {sn:nat} (path: string sn): bool = let
+  val pa = str_to_path_arr(path)
+  val @(fz, bv) = $A.freeze<byte>(pa)
+  val fex_or = $F.file_open(bv, 65536, 0, 0)
+  val () = $A.drop<byte>(fz, bv)
+  val () = $A.free<byte>($A.thaw<byte>(fz))
+in case+ fex_or of
+  | ~$R.ok(fd) => let
+      val cr = $F.file_close(fd)
+      val () = $R.discard<int><int>(cr)
+    in true end
+  | ~$R.err(_) => false
+end
+
+(* ============================================================
+   write_claude_rules: create .claude/rules/bats.md
+   ============================================================ *)
+fn write_claude_rules(): void = let
+  val cmd = $B.create()
+  val () = bput(cmd, "mkdir -p .claude/rules")
+  val _ = run_sh(cmd, 0)
+  val rb = $B.create()
+  val () = bput(rb, "# Writing Bats\n\n")
+  val () = bput(rb, "Bats is a language that compiles to ATS2.\n\n")
+  val () = bput(rb, "## Build commands\n\n")
+  val () = bput(rb, "```bash\n")
+  val () = bput(rb, "bats build    # Build binary project\n")
+  val () = bput(rb, "bats check    # Type-check without linking\n")
+  val () = bput(rb, "bats clean    # Remove generated artifacts\n")
+  val () = bput(rb, "```\n\n")
+  val () = bput(rb, "## Project layout\n\n")
+  val () = bput(rb, "- `bats.toml` -- package config\n")
+  val () = bput(rb, "- `src/lib.bats` -- library entry point (kind = \"lib\")\n")
+  val () = bput(rb, "- `src/bin/<name>.bats` -- binary entry points (kind = \"bin\")\n\n")
+  val () = bput(rb, "## Bats-specific syntax\n\n")
+  val () = bput(rb, "### `#pub` -- public declarations\n\n")
+  val () = bput(rb, "```bats\n")
+  val () = bput(rb, "#pub fun greet (name: string): void\n")
+  val () = bput(rb, "implement greet (name) = println! (\"hello \", name)\n")
+  val () = bput(rb, "```\n\n")
+  val () = bput(rb, "### `#use` -- package imports\n\n")
+  val () = bput(rb, "```bats\n")
+  val () = bput(rb, "#use mylib as M\n")
+  val () = bput(rb, "val x = $M.greeting ()\n")
+  val () = bput(rb, "```\n\n")
+  val () = bput(rb, "## ATS2 essentials\n\n")
+  val () = bput(rb, "- `println!` has a bang\n")
+  val () = bput(rb, "- `fun` declares functions, `val` binds values\n")
+  val () = bput(rb, "- Pattern matching: `case+ x of | 0 => ... | n => ...`\n")
+  val () = bput(rb, "- Types: `int`, `string`, `bool`, `void`\n")
+  val () = bput(rb, "- No semicolons at end of expressions\n")
+  val rp = str_to_path_arr(".claude/rules/bats.md")
+  val @(fz_rp, bv_rp) = $A.freeze<byte>(rp)
+  val _ = write_file_from_builder(bv_rp, 65536, rb)
+  val () = $A.drop<byte>(fz_rp, bv_rp)
+  val () = $A.free<byte>($A.thaw<byte>(fz_rp))
+in end
+
 (* ============================================================
    init: create a new bats project
    ============================================================ *)
-fn do_init(kind: int): void = let
+fn do_init(kind: int, claude: int): void = let
+  (* Check for existing project *)
+  val has_toml = file_exists("bats.toml")
+  val has_gi = file_exists(".gitignore")
+in
+  if has_toml then println! ("error: bats.toml already exists")
+  else if has_gi then println! ("error: .gitignore already exists")
+  else let
   (* kind: 0=binary, 1=library *)
   (* Get current directory name via readlink /proc/self/cwd *)
   val @(cwd_buf, cwd_len) = (let
@@ -2956,11 +3147,13 @@ fn do_init(kind: int): void = let
 in
   if rc = 0 then
     if rc2 = 0 then
-      if rc3 = 0 then println! ("initialized bats project in current directory")
+      if rc3 = 0 then let
+        val () = (if claude > 0 then write_claude_rules() else ())
+      in println! ("initialized bats project in current directory") end
       else println! ("error: failed to write .gitignore")
     else println! ("error: failed to write source file")
   else println! ("error: failed to write bats.toml")
-end
+end end
 
 (* ============================================================
    tree: display dependency tree from bats.lock
@@ -3160,11 +3353,96 @@ in
       println! ("  spawn failed: ", e)
 end
 
+(* Save extra arguments (after --) to /tmp/_bpoc_extra.txt *)
+fn save_extra_args {l:agz}
+  (buf: !$A.arr(byte, l, 4096), dd_pos: int, len: int): void = let
+  (* dd_pos points to the "--" token; skip "--\0" to get to first extra arg *)
+  (* If dd_pos < 0, no -- was found, so do nothing *)
+  val start = dd_pos + 3
+in
+  if dd_pos < 0 then ()
+  else if start < len then let
+    val out = $B.create()
+    fun copy_extras {l2:agz}{fuel:nat} .<fuel>.
+      (buf: !$A.arr(byte, l2, 4096), out: !$B.builder,
+       pos: int, len: int, fuel: int fuel): void =
+      if fuel <= 0 then ()
+      else if pos >= len then ()
+      else let
+        val p = g1ofg0(pos)
+      in
+        if p >= 0 then
+          if p < 4096 then let
+            val b = byte2int0($A.get<byte>(buf, p))
+          in
+            if $AR.eq_int_int(b, 0) then let
+              val () = $B.put_byte(out, 10) (* newline separator *)
+            in copy_extras(buf, out, pos + 1, len, fuel - 1) end
+            else let
+              val () = $B.put_byte(out, b)
+            in copy_extras(buf, out, pos + 1, len, fuel - 1) end
+          end
+          else ()
+        else ()
+      end
+    val () = copy_extras(buf, out, start, len, $AR.checked_nat(len - start + 1))
+    val ep = str_to_path_arr("/tmp/_bpoc_extra.txt")
+    val @(fz_ep, bv_ep) = $A.freeze<byte>(ep)
+    val _ = write_file_from_builder(bv_ep, 65536, out)
+    val () = $A.drop<byte>(fz_ep, bv_ep)
+    val () = $A.free<byte>($A.thaw<byte>(fz_ep))
+  in end
+  else ()
+end
+
+(* Append saved extra args to a builder (for do_run) *)
+fn append_run_args(cmd: !$B.builder): void = let
+  val ep = str_to_path_arr("/tmp/_bpoc_extra.txt")
+  val @(fz_ep, bv_ep) = $A.freeze<byte>(ep)
+  val eor = $F.file_open(bv_ep, 65536, 0, 0)
+  val () = $A.drop<byte>(fz_ep, bv_ep)
+  val () = $A.free<byte>($A.thaw<byte>(fz_ep))
+in
+  case+ eor of
+  | ~$R.ok(efd) => let
+      val ebuf = $A.alloc<byte>(4096)
+      val era_r = $F.file_read(efd, ebuf, 4096)
+      val elen = (case+ era_r of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val ecr = $F.file_close(efd)
+      val () = $R.discard<int><int>(ecr)
+    in
+      if elen > 0 then let
+        val @(fz_eb, bv_eb) = $A.freeze<byte>(ebuf)
+        fun append_lines {l2:agz}{fuel:nat} .<fuel>.
+          (bv: !$A.borrow(byte, l2, 4096), cmd: !$B.builder,
+           pos: int, len: int, fuel: int fuel): void =
+          if fuel <= 0 then ()
+          else if pos >= len then ()
+          else let
+            val b = src_byte(bv, pos, 4096)
+          in
+            if $AR.eq_int_int(b, 10) then let
+              val () = $B.put_byte(cmd, 32) (* space *)
+            in append_lines(bv, cmd, pos + 1, len, fuel - 1) end
+            else let
+              val () = $B.put_byte(cmd, b)
+            in append_lines(bv, cmd, pos + 1, len, fuel - 1) end
+          end
+        val () = $B.put_byte(cmd, 32) (* space *)
+        val () = append_lines(bv_eb, cmd, 0, elen, $AR.checked_nat(elen + 1))
+        val () = $A.drop<byte>(fz_eb, bv_eb)
+        val () = $A.free<byte>($A.thaw<byte>(fz_eb))
+      in end
+      else $A.free<byte>(ebuf)
+    end
+  | ~$R.err(_) => ()
+end
+
 (* ============================================================
    run: build then execute the binary
    ============================================================ *)
-fn do_run(): void = let
-  val () = do_build(0)
+fn do_run(release: int): void = let
+  val () = do_build(release)
   (* Read bats.toml to find the package name *)
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
@@ -3220,7 +3498,8 @@ in
                   in @(bbn, brl2) end
                 | ~$R.err(_) => let val bbn = $A.alloc<byte>(256) in @(bbn, 0) end): [lbbn:agz] @($A.arr(byte, lbbn, 256), int)
               val cmd = $B.create()
-              val () = bput(cmd, "./dist/debug/")
+              val () = (if release > 0 then bput(cmd, "./dist/release/")
+                else bput(cmd, "./dist/debug/"))
             in
               if bn_len > 0 then let
                 val @(fz_bn, bv_bn) = $A.freeze<byte>(bin_name)
@@ -3229,6 +3508,7 @@ in
                 val () = $A.drop<byte>(fz_bn, bv_bn)
                 val () = $A.free<byte>($A.thaw<byte>(fz_bn))
                 val () = $A.free<byte>(nbuf)
+                val () = append_run_args(cmd)
                 val rc = run_sh(cmd, 0)
               in
                 if rc <> 0 then println! ("error: run failed")
@@ -3241,6 +3521,7 @@ in
                   $AR.checked_nat(nlen + 1))
                 val () = $A.drop<byte>(fz_nb, bv_nb)
                 val () = $A.free<byte>($A.thaw<byte>(fz_nb))
+                val () = append_run_args(cmd)
                 val rc = run_sh(cmd, 0)
               in
                 if rc <> 0 then println! ("error: run failed")
@@ -3433,6 +3714,7 @@ in
                 | ~$R.err(_) =>
                     println! ("  could not open source for lexing"))
               val () = run_process_demo()
+              val () = do_generate_docs(0, 1)
               val () = println! ("check passed")
               val () = $T.toml_free(doc)
             in end
@@ -3582,6 +3864,145 @@ in
   else ~1
 end
 
+(* Print usage matching Rust bats format *)
+fn print_usage(): void = let
+  val () = println! ("usage: bats-poc [--run-in <dir>] [--quiet] <command>")
+  val () = println! ("")
+  val () = println! ("commands:")
+  val () = println! ("  init binary [--claude]       Create a new binary project (src/bin/<name>.bats)")
+  val () = println! ("  init library [--claude]      Create a new library project (src/lib.bats)")
+  val () = println! ("  add <package> --repository <dir>")
+  val () = println! ("                               Add a dependency")
+  val () = println! ("  remove <package> --repository <dir>")
+  val () = println! ("                               Remove a dependency")
+  val () = println! ("  lock [--dev] [--dry-run] --repository <dir>")
+  val () = println! ("                               Generate bats.lock")
+  val () = println! ("  build [--only debug|release|native|wasm] [--repository <dir>]")
+  val () = println! ("                               Build the project")
+  val () = println! ("  run [--only debug|release] [--bin <name>] [--repository <dir>] [-- args...]")
+  val () = println! ("                               Build and run a binary")
+  val () = println! ("  test [--only native|wasm] [--filter <name>] [--repository <dir>]")
+  val () = println! ("                               Run tests")
+  val () = println! ("  check [--repository <dir>]   Type-check the project (no linking)")
+  val () = println! ("  tree [--repository <dir>]    Show dependency tree")
+  val () = println! ("  upload --repository <dir>    Package and upload a library")
+  val () = println! ("  clean                        Remove generated artifacts")
+  val () = println! ("  completions <shell>          Generate shell completions (bash, zsh, fish)")
+in end
+
+(* Find the position of "--" separator in /proc/self/cmdline buffer.
+   Returns the byte offset of the first byte of "--\0" or -1 if not found. *)
+fun find_dashdash {l:agz}{fuel:nat} .<fuel>.
+  (buf: !$A.arr(byte, l, 4096), pos: int, len: int,
+   fuel: int fuel): int =
+  if fuel <= 0 then ~1
+  else if pos >= len then ~1
+  else let
+    val p = g1ofg0(pos)
+  in
+    if p >= 0 then
+      if p + 2 < 4096 then let
+        val b0 = byte2int0($A.get<byte>(buf, p))
+        val b1 = byte2int0($A.get<byte>(buf, p + 1))
+        val b2 = byte2int0($A.get<byte>(buf, p + 2))
+      in
+        if $AR.eq_int_int(b0, 45) then
+          if $AR.eq_int_int(b1, 45) then
+            if $AR.eq_int_int(b2, 0) then pos
+            else let
+              (* Skip to next null *)
+              val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+            in find_dashdash(buf, next + 1, len, fuel - 1) end
+          else let
+            val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+          in find_dashdash(buf, next + 1, len, fuel - 1) end
+        else let
+          val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+        in find_dashdash(buf, next + 1, len, fuel - 1) end
+      end
+      else ~1
+    else ~1
+  end
+
+(* Scan --only values: read all repeated --only tokens from cmdline.
+   Returns bitmask: bit0=debug bit1=release bit2=native bit3=wasm *)
+fun scan_only {l:agz}{fuel:nat} .<fuel>.
+  (buf: !$A.arr(byte, l, 4096), pos: int, len: int, mask: int,
+   fuel: int fuel): int =
+  if fuel <= 0 then mask
+  else if pos >= len then mask
+  else let
+    val p = g1ofg0(pos)
+  in
+    if p >= 0 then
+      if p + 5 < 4096 then let
+        (* Check if this token is "--only" : 45,45,111,110,108,121,0 *)
+        val b0 = byte2int0($A.get<byte>(buf, p))
+        val b1 = byte2int0($A.get<byte>(buf, p + 1))
+        val b2 = byte2int0($A.get<byte>(buf, p + 2))
+        val b3 = byte2int0($A.get<byte>(buf, p + 3))
+        val b4 = byte2int0($A.get<byte>(buf, p + 4))
+        val b5 = byte2int0($A.get<byte>(buf, p + 5))
+      in
+        if $AR.eq_int_int(b0, 45) then
+          if $AR.eq_int_int(b1, 45) then
+            if $AR.eq_int_int(b2, 111) then
+              if $AR.eq_int_int(b3, 110) then
+                if $AR.eq_int_int(b4, 108) then
+                  if $AR.eq_int_int(b5, 121) then let
+                    (* Found --only, now skip to null and read next token *)
+                    val next = find_null(buf, p + 6, 4096, $AR.checked_nat(len - p))
+                    val val_start = next + 1
+                  in
+                    if val_start < len then let
+                      val vs = g1ofg0(val_start)
+                    in
+                      if vs >= 0 then
+                        if vs < 4096 then let
+                          val v0 = byte2int0($A.get<byte>(buf, vs))
+                          val vend = find_null(buf, val_start, 4096, $AR.checked_nat(len - val_start + 1))
+                          val vlen = vend - val_start
+                          (* d=100 debug, r=114 release, n=110 native, w=119 wasm *)
+                          (* Use addition since bits don't overlap on first encounter *)
+                          val new_mask = (
+                            if $AR.eq_int_int(v0, 100) then
+                              (if (mask mod 2) = 0 then mask + 1 else mask)
+                            else if $AR.eq_int_int(v0, 114) then
+                              (if ((mask / 2) mod 2) = 0 then mask + 2 else mask)
+                            else if $AR.eq_int_int(v0, 110) then
+                              (if ((mask / 4) mod 2) = 0 then mask + 4 else mask)
+                            else if $AR.eq_int_int(v0, 119) then
+                              (if ((mask / 8) mod 2) = 0 then mask + 8 else mask)
+                            else mask): int
+                        in scan_only(buf, vend + 1, len, new_mask, fuel - 1) end
+                        else scan_only(buf, val_start + 1, len, mask, fuel - 1)
+                      else scan_only(buf, val_start + 1, len, mask, fuel - 1)
+                    end
+                    else mask
+                  end
+                  else let
+                    val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+                  in scan_only(buf, next + 1, len, mask, fuel - 1) end
+                else let
+                  val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+                in scan_only(buf, next + 1, len, mask, fuel - 1) end
+              else let
+                val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+              in scan_only(buf, next + 1, len, mask, fuel - 1) end
+            else let
+              val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+            in scan_only(buf, next + 1, len, mask, fuel - 1) end
+          else let
+            val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+          in scan_only(buf, next + 1, len, mask, fuel - 1) end
+        else let
+          val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+        in scan_only(buf, next + 1, len, mask, fuel - 1) end
+      end
+      else mask
+    else mask
+  end
+
 (* ============================================================
    Main: read argv from /proc/self/cmdline, dispatch
    ============================================================ *)
@@ -3603,7 +4024,15 @@ in
       | ~$R.ok(cl_n) => let
           val cr = $F.file_close(cl_fd)
           val () = $R.discard<int><int>(cr)
-          val argc = count_argc(cl_buf, cl_n)
+          (* Find -- separator and save extra args *)
+          val dd_pos = find_dashdash(cl_buf, 0, cl_n, $AR.checked_nat(cl_n + 1))
+          (* save_extra_args is a no-op when dd_pos < 0 or start >= len *)
+          val () = save_extra_args(cl_buf, dd_pos, cl_n)
+          (* Count argc only up to -- *)
+          val effective_len = (if dd_pos >= 0 then dd_pos else cl_n): int
+          val argc = count_argc(cl_buf, effective_len)
+          (* Scan all --only values to build bitmask *)
+          val only_mask = scan_only(cl_buf, 0, effective_len, 0, $AR.checked_nat(effective_len + 1))
           val @(fz_cb, bv_cb) = $A.freeze<byte>(cl_buf)
           (* Setup argparse parser *)
           val @(pna, pnl) = str_to_borrow("bats-poc")
@@ -3622,6 +4051,11 @@ in
           val @(p, h_repository) = ap_string_opt(p, "repository", 0, "package repository")
           val @(p, h_only) = ap_string_opt(p, "only", 0, "build target")
           val @(p, h_bin) = ap_string_opt(p, "bin", 0, "binary name")
+          val @(p, h_claude) = ap_flag(p, "claude", 0, "create claude rules")
+          val @(p, h_dev) = ap_flag(p, "dev", 0, "include dev dependencies")
+          val @(p, h_dry_run) = ap_flag(p, "dry-run", 0, "dry run mode")
+          val @(p, h_help) = ap_flag(p, "help", 104, "show help")
+          val @(p, h_filter) = ap_string_opt(p, "filter", 0, "test filter")
           val @(p, h_cmd) = ap_string_pos(p, "command", "subcommand")
           val @(p, h_arg) = ap_string_pos(p, "argument", "subcommand argument")
           (* Parse *)
@@ -3631,6 +4065,13 @@ in
         in
           case+ result of
           | ~$R.ok(r) => let
+              (* Handle --help first *)
+              val want_help = $AP.get_bool(r, h_help)
+            in
+              if want_help then let
+                val () = $AP.parse_result_free(r)
+              in print_usage() end
+              else let
               val () = (if $AP.get_bool(r, h_verbose) then !g_verbose := true else ())
               val () = (if $AP.get_bool(r, h_quiet) then !g_quiet := true else ())
               (* Handle --run-in *)
@@ -3669,18 +4110,30 @@ in
               val arg_len = $AP.get_string_copy(r, h_arg, arg_buf, 4096)
             in
               if cmd_code = 0 then let (* build *)
-                val only_buf = $A.alloc<byte>(32)
-                val olen = $AP.get_string_copy(r, h_only, only_buf, 32)
                 val () = $AP.parse_result_free(r)
                 val () = $A.free<byte>(arg_buf)
-                val od = dispatch_cmd(only_buf, olen)
-                val () = $A.free<byte>(only_buf)
+                (* Use only_mask from cmdline scan: bit0=debug bit1=release bit2=native bit3=wasm *)
+                val has_debug = (only_mask mod 2)
+                val has_release = ((only_mask / 2) mod 2)
+                val has_wasm = ((only_mask / 8) mod 2)
               in
-                if od = 0 then do_build(0)  (* "debug" dispatches as "build" = 0 via first char 'd' *)
-                else if olen = 5 then do_build(0)  (* "debug" is 5 chars *)
-                else if olen = 7 then do_build(1)  (* "release" is 7 chars *)
-                else if olen = 4 then println! ("error: wasm target is not yet supported")
-                else let val () = do_build(0) in do_build(1) end
+                if only_mask = 0 then let
+                  (* No --only flags: build both debug and release *)
+                  val () = do_build(0)
+                in do_build(1) end
+                else let
+                  val () = (if has_wasm > 0 then println! ("error: wasm target is not yet supported") else ())
+                  val () = (if has_debug > 0 then do_build(0) else ())
+                  val () = (if has_release > 0 then do_build(1) else ())
+                in
+                  (* If only native/wasm specified but not debug/release, build debug *)
+                  if has_debug = 0 then
+                    if has_release = 0 then
+                      if has_wasm = 0 then do_build(0)
+                      else ()
+                    else ()
+                  else ()
+                end
               end
               else if cmd_code = 1 then let (* check *)
                 val () = $AP.parse_result_free(r)
@@ -3691,9 +4144,11 @@ in
                 val () = $A.free<byte>(arg_buf)
               in do_clean() end
               else if cmd_code = 3 then let (* lock *)
+                val lk_dev = (if $AP.is_present(r, h_dev) then 1 else 0): int
+                val lk_dry = (if $AP.is_present(r, h_dry_run) then 1 else 0): int
                 val () = $AP.parse_result_free(r)
                 val () = $A.free<byte>(arg_buf)
-              in do_lock() end
+              in do_lock(lk_dev, lk_dry) end
               else if cmd_code = 4 then let (* run *)
                 val () = (if $AP.is_present(r, h_bin) then let
                   val bin_buf = $A.alloc<byte>(256)
@@ -3710,10 +4165,24 @@ in
                   val () = $A.drop<byte>(fz_btp, bv_btp)
                   val () = $A.free<byte>($A.thaw<byte>(fz_btp))
                 in end else ())
+                (* Check if --only release was specified *)
+                fn check_only_release {l2:agz}
+                  (buf: !$A.arr(byte, l2, 32), olen: int): int =
+                  if olen = 7 then let
+                    val b0 = byte2int0($A.get<byte>(buf, 0))
+                  in (if $AR.eq_int_int(b0, 114) then 1 else 0): int end
+                  else 0
+                val run_release = (let
+                  val ob2 = $A.alloc<byte>(32)
+                  val ol2 = $AP.get_string_copy(r, h_only, ob2, 32)
+                  val is_rel = check_only_release(ob2, ol2)
+                  val () = $A.free<byte>(ob2)
+                in is_rel end): int
                 val () = $AP.parse_result_free(r)
                 val () = $A.free<byte>(arg_buf)
-              in do_run() end
+              in do_run(run_release) end
               else if cmd_code = 5 then let (* init *)
+                val init_claude = (if $AP.get_bool(r, h_claude) then 1 else 0): int
                 val () = $AP.parse_result_free(r)
                 (* arg_buf has "binary"|"bin"|"library"|"lib" — check first byte *)
                 fn check_init_arg {l2:agz}
@@ -3727,7 +4196,7 @@ in
                 val kind = check_init_arg(arg_buf, arg_len)
                 val () = $A.free<byte>(arg_buf)
               in
-                if kind >= 0 then do_init(kind)
+                if kind >= 0 then do_init(kind, init_claude)
                 else println! ("error: specify 'binary' or 'library'\nusage: bats-poc init binary|library")
               end
               else if cmd_code = 6 then let (* test *)
@@ -3793,10 +4262,10 @@ in
                 val () = $AP.parse_result_free(r)
                 val () = $A.free<byte>(arg_buf)
               in println! ("usage: bats-poc <init|lock|add|remove|build|run|test|check|tree|upload|clean|completions> [--only debug|release]") end
-            end
+            end end (* close else-let for --help *)
           | ~$R.err(e) => let
               val () = $AP.parse_error_free(e)
-            in println! ("error: invalid arguments\nusage: bats-poc <init|lock|add|remove|build|run|test|check|tree|upload|clean|completions> [--only debug|release]") end
+            in print_usage() end
         end
       | ~$R.err(e) => let
           val cr = $F.file_close(cl_fd)
