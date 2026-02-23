@@ -1901,7 +1901,8 @@ fn compile_wasm_runtime(): int = let
 in run_sh(cmd, 0) end
 
 fn do_build_wasm(release: int): void = let
-  val () = (if ~is_quiet() then println! ("  preparing wasm assets...") else ())
+  (* Assumes do_build(release) was called first to generate .c files *)
+  (* Write WASM assets *)
   val r1 = write_wasm_runtime_h()
   val r2 = write_wasm_runtime_c()
   val r3 = write_wasm_stubs()
@@ -1909,10 +1910,27 @@ fn do_build_wasm(release: int): void = let
 in
   if r4 <> 0 then println! ("error: failed to compile wasm runtime")
   else let
-    val () = (if ~is_quiet() then println! ("  wasm runtime compiled") else ())
-    (* TODO: compile each .c with wasm32 target and link with wasm-ld *)
-    val () = println! ("error: wasm binary compilation not yet fully implemented")
-  in end
+    (* Compile all .c files for wasm using a shell for-loop *)
+    val wasm_cc = $B.create()
+    val () = bput(wasm_cc, "cd build && for f in $(find . -name '*_dats.c' 2>/dev/null); do ")
+    val () = bput(wasm_cc, "PATH=/usr/bin:/usr/local/bin:/bin clang --target=wasm32 -O2 -nostdlib -ffreestanding ")
+    val () = bput(wasm_cc, "-fvisibility=default -D_ATS_CCOMP_HEADER_NONE_ -D_ATS_CCOMP_EXCEPTION_NONE_ ")
+    val () = bput(wasm_cc, "-D_ATS_CCOMP_PRELUDE_NONE_ -D_ATS_CCOMP_RUNTIME_NONE_ ")
+    val () = bput(wasm_cc, "-include _bats_wasm_runtime.h -I _bats_wasm_stubs ")
+    val () = bput(wasm_cc, "-c -o \"${f%.c}.wasm.o\" \"$f\" || exit 1; done")
+    val wrc1 = run_sh(wasm_cc, 0)
+    (* Link with wasm-ld *)
+    val wasm_link = $B.create()
+    val () = bput(wasm_link, "cd build && PATH=/usr/bin:/usr/local/bin:/bin wasm-ld --no-entry --export-dynamic ")
+    val () = bput(wasm_link, "-z stack-size=65536 --initial-memory=16777216 --max-memory=268435456 ")
+    val () = bput(wasm_link, "-o ../dist/")
+    val () = (if release > 0 then bput(wasm_link, "release/") else bput(wasm_link, "debug/"))
+    val () = bput(wasm_link, "output.wasm _bats_wasm_runtime.o $(find . -name '*.wasm.o' 2>/dev/null)")
+    val wrc2 = run_sh(wasm_link, 0)
+  in
+    if wrc2 <> 0 then println! ("error: wasm linking failed")
+    else (if ~is_quiet() then println! ("  built wasm binary") else ())
+  end
 end
 
 fn do_build(release: int): void = let
@@ -4252,11 +4270,17 @@ in
                   val () = do_build(0)
                 in do_build(1) end
                 else let
-                  val () = (if has_wasm > 0 then do_build_wasm(if has_release > 0 then 1 else 0) else ())
+                  (* Always build native first (generates .c files needed for wasm) *)
                   val () = (if has_debug > 0 then do_build(0) else ())
                   val () = (if has_release > 0 then do_build(1) else ())
+                  (* If only wasm specified, still need a native build for .c files *)
+                  val () = (if has_debug = 0 then
+                    if has_release = 0 then do_build(0)
+                    else ()
+                  else ())
+                  (* Now build wasm if requested *)
+                  val () = (if has_wasm > 0 then do_build_wasm(if has_release > 0 then 1 else 0) else ())
                 in
-                  (* If only native/wasm specified but not debug/release, build debug *)
                   if has_debug = 0 then
                     if has_release = 0 then
                       if has_wasm = 0 then do_build(0)
