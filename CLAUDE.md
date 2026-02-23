@@ -10,10 +10,11 @@ bats-poc must be:
 
 ## Build & Test
 
+Only use bats-poc to build bats-poc. Never use the Rust bats.
+
 ```bash
-PATSHOME=~/.bats/ats2 dist/debug/bats-poc build   # build self
-bats --run-in /home/moshez/src/bats-lang/bats-poc build --repository /home/moshez/src/bats-lang/repository-prototype
-bats --run-in /home/moshez/src/bats-lang/bats-poc check --repository /home/moshez/src/bats-lang/repository-prototype
+dist/debug/bats-poc check --repository /home/moshez/src/bats-lang/repository-prototype
+dist/debug/bats-poc build --repository /home/moshez/src/bats-lang/repository-prototype
 ```
 
 ## Architecture

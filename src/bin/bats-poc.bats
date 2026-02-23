@@ -1959,29 +1959,81 @@ in
     val () = bput(nrt_cmd, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/_bats_native_runtime.o build/_bats_native_runtime.c")
     val nrt_r = run_sh(nrt_cmd, 0)
     val () = (if nrt_r <> 0 then println! ("error: failed to compile native runtime") else ())
-    (* Step 2: Get PATSHOME *)
+    (* Step 2: Ensure ATS2 toolchain at $HOME/.bats/ats2 *)
     val phbuf = $A.alloc<byte>(512)
-    val ph_key = $A.alloc<byte>(8)
-    val () = $A.write_byte(ph_key, 0, 80)   (* P *)
-    val () = $A.write_byte(ph_key, 1, 65)   (* A *)
-    val () = $A.write_byte(ph_key, 2, 84)   (* T *)
-    val () = $A.write_byte(ph_key, 3, 83)   (* S *)
-    val () = $A.write_byte(ph_key, 4, 72)   (* H *)
-    val () = $A.write_byte(ph_key, 5, 79)   (* O *)
-    val () = $A.write_byte(ph_key, 6, 77)   (* M *)
-    val () = $A.write_byte(ph_key, 7, 69)   (* E *)
-    val @(fz_ph, bv_ph) = $A.freeze<byte>(ph_key)
-    val ph_r = $E.get(bv_ph, 8, phbuf, 512)
-    val () = $A.drop<byte>(fz_ph, bv_ph)
-    val () = $A.free<byte>($A.thaw<byte>(fz_ph))
-    val phlen = (case+ ph_r of
-      | ~$R.some(n) => n | ~$R.none() => 0): int
+    val hk = $A.alloc<byte>(4)
+    val () = $A.write_byte(hk, 0, 72) (* H *)
+    val () = $A.write_byte(hk, 1, 79) (* O *)
+    val () = $A.write_byte(hk, 2, 77) (* M *)
+    val () = $A.write_byte(hk, 3, 69) (* E *)
+    val @(fz_hk, bv_hk) = $A.freeze<byte>(hk)
+    val hr = $E.get(bv_hk, 4, phbuf, 512)
+    val () = $A.drop<byte>(fz_hk, bv_hk)
+    val () = $A.free<byte>($A.thaw<byte>(fz_hk))
+    val hlen = (case+ hr of | ~$R.some(n) => n | ~$R.none() => 0): int
+    (* Append /.bats/ats2 to HOME *)
+    fn append_bats_path {l:agz}
+      (buf: !$A.arr(byte, l, 512), pos: int): int =
+      let val p = g1ofg0(pos) in
+        if p >= 0 then if p + 10 < 512 then let
+          val () = $A.set<byte>(buf, p, int2byte0(47))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+1,512), int2byte0(46))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+2,512), int2byte0(98))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+3,512), int2byte0(97))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+4,512), int2byte0(116))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+5,512), int2byte0(115))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+6,512), int2byte0(47))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+7,512), int2byte0(97))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+8,512), int2byte0(116))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+9,512), int2byte0(115))
+          val () = $A.set<byte>(buf, $AR.checked_idx(p+10,512), int2byte0(50))
+        in pos + 11 end else pos else pos
+      end
+    val phlen = append_bats_path(phbuf, hlen)
+    (* Check if patsopt exists, install if not — single freeze *)
+    (* Copy arr bytes to builder — uses src_byte to avoid !arr in conditional *)
+    fun arr_to_builder {l:agz}{fuel:nat} .<fuel>.
+      (buf: !$A.borrow(byte, l, 512), pos: int, len: int,
+       dst: !$B.builder, fuel: int fuel): void =
+      if fuel <= 0 then ()
+      else if pos >= len then ()
+      else let
+        val b = src_byte(buf, pos, 512)
+        val () = $B.put_byte(dst, b)
+      in arr_to_builder(buf, pos + 1, len, dst, fuel - 1) end
+    fn ensure_ats2 {l:agz}
+      (buf: !$A.borrow(byte, l, 512), plen: int): void = let
+      val cmd = $B.create()
+      val () = bput(cmd, "test -f ")
+      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
+      val () = bput(cmd, "/bin/patsopt || (echo 'ATS2 not found, installing...' && mkdir -p ")
+      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
+      val () = bput(cmd, " && curl -sL 'https://raw.githubusercontent.com/ats-lang/ats-lang.github.io/master/FROZEN000/ATS-Postiats/ATS2-Postiats-int-0.4.2.tgz' -o /tmp/_bpoc_ats2.tgz && ")
+      val () = bput(cmd, "tar -xzf /tmp/_bpoc_ats2.tgz --strip-components=1 -C ")
+      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
+      val () = bput(cmd, " && rm /tmp/_bpoc_ats2.tgz && echo 'building ATS2...' && make -j4 -C ")
+      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
+      val () = bput(cmd, "/src/CBOOT patsopt PATSHOME=")
+      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
+      val () = bput(cmd, " && mkdir -p ")
+      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
+      val () = bput(cmd, "/bin && cp ")
+      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
+      val () = bput(cmd, "/src/CBOOT/patsopt ")
+      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
+      val () = bput(cmd, "/bin/patsopt && echo 'ATS2 installed successfully')")
+      val rc = run_sh(cmd, 0)
+    in
+      if rc <> 0 then println! ("error: ATS2 installation failed") else ()
+    end
+    val @(fz_patshome, bv_patshome) = $A.freeze<byte>(phbuf)
+    val () = ensure_ats2(bv_patshome, phlen)
   in
     if phlen <= 0 then let
-      val () = $A.free<byte>(phbuf)
-    in println! ("error: PATSHOME not set") end
+      val () = $A.drop<byte>(fz_patshome, bv_patshome)
+      val () = $A.free<byte>($A.thaw<byte>(fz_patshome))
+    in println! ("error: HOME not set, cannot find ATS2 toolchain") end
     else let
-      val @(fz_patshome, bv_patshome) = $A.freeze<byte>(phbuf)
 
       (* Step 3: Scan bats_modules/ for deps and preprocess *)
       val bm_arr = str_to_path_arr("bats_modules")
