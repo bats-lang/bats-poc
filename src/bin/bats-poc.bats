@@ -586,14 +586,29 @@ fn lex_pub_decl {l:agz}{n:pos}
   val () = put_span(spans, 2, 1, start, ep, contents_start, ep, 0, 0)
 in @(ep, count + 1) end
 
-(* Lex $UNSAFE begin...end or $UNSAFE.ident *)
+(* Check for "let" at keyword boundary: l=108 e=101 t=116 *)
+fn looking_at_let {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  is_kw_boundary_before(src, pos, max) &&
+  $AR.eq_int_int(src_byte(src, pos, max), 108) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 116) &&
+  is_kw_boundary(src, pos + 3, max)
+
+(* Lex $UNSAFE begin...end or $UNSAFE.ident — tracks nesting *)
 fun find_end_kw {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, l, n), pos: int, src_len: int, max: int n,
-   fuel: int fuel): int =
+   depth: int, fuel: int fuel): int =
   if fuel <= 0 then src_len
   else if pos >= src_len then src_len
-  else if looking_at_end(src, pos, max) then pos
-  else find_end_kw(src, pos + 1, src_len, max, fuel - 1)
+  else if looking_at_end(src, pos, max) then
+    (if depth <= 0 then pos
+     else find_end_kw(src, pos + 3, src_len, max, depth - 1, fuel - 1))
+  else if looking_at_begin(src, pos, max) then
+    find_end_kw(src, pos + 5, src_len, max, depth + 1, fuel - 1)
+  else if looking_at_let(src, pos, max) then
+    find_end_kw(src, pos + 3, src_len, max, depth + 1, fuel - 1)
+  else find_end_kw(src, pos + 1, src_len, max, depth, fuel - 1)
 
 fn lex_unsafe_dispatch {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
@@ -610,7 +625,7 @@ in
   in
     if looking_at_begin(src, p0, max) then let
       val contents_start = p0 + 5
-      val end_pos = find_end_kw(src, contents_start, src_len, max, $AR.checked_nat(src_len))
+      val end_pos = find_end_kw(src, contents_start, src_len, max, 0, $AR.checked_nat(src_len))
       val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
       val () = put_span(spans, 4, 0, start, ep, contents_start, end_pos, 0, 0)
     in @(ep, count + 1, true) end
@@ -637,7 +652,7 @@ in
   in
     if looking_at_begin(src, p1, max) then let
       val contents_start = p1 + 5
-      val end_pos = find_end_kw(src, contents_start, src_len, max, $AR.checked_nat(src_len))
+      val end_pos = find_end_kw(src, contents_start, src_len, max, 0, $AR.checked_nat(src_len))
       val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
       val () = put_span(spans, 10, 0, start, ep, contents_start, end_pos, 0, 0)
     in @(ep, count + 1, true) end
@@ -645,7 +660,7 @@ in
   end
   else if looking_at_begin(src, p0, max) then let
     val contents_start = p0 + 5
-    val end_pos = find_end_kw(src, contents_start, src_len, max, $AR.checked_nat(src_len))
+    val end_pos = find_end_kw(src, contents_start, src_len, max, 0, $AR.checked_nat(src_len))
     val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
     val () = put_span(spans, 8, 0, start, ep, contents_start, end_pos, 0, 0)
   in @(ep, count + 1, true) end
