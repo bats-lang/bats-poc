@@ -30,6 +30,10 @@ Never blocked by another PR — add finishing that PR to the task list instead.
 
 Never ask permission to keep going. Keep going until the success criterion is met.
 
+## Allowed Divergences from Rust bats
+
+bats-poc uses `--only debug|release` instead of the Rust bats' `--release` flag and `--only native|wasm`. This is the only allowed divergence. All other flags and behaviors must match the Rust bats exactly.
+
 ## Task Rules
 
 A task should never be more than one thing: if it requires the word "and", for example, it should be broken up. If it refers to plurals, it should be broken up. If it has a comma, it should be broken up.
