@@ -27,6 +27,8 @@ Dependencies: argparse, array, arith, builder, env, file, path, process, result,
 
 All changes, even one byte, in ANY repo in bats-lang, must go through branch -> PR -> green -> merge. NEVER commit directly to main. Use `gh pr merge --merge` (no squash).
 
+When creating a new repo: push an empty initial commit to main first (`git commit --allow-empty -m "Initial commit" && git push -u origin main`), then create a feature branch for the actual content. The first branch you push becomes the default, so main must exist before any feature branches.
+
 Never blocked by another PR — add finishing that PR to the task list instead.
 
 Never ask permission to keep going. Keep going until the success criterion is met.
