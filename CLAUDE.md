@@ -20,13 +20,15 @@ bats --run-in /home/moshez/src/bats-lang/bats-poc check --repository /home/moshe
 
 Single binary: `src/bin/bats-poc.bats`
 
-Dependencies: array, arith, builder, env, file, path, process, result, sha256, str, toml
+Dependencies: argparse, array, arith, builder, env, file, path, process, result, sha256, str, toml
 
 ## Workflow
 
 All changes, even one byte, in ANY repo in bats-lang, must go through branch -> PR -> green -> merge. NEVER commit directly to main. Use `gh pr merge --merge` (no squash).
 
 Never blocked by another PR — add finishing that PR to the task list instead.
+
+Never ask permission to keep going. Keep going until the success criterion is met.
 
 ## Task Rules
 
