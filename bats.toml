@@ -3,6 +3,7 @@ name = "bats-poc"
 kind = "bin"
 
 [dependencies]
+"argparse" = ""
 "builder" = ""
 "env" = ""
 "path" = ""
