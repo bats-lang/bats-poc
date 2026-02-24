@@ -103,80 +103,37 @@ fn is_dot_or_dotdot {l:agz}{n:pos}
   end
   else false
 
-(* Generic byte-sequence matcher: check bytes at offset p in arr against
-   a string literal. Uses proven indices for both array and string access. *)
-fun bytes_match {l:agz}{n:pos}{sn:nat}{fuel:nat} .<fuel>.
-  (ent: !$A.arr(byte, l, n), p: int, max: int n,
-   pat: string sn, pi: int, plen: int sn, fuel: int fuel): bool =
-  if fuel <= 0 then pi >= plen
-  else if pi >= plen then true
-  else let
-    val ei = g1ofg0(p + pi)
-    val pii = g1ofg0(pi)
-  in
-    if ei >= 0 then
-      if ei < max then
-        if pii >= 0 then
-          if $AR.lt1_int_int(pii, plen) then
-            if $AR.eq_int_int(byte2int0($A.get<byte>(ent, ei)),
-                 char2int0(string_get_at(pat, pii))) then
-              bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
-            else false
-          else false
-        else false
-      else false
-    else false
-  end
-
-(* Check if name ends with a given suffix *)
-fn has_suffix {l:agz}{n:pos}{sn:nat}
-  (ent: !$A.arr(byte, l, n), len: int, max: int n,
-   suf: string sn, slen: int sn): bool =
-  if len < slen then false
-  else let val p = g1ofg0(len - slen) in
-    if p >= 0 then bytes_match(ent, g0ofg1(p), max, suf, 0, slen,
-      $AR.checked_nat(slen + 1))
-    else false
-  end
-
-(* Check if name exactly matches a string *)
-fn name_eq {l:agz}{n:pos}{sn:nat}
-  (ent: !$A.arr(byte, l, n), len: int, max: int n,
-   s: string sn, slen: int sn): bool =
-  if len <> slen then false
-  else bytes_match(ent, 0, max, s, 0, slen, $AR.checked_nat(slen + 1))
-
 fn has_bats_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  has_suffix(ent, len, max, ".bats", 5)
+  $S.has_suffix(ent, len, max, ".bats", 5)
 
 fn has_dats_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  has_suffix(ent, len, max, ".dats", 5)
+  $S.has_suffix(ent, len, max, ".dats", 5)
 
 fn has_dats_c_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  has_suffix(ent, len, max, "_dats.c", 7)
+  $S.has_suffix(ent, len, max, "_dats.c", 7)
 
 fn has_dats_o_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  has_suffix(ent, len, max, "_dats.o", 7)
+  $S.has_suffix(ent, len, max, "_dats.o", 7)
 
 fn is_lib_bats {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  name_eq(ent, len, max, "lib.bats", 8)
+  $S.name_eq(ent, len, max, "lib.bats", 8)
 
 fn is_lib_dats {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  name_eq(ent, len, max, "lib.dats", 8)
+  $S.name_eq(ent, len, max, "lib.dats", 8)
 
 fn is_lib_dats_c {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  name_eq(ent, len, max, "lib_dats.c", 10)
+  $S.name_eq(ent, len, max, "lib_dats.c", 10)
 
 fn is_lib_dats_o {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  name_eq(ent, len, max, "lib_dats.o", 10)
+  $S.name_eq(ent, len, max, "lib_dats.o", 10)
 
 (* Check if a byte is an identifier character *)
 fn is_ident_byte(b: int): bool =
