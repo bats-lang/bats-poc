@@ -45,3 +45,13 @@ jobs:
       - name: bats build
         run: |
           ~/bootstrap/target/release/bats build --repository ~/repository
+
+      - name: bats build --to-c
+        run: |
+          ~/bootstrap/target/release/bats build --to-c dist/c --repository ~/repository
+
+      - name: Upload C output
+        uses: actions/upload-artifact@v4
+        with:
+          name: bats-c
+          path: dist/c/
