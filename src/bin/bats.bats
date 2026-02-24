@@ -103,157 +103,80 @@ fn is_dot_or_dotdot {l:agz}{n:pos}
   end
   else false
 
-(* Check if name ends with ".bats" (46,98,97,116,115) *)
+(* Generic byte-sequence matcher: check bytes at offset p in arr against
+   a string literal. Uses proven indices for both array and string access. *)
+fun bytes_match {l:agz}{n:pos}{sn:nat}{fuel:nat} .<fuel>.
+  (ent: !$A.arr(byte, l, n), p: int, max: int n,
+   pat: string sn, pi: int, plen: int sn, fuel: int fuel): bool =
+  if fuel <= 0 then pi >= plen
+  else if pi >= plen then true
+  else let
+    val ei = g1ofg0(p + pi)
+    val pii = g1ofg0(pi)
+  in
+    if ei >= 0 then
+      if ei < max then
+        if pii >= 0 then
+          if $AR.lt1_int_int(pii, plen) then
+            if $AR.eq_int_int(byte2int0($A.get<byte>(ent, ei)),
+                 char2int0(string_get_at(pat, pii))) then
+              bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
+            else false
+          else false
+        else false
+      else false
+    else false
+  end
+
+(* Check if name ends with a given suffix *)
+fn has_suffix {l:agz}{n:pos}{sn:nat}
+  (ent: !$A.arr(byte, l, n), len: int, max: int n,
+   suf: string sn, slen: int sn): bool =
+  if len < slen then false
+  else let val p = g1ofg0(len - slen) in
+    if p >= 0 then bytes_match(ent, g0ofg1(p), max, suf, 0, slen,
+      $AR.checked_nat(slen + 1))
+    else false
+  end
+
+(* Check if name exactly matches a string *)
+fn name_eq {l:agz}{n:pos}{sn:nat}
+  (ent: !$A.arr(byte, l, n), len: int, max: int n,
+   s: string sn, slen: int sn): bool =
+  if len <> slen then false
+  else bytes_match(ent, 0, max, s, 0, slen, $AR.checked_nat(slen + 1))
+
 fn has_bats_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  if len < 5 then false
-  else let val p = g1ofg0(len - 5) in
-    if p >= 0 then
-      if p + 4 < max then let
-        val b0 = byte2int0($A.get<byte>(ent, p))
-        val b1 = byte2int0($A.get<byte>(ent, p + 1))
-        val b2 = byte2int0($A.get<byte>(ent, p + 2))
-        val b3 = byte2int0($A.get<byte>(ent, p + 3))
-        val b4 = byte2int0($A.get<byte>(ent, p + 4))
-      in
-        $AR.eq_int_int(b0, 46) && $AR.eq_int_int(b1, 98) &&
-        $AR.eq_int_int(b2, 97) && $AR.eq_int_int(b3, 116) &&
-        $AR.eq_int_int(b4, 115)
-      end else false
-    else false
-  end
+  has_suffix(ent, len, max, ".bats", 5)
 
-(* Check for ".dats" extension *)
 fn has_dats_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  if len < 5 then false
-  else let val p = g1ofg0(len - 5) in
-    if p >= 0 then
-      if p + 4 < max then
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p)), 46) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 1)), 100) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 2)), 97) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 3)), 116) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 4)), 115)
-      else false
-    else false
-  end
+  has_suffix(ent, len, max, ".dats", 5)
 
-(* Check for "_dats.c" suffix *)
 fn has_dats_c_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  if len < 7 then false
-  else let val p = g1ofg0(len - 7) in
-    if p >= 0 then
-      if p + 6 < max then
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p)), 95) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 1)), 100) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 2)), 97) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 3)), 116) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 4)), 115) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 5)), 46) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 6)), 99)
-      else false
-    else false
-  end
+  has_suffix(ent, len, max, "_dats.c", 7)
 
-(* Check for "_dats.o" suffix *)
 fn has_dats_o_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  if len < 7 then false
-  else let val p = g1ofg0(len - 7) in
-    if p >= 0 then
-      if p + 6 < max then
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p)), 95) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 1)), 100) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 2)), 97) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 3)), 116) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 4)), 115) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 5)), 46) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 6)), 111)
-      else false
-    else false
-  end
+  has_suffix(ent, len, max, "_dats.o", 7)
 
-(* Check if entry is "lib.bats" -- 8 bytes *)
 fn is_lib_bats {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  if len <> 8 then false
-  else let val p = g1ofg0(0) in
-    if p >= 0 then
-      if p + 7 < max then
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p)), 108) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 1)), 105) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 2)), 98) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 3)), 46) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 4)), 98) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 5)), 97) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 6)), 116) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 7)), 115)
-      else false
-    else false
-  end
+  name_eq(ent, len, max, "lib.bats", 8)
 
-(* Check if entry is "lib.dats" -- 8 bytes *)
 fn is_lib_dats {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  if len <> 8 then false
-  else let val p = g1ofg0(0) in
-    if p >= 0 then
-      if p + 7 < max then
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p)), 108) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 1)), 105) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 2)), 98) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 3)), 46) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 4)), 100) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 5)), 97) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 6)), 116) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 7)), 115)
-      else false
-    else false
-  end
+  name_eq(ent, len, max, "lib.dats", 8)
 
-(* Check if entry is "lib_dats.c" -- 10 bytes *)
 fn is_lib_dats_c {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  if len <> 10 then false
-  else let val p = g1ofg0(0) in
-    if p >= 0 then
-      if p + 9 < max then
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p)), 108) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 1)), 105) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 2)), 98) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 3)), 95) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 4)), 100) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 5)), 97) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 6)), 116) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 7)), 115) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 8)), 46) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 9)), 99)
-      else false
-    else false
-  end
+  name_eq(ent, len, max, "lib_dats.c", 10)
 
-(* Check if entry is "lib_dats.o" -- 10 bytes *)
 fn is_lib_dats_o {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool =
-  if len <> 10 then false
-  else let val p = g1ofg0(0) in
-    if p >= 0 then
-      if p + 9 < max then
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p)), 108) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 1)), 105) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 2)), 98) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 3)), 95) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 4)), 100) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 5)), 97) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 6)), 116) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 7)), 115) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 8)), 46) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, p + 9)), 111)
-      else false
-    else false
-  end
+  name_eq(ent, len, max, "lib_dats.o", 10)
 
 (* Check if a byte is an identifier character *)
 fn is_ident_byte(b: int): bool =
