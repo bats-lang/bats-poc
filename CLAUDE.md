@@ -6,7 +6,7 @@ bats-poc must be:
 
 1. **Complete replacement**: Full feature parity with the Rust `bats` compiler at `/home/moshez/src/bats-lang/bats/`. All CLI commands, flags, and behaviors must match.
 
-2. **Safe**: `unsafe = false` (or no `unsafe` key) in `bats.toml`. No `$UNSAFE begin...end` blocks in bats-poc source. C code belongs in library packages (file, process, sha256, etc.) that expose safe typed APIs.
+2. **Safe**: `unsafe = false` (or no `unsafe` key) in `bats.toml`. No `$UNSAFE begin...end` blocks in bats-poc source. C code belongs in library packages (file, process, sha256, etc.) that expose safe typed APIs. If a package must be `unsafe = true`, keep the unsafety minimal — expose safe wrappers so dependents can be `unsafe = false`.
 
 ## Build & Test
 
