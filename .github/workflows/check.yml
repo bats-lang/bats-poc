@@ -21,6 +21,8 @@ jobs:
           make -j$(nproc) -C src/CBOOT patsopt
           mkdir -p bin
           cp src/CBOOT/patsopt bin/patsopt
+          mkdir -p ~/.bats
+          ln -sf ~/.ats2/ATS2-Postiats-int-0.4.2 ~/.bats/ats2
 
       - name: Cache bootstrap compiler
         id: cache-bootstrap
@@ -38,16 +40,19 @@ jobs:
 
       - name: bats check
         run: |
+          export PATH=~/bootstrap/target/release:$PATH
           git clone https://github.com/bats-lang/repository-prototype.git ~/repository
-          ~/bootstrap/target/release/bats lock --repository ~/repository
-          ~/bootstrap/target/release/bats check --repository ~/repository
+          bats lock --repository ~/repository
+          bats check --repository ~/repository
 
       - name: bats build
         run: |
-          ~/bootstrap/target/release/bats build --repository ~/repository
+          export PATH=~/bootstrap/target/release:$PATH
+          bats build --repository ~/repository
 
       - name: bats build --to-c
         run: |
+          export PATH=dist/debug:$PATH
           dist/debug/bats build --to-c dist/c --repository ~/repository
 
       - name: Upload C output
