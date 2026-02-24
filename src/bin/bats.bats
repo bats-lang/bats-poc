@@ -1957,6 +1957,10 @@ fn do_build(release: int): void = let
   val () = bput(cmd, "mkdir -p build/src/bin build/bats_modules dist/debug dist/release")
   val r0 = run_sh(cmd, 0)
   val () = (if r0 <> 0 then println! ("error: mkdir failed") else ())
+  (* copy .hats includes for own package *)
+  val hcmd = $B.create()
+  val () = bput(hcmd, "cp src/*.hats build/src/ 2>/dev/null; true")
+  val _ = run_sh(hcmd, 0)
 in
   if r0 <> 0 then ()
   else let
@@ -2086,6 +2090,16 @@ in
                       $AR.checked_nat(elen + 1))
                     val () = bput(mc, "/src")
                     val _ = run_sh(mc, 0)
+                    (* copy .hats includes for dep *)
+                    val hc = $B.create()
+                    val () = bput(hc, "cp bats_modules/")
+                    val () = copy_to_builder(bv_e, 0, elen, 256, hc,
+                      $AR.checked_nat(elen + 1))
+                    val () = bput(hc, "/src/*.hats build/bats_modules/")
+                    val () = copy_to_builder(bv_e, 0, elen, 256, hc,
+                      $AR.checked_nat(elen + 1))
+                    val () = bput(hc, "/src/ 2>/dev/null; true")
+                    val _ = run_sh(hc, 0)
                     (* source: bats_modules/<name>/src/lib.bats *)
                     val sp = $B.create()
                     val () = bput(sp, "bats_modules/")
