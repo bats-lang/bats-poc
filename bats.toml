@@ -1,5 +1,5 @@
 [package]
-name = "bats-poc"
+name = "bats"
 kind = "bin"
 
 [dependencies]
