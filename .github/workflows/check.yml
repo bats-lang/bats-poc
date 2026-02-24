@@ -1,0 +1,47 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ATS2
+        run: |
+          curl -sL "https://raw.githubusercontent.com/ats-lang/ats-lang.github.io/master/FROZEN000/ATS-Postiats/ATS2-Postiats-int-0.4.2.tgz" -o /tmp/ats2.tgz
+          mkdir -p ~/.ats2
+          tar -xzf /tmp/ats2.tgz -C ~/.ats2
+          cd ~/.ats2/ATS2-Postiats-int-0.4.2
+          make -j$(nproc) -C src/CBOOT patsopt
+          mkdir -p bin
+          cp src/CBOOT/patsopt bin/patsopt
+
+      - name: Cache bootstrap compiler
+        id: cache-bootstrap
+        uses: actions/cache@v4
+        with:
+          path: ~/bootstrap
+          key: bootstrap-${{ runner.os }}-${{ hashFiles('.github/workflows/check.yml') }}
+
+      - name: Build bootstrap compiler
+        if: steps.cache-bootstrap.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/bats-lang/bats-old.git ~/bootstrap
+          cd ~/bootstrap
+          cargo build --release
+
+      - name: bats check
+        run: |
+          git clone https://github.com/bats-lang/repository-prototype.git ~/repository
+          ~/bootstrap/target/release/bats lock --repository ~/repository
+          ~/bootstrap/target/release/bats check --repository ~/repository
+
+      - name: bats build
+        run: |
+          ~/bootstrap/target/release/bats build --repository ~/repository
