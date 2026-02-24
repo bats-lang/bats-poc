@@ -1,4 +1,4 @@
-(* bats-poc -- proof of concept bats reimplementation *)
+(* bats -- bats compiler *)
 
 #include "share/atspre_staload.hats"
 
@@ -3195,11 +3195,11 @@ end
    ============================================================ *)
 fn do_completions(shell: int): void =
   if shell = 0 then
-    print_string "# bash completions\ncomplete -W 'build check clean lock run test tree add remove upload init completions' bats-poc\n"
+    print_string "# bash completions\ncomplete -W 'build check clean lock run test tree add remove upload init completions' bats\n"
   else if shell = 1 then
-    print_string "#compdef bats-poc\n_bats_poc_cmds=(build check clean lock run test tree add remove upload init completions)\ncompadd $_bats_poc_cmds\n"
+    print_string "#compdef bats\n_bats_cmds=(build check clean lock run test tree add remove upload init completions)\ncompadd $_bats_cmds\n"
   else if shell = 2 then
-    print_string "# fish completions\nfor c in build check clean lock run test tree add remove upload init completions; complete -c bats-poc -n __fish_use_subcommand -a $c; end\n"
+    print_string "# fish completions\nfor c in build check clean lock run test tree add remove upload init completions; complete -c bats -n __fish_use_subcommand -a $c; end\n"
   else println! ("error: specify a shell (bash, zsh, fish)")
 
 (* Check if a file exists by trying to open it *)
@@ -3870,9 +3870,9 @@ in
                     println! ("Cannot open src/bin/ directory"))
 
               (* Lex a test: read our own source and lex it *)
-              val () = println! ("Lexing src/bin/bats-poc.bats...")
-              val lex_path = $A.alloc<byte>(22)
-              (* "src/bin/bats-poc.bats" *)
+              val () = println! ("Lexing src/bin/bats.bats...")
+              val lex_path = $A.alloc<byte>(18)
+              (* "src/bin/bats.bats" *)
               val () = $A.write_byte(lex_path, 0, 115)   (* s *)
               val () = $A.write_byte(lex_path, 1, 114)   (* r *)
               val () = $A.write_byte(lex_path, 2, 99)    (* c *)
@@ -3885,18 +3885,14 @@ in
               val () = $A.write_byte(lex_path, 9, 97)    (* a *)
               val () = $A.write_byte(lex_path, 10, 116)  (* t *)
               val () = $A.write_byte(lex_path, 11, 115)  (* s *)
-              val () = $A.write_byte(lex_path, 12, 45)   (* - *)
-              val () = $A.write_byte(lex_path, 13, 112)  (* p *)
-              val () = $A.write_byte(lex_path, 14, 111)  (* o *)
-              val () = $A.write_byte(lex_path, 15, 99)   (* c *)
-              val () = $A.write_byte(lex_path, 16, 46)   (* . *)
-              val () = $A.write_byte(lex_path, 17, 98)   (* b *)
-              val () = $A.write_byte(lex_path, 18, 97)   (* a *)
-              val () = $A.write_byte(lex_path, 19, 116)  (* t *)
-              val () = $A.write_byte(lex_path, 20, 115)  (* s *)
-              val () = $A.write_byte(lex_path, 21, 0)
+              val () = $A.write_byte(lex_path, 12, 46)   (* . *)
+              val () = $A.write_byte(lex_path, 13, 98)   (* b *)
+              val () = $A.write_byte(lex_path, 14, 97)   (* a *)
+              val () = $A.write_byte(lex_path, 15, 116)  (* t *)
+              val () = $A.write_byte(lex_path, 16, 115)  (* s *)
+              val () = $A.write_byte(lex_path, 17, 0)
               val @(fz_lp, bv_lp) = $A.freeze<byte>(lex_path)
-              val lex_or = $F.file_open(bv_lp, 22, 0, 0)
+              val lex_or = $F.file_open(bv_lp, 18, 0, 0)
               val () = $A.drop<byte>(fz_lp, bv_lp)
               val () = $A.free<byte>($A.thaw<byte>(fz_lp))
               val () = (case+ lex_or of
@@ -4081,7 +4077,7 @@ end
 
 (* Print usage matching Rust bats format *)
 fn print_usage(): void = let
-  val () = println! ("usage: bats-poc [--run-in <dir>] [--quiet] <command>")
+  val () = println! ("usage: bats [--run-in <dir>] [--quiet] <command>")
   val () = println! ("")
   val () = println! ("commands:")
   val () = println! ("  init binary [--claude]       Create a new binary project (src/bin/<name>.bats)")
@@ -4250,7 +4246,7 @@ in
           val only_mask = scan_only(cl_buf, 0, effective_len, 0, $AR.checked_nat(effective_len + 1))
           val @(fz_cb, bv_cb) = $A.freeze<byte>(cl_buf)
           (* Setup argparse parser *)
-          val @(pna, pnl) = str_to_borrow("bats-poc")
+          val @(pna, pnl) = str_to_borrow("bats")
           val @(fzpn, bvpn) = $A.freeze<byte>(pna)
           val @(pha, phl) = str_to_borrow("bats build tool")
           val @(fzph, bvph) = $A.freeze<byte>(pha)
@@ -4418,7 +4414,7 @@ in
                 val () = $A.free<byte>(arg_buf)
               in
                 if kind >= 0 then do_init(kind, init_claude)
-                else println! ("error: specify 'binary' or 'library'\nusage: bats-poc init binary|library")
+                else println! ("error: specify 'binary' or 'library'\nusage: bats init binary|library")
               end
               else if cmd_code = 6 then let (* test *)
                 val () = $AP.parse_result_free(r)
@@ -4443,7 +4439,7 @@ in
                 in end
                 else let
                   val () = $A.free<byte>(arg_buf)
-                in println! ("error: specify a package name\nusage: bats-poc add <package>") end
+                in println! ("error: specify a package name\nusage: bats add <package>") end
               end
               else if cmd_code = 10 then let (* remove *)
                 val () = $AP.parse_result_free(r)
@@ -4456,7 +4452,7 @@ in
                 in end
                 else let
                   val () = $A.free<byte>(arg_buf)
-                in println! ("error: specify a package name\nusage: bats-poc remove <package>") end
+                in println! ("error: specify a package name\nusage: bats remove <package>") end
               end
               else if cmd_code = 11 then let (* completions *)
                 val () = $AP.parse_result_free(r)
@@ -4473,16 +4469,16 @@ in
                 val () = $A.free<byte>(arg_buf)
               in
                 if shell >= 0 then do_completions(shell)
-                else println! ("error: specify a shell (bash, zsh, fish)\nusage: bats-poc completions bash|zsh|fish")
+                else println! ("error: specify a shell (bash, zsh, fish)\nusage: bats completions bash|zsh|fish")
               end
               else if cmd_code = 12 then let (* version *)
                 val () = $AP.parse_result_free(r)
                 val () = $A.free<byte>(arg_buf)
-              in println! ("bats-poc 0.1.0") end
+              in println! ("bats 0.1.0") end
               else let
                 val () = $AP.parse_result_free(r)
                 val () = $A.free<byte>(arg_buf)
-              in println! ("usage: bats-poc <init|lock|add|remove|build|run|test|check|tree|upload|clean|completions> [--only debug|release]") end
+              in println! ("usage: bats <init|lock|add|remove|build|run|test|check|tree|upload|clean|completions> [--only debug|release]") end
             end end (* close else-let for --help *)
           | ~$R.err(e) => let
               val () = $AP.parse_error_free(e)
