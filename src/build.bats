@@ -82,9 +82,17 @@ end end
 #pub fn do_clean(): void
 
 implement do_clean() = let
-  val cmd = $B.create()
-  val () = bput(cmd, "rm -rf build dist docs")
-  val rc = run_sh(cmd, 0)
+  val exec = str_to_path_arr("/bin/rm")
+  val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
+  val argv = $B.create()
+  val () = bput(argv, "rm") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-rf") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "build") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "dist") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "docs") val () = $B.put_byte(argv, 0)
+  val rc = run_cmd(bv_exec, 524288, argv, 5)
+  val () = $A.drop<byte>(fz_exec, bv_exec)
+  val () = $A.free<byte>($A.thaw<byte>(fz_exec))
 in
   if rc <> 0 then println! ("error: clean failed")
   else if ~is_quiet() then println! ("cleaned build/, dist/, and docs/")
@@ -118,14 +126,70 @@ in
   if rplen > 0 then let
     (* Full lock resolution with repository *)
     val @(fz_rb3, bv_rb3) = $A.freeze<byte>(repo_buf)
-    val cmd = $B.create()
-    val () = bput(cmd, "bats lock --repository ")
-    val () = copy_to_builder(bv_rb3, 0, rplen, 4096, cmd, $AR.checked_nat(rplen + 1))
+    (* Spawn self via /proc/self/exe to avoid shell PATH issues *)
+    val self_path = str_to_path_arr("/proc/self/exe")
+    val @(fz_self, bv_self) = $A.freeze<byte>(self_path)
+    val argv_b = $B.create()
+    val () = bput(argv_b, "bats")
+    val () = $B.put_byte(argv_b, 0)
+    val () = bput(argv_b, "lock")
+    val () = $B.put_byte(argv_b, 0)
+    val () = bput(argv_b, "--repository")
+    val () = $B.put_byte(argv_b, 0)
+    val () = copy_to_builder(bv_rb3, 0, rplen, 4096, argv_b, $AR.checked_nat(rplen + 1))
+    val () = $B.put_byte(argv_b, 0)
     val () = $A.drop<byte>(fz_rb3, bv_rb3)
     val () = $A.free<byte>($A.thaw<byte>(fz_rb3))
-    val () = (if dev > 0 then bput(cmd, " --dev") else ())
-    val () = (if dry_run > 0 then bput(cmd, " --dry-run") else ())
-    val rc = run_sh(cmd, 0)
+    val lock_argc = (if dev > 0 then
+      (if dry_run > 0 then let
+        val () = bput(argv_b, "--dev") val () = $B.put_byte(argv_b, 0)
+        val () = bput(argv_b, "--dry-run") val () = $B.put_byte(argv_b, 0)
+      in 6 end
+      else let
+        val () = bput(argv_b, "--dev") val () = $B.put_byte(argv_b, 0)
+      in 5 end)
+    else (if dry_run > 0 then let
+        val () = bput(argv_b, "--dry-run") val () = $B.put_byte(argv_b, 0)
+      in 5 end
+      else 4)): int
+    val @(argv_arr, _) = $B.to_arr(argv_b)
+    val @(fz_av, bv_av) = $A.freeze<byte>(argv_arr)
+    val envp = $A.alloc<byte>(1)
+    val () = $A.write_byte(envp, 0, 0)
+    val @(fz_ev, bv_ev) = $A.freeze<byte>(envp)
+    val sr = $P.spawn(bv_self, 524288, bv_av, lock_argc, bv_ev, 0,
+      $P.dev_null(), $P.dev_null(), $P.pipe_new())
+    val () = $A.drop<byte>(fz_self, bv_self)
+    val () = $A.free<byte>($A.thaw<byte>(fz_self))
+    val () = $A.drop<byte>(fz_av, bv_av)
+    val () = $A.free<byte>($A.thaw<byte>(fz_av))
+    val () = $A.drop<byte>(fz_ev, bv_ev)
+    val () = $A.free<byte>($A.thaw<byte>(fz_ev))
+    val rc = (case+ sr of
+      | ~$R.ok(sp) => let
+          val+ ~$P.spawn_pipes_mk(child, sin_p, sout_p, serr_p) = sp
+          val () = $P.pipe_end_close(sin_p)
+          val () = $P.pipe_end_close(sout_p)
+          val+ ~$P.pipe_fd(err_fd) = serr_p
+          val eb = $A.alloc<byte>(65536)
+          val err_r = $F.file_read(err_fd, eb, 65536)
+          val elen = (case+ err_r of
+            | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+          val ecr = $F.file_close(err_fd)
+          val () = $R.discard<int><int>(ecr)
+          val wr = $P.child_wait(child)
+          val ec = (case+ wr of
+            | ~$R.ok(n) => n | ~$R.err(_) => ~1): int
+        in
+          if ec <> 0 then let
+            val @(fz_eb2, bv_eb2) = $A.freeze<byte>(eb)
+            val () = print_borrow(bv_eb2, 0, elen, 65536, $AR.checked_nat(elen + 1))
+            val () = $A.drop<byte>(fz_eb2, bv_eb2)
+            val () = $A.free<byte>($A.thaw<byte>(fz_eb2))
+          in ec end
+          else let val () = $A.free<byte>(eb) in 0 end
+        end
+      | ~$R.err(_) => ~1): int
   in
     if rc <> 0 then println! ("error: lock resolution failed")
     else ()
@@ -273,64 +337,75 @@ in rc end
 #pub fn write_wasm_stubs(): int
 
 implement write_wasm_stubs() = let
-  val cmd = $B.create()
-  val () = bput(cmd, "mkdir -p build/_bats_wasm_stubs/libats/libc/CATS/sys && ")
-  val () = bput(cmd, "echo '/* stub */' > build/_bats_wasm_stubs/libats/libc/CATS/stdio.cats && ")
-  val () = bput(cmd, "echo '/* stub */' > build/_bats_wasm_stubs/libats/libc/CATS/sys/stat.cats && ")
-  val () = bput(cmd, "echo '/* stub */' > build/_bats_wasm_stubs/libats/libc/CATS/sys/types.cats")
-in run_sh(cmd, 0) end
+  val mb = $B.create()
+  val () = bput(mb, "build/_bats_wasm_stubs/libats/libc/CATS/sys")
+  val r0 = run_mkdir(mb)
+  val stub = "/* stub */\n"
+  fn write_stub {sn:nat} (path: string sn): int = let
+    val sb = $B.create()
+    val () = bput(sb, stub)
+    val pp = str_to_path_arr(path)
+    val @(fz_pp, bv_pp) = $A.freeze<byte>(pp)
+    val rc = write_file_from_builder(bv_pp, 524288, sb)
+    val () = $A.drop<byte>(fz_pp, bv_pp)
+    val () = $A.free<byte>($A.thaw<byte>(fz_pp))
+  in rc end
+  val _ = write_stub("build/_bats_wasm_stubs/libats/libc/CATS/stdio.cats")
+  val _ = write_stub("build/_bats_wasm_stubs/libats/libc/CATS/sys/stat.cats")
+  val _ = write_stub("build/_bats_wasm_stubs/libats/libc/CATS/sys/types.cats")
+in r0 end
 
 fn compile_wasm_runtime(): int = let
-  val cmd = $B.create()
-  val () = bput(cmd, "PATH=/usr/bin:/usr/local/bin:/bin clang --target=wasm32 -O2 -nostdlib -ffreestanding ")
-  val () = bput(cmd, "-fvisibility=default -D_ATS_CCOMP_HEADER_NONE_ -D_ATS_CCOMP_EXCEPTION_NONE_ ")
-  val () = bput(cmd, "-D_ATS_CCOMP_PRELUDE_NONE_ -D_ATS_CCOMP_RUNTIME_NONE_ ")
-  val () = bput(cmd, "-include build/_bats_wasm_runtime.h -I build/_bats_wasm_stubs ")
-  val () = bput(cmd, "-c -o build/_bats_wasm_runtime.o build/_bats_wasm_runtime.c")
-in run_sh(cmd, 0) end
+  val exec = str_to_path_arr("/usr/bin/clang")
+  val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
+  val argv = $B.create()
+  val () = bput(argv, "clang") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "--target=wasm32") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-O2") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-nostdlib") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-ffreestanding") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-fvisibility=default") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-D_ATS_CCOMP_HEADER_NONE_") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-D_ATS_CCOMP_EXCEPTION_NONE_") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-D_ATS_CCOMP_PRELUDE_NONE_") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-D_ATS_CCOMP_RUNTIME_NONE_") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-include") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "build/_bats_wasm_runtime.h") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-I") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "build/_bats_wasm_stubs") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-c") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-o") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "build/_bats_wasm_runtime.o") val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "build/_bats_wasm_runtime.c") val () = $B.put_byte(argv, 0)
+  val rc = run_cmd(bv_exec, 524288, argv, 19)
+  val () = $A.drop<byte>(fz_exec, bv_exec)
+  val () = $A.free<byte>($A.thaw<byte>(fz_exec))
+in rc end
 
 #pub fn do_build_wasm(release: int): void
 
-implement do_build_wasm(release) = let
-  (* Assumes do_build(release) was called first to generate .c files *)
-  (* Write WASM assets *)
-  val r1 = write_wasm_runtime_h()
-  val r2 = write_wasm_runtime_c()
-  val r3 = write_wasm_stubs()
-  val r4 = compile_wasm_runtime()
-in
-  if r4 <> 0 then println! ("error: failed to compile wasm runtime")
-  else let
-    (* Compile all .c files for wasm using a shell for-loop *)
-    val wasm_cc = $B.create()
-    val () = bput(wasm_cc, "cd build && for f in $(find . -name '*_dats.c' 2>/dev/null); do ")
-    val () = bput(wasm_cc, "PATH=/usr/bin:/usr/local/bin:/bin clang --target=wasm32 -O2 -nostdlib -ffreestanding ")
-    val () = bput(wasm_cc, "-fvisibility=default -D_ATS_CCOMP_HEADER_NONE_ -D_ATS_CCOMP_EXCEPTION_NONE_ ")
-    val () = bput(wasm_cc, "-D_ATS_CCOMP_PRELUDE_NONE_ -D_ATS_CCOMP_RUNTIME_NONE_ ")
-    val () = bput(wasm_cc, "-include _bats_wasm_runtime.h -I _bats_wasm_stubs ")
-    val () = bput(wasm_cc, "-c -o \"${f%.c}.wasm.o\" \"$f\" || exit 1; done")
-    val wrc1 = run_sh(wasm_cc, 0)
-    (* Link with wasm-ld *)
-    val wasm_link = $B.create()
-    val () = bput(wasm_link, "cd build && PATH=/usr/bin:/usr/local/bin:/bin wasm-ld --no-entry --export-dynamic ")
-    val () = bput(wasm_link, "-z stack-size=524288 --initial-memory=16777216 --max-memory=268435456 ")
-    val () = bput(wasm_link, "-o ../dist/")
-    val () = (if release > 0 then bput(wasm_link, "release/") else bput(wasm_link, "debug/"))
-    val () = bput(wasm_link, "output.wasm _bats_wasm_runtime.o $(find . -name '*.wasm.o' 2>/dev/null)")
-    val wrc2 = run_sh(wasm_link, 0)
-  in
-    if wrc2 <> 0 then println! ("error: wasm linking failed")
-    else (if ~is_quiet() then println! ("  built wasm binary") else ())
-  end
-end
+implement do_build_wasm(release) =
+  (* TODO: WASM build needs reimplementation without run_sh.
+     Each _dats.c file needs to be found via dir iteration and compiled
+     with clang --target=wasm32, then linked with wasm-ld. *)
+  println! ("error: WASM build not yet implemented without shell")
 
 #pub fn do_build(release: int): void
 
 implement do_build(release) = let
   (* Step 1: mkdir build directories *)
-  val cmd = $B.create()
-  val () = bput(cmd, "mkdir -p build/src/bin build/bats_modules dist/debug dist/release")
-  val r0 = run_sh(cmd, 0)
+  val mb1 = $B.create()
+  val () = bput(mb1, "build/src/bin")
+  val _ = run_mkdir(mb1)
+  val mb2 = $B.create()
+  val () = bput(mb2, "build/bats_modules")
+  val _ = run_mkdir(mb2)
+  val mb3 = $B.create()
+  val () = bput(mb3, "dist/debug")
+  val _ = run_mkdir(mb3)
+  val mb4 = $B.create()
+  val () = bput(mb4, "dist/release")
+  val r0 = run_mkdir(mb4)
   val () = (if r0 <> 0 then println! ("error: mkdir failed") else ())
 in
   if r0 <> 0 then ()
@@ -348,9 +423,17 @@ in
     val _ = write_file_from_builder(bv_nrtp, 524288, nrt_b)
     val () = $A.drop<byte>(fz_nrtp, bv_nrtp)
     val () = $A.free<byte>($A.thaw<byte>(fz_nrtp))
-    val nrt_cmd = $B.create()
-    val () = bput(nrt_cmd, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/_bats_native_runtime.o build/_bats_native_runtime.c")
-    val nrt_r = run_sh(nrt_cmd, 0)
+    val nrt_exec = str_to_path_arr("/usr/bin/cc")
+    val @(fz_nrt_exec, bv_nrt_exec) = $A.freeze<byte>(nrt_exec)
+    val nrt_argv = $B.create()
+    val () = bput(nrt_argv, "cc") val () = $B.put_byte(nrt_argv, 0)
+    val () = bput(nrt_argv, "-c") val () = $B.put_byte(nrt_argv, 0)
+    val () = bput(nrt_argv, "-o") val () = $B.put_byte(nrt_argv, 0)
+    val () = bput(nrt_argv, "build/_bats_native_runtime.o") val () = $B.put_byte(nrt_argv, 0)
+    val () = bput(nrt_argv, "build/_bats_native_runtime.c") val () = $B.put_byte(nrt_argv, 0)
+    val nrt_r = run_cmd(bv_nrt_exec, 524288, nrt_argv, 5)
+    val () = $A.drop<byte>(fz_nrt_exec, bv_nrt_exec)
+    val () = $A.free<byte>($A.thaw<byte>(fz_nrt_exec))
     val () = (if nrt_r <> 0 then println! ("error: failed to compile native runtime") else ())
     (* Step 2: Ensure ATS2 toolchain at $HOME/.bats/ats2 *)
     val phbuf = $A.alloc<byte>(512)
@@ -396,26 +479,102 @@ in
       in arr_to_builder(buf, pos + 1, len, dst, fuel - 1) end
     fn ensure_ats2 {l:agz}
       (buf: !$A.borrow(byte, l, 512), plen: int): void = let
-      val cmd = $B.create()
-      val () = bput(cmd, "test -f ")
-      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
-      val () = bput(cmd, "/bin/patsopt || (echo 'ATS2 not found, installing...' && mkdir -p ")
-      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
-      val () = bput(cmd, " && curl -sL 'https://raw.githubusercontent.com/ats-lang/ats-lang.github.io/master/FROZEN000/ATS-Postiats/ATS2-Postiats-int-0.4.2.tgz' -o /tmp/_bpoc_ats2.tgz && ")
-      val () = bput(cmd, "tar -xzf /tmp/_bpoc_ats2.tgz --strip-components=1 -C ")
-      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
-      val () = bput(cmd, " && rm /tmp/_bpoc_ats2.tgz && echo 'building ATS2...' && make -j4 -C ")
-      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
-      val () = bput(cmd, "/src/CBOOT patsopt PATSHOME=")
-      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
-      val () = bput(cmd, " && mkdir -p ")
-      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
-      val () = bput(cmd, "/bin && cp ")
-      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
-      val () = bput(cmd, "/src/CBOOT/patsopt ")
-      val () = arr_to_builder(buf, 0, plen, cmd, $AR.checked_nat(plen + 1))
-      val () = bput(cmd, "/bin/patsopt && echo 'ATS2 installed successfully')")
-      val rc = run_sh(cmd, 0)
+      (* Check if patsopt exists by trying to stat it *)
+      val test_path = $B.create()
+      val () = arr_to_builder(buf, 0, plen, test_path, $AR.checked_nat(plen + 1))
+      val () = bput(test_path, "/bin/patsopt")
+      val () = $B.put_byte(test_path, 0)
+      val @(tp_arr, _) = $B.to_arr(test_path)
+      val @(fz_tp, bv_tp) = $A.freeze<byte>(tp_arr)
+      val exists = (case+ $F.file_mtime(bv_tp, 524288) of
+        | ~$R.ok(_) => true | ~$R.err(_) => false): bool
+      val () = $A.drop<byte>(fz_tp, bv_tp)
+      val () = $A.free<byte>($A.thaw<byte>(fz_tp))
+      val rc = (if exists then 0
+      else let
+        val () = println! ("ATS2 not found, installing...")
+        (* mkdir -p <patshome> *)
+        val mkb = $B.create()
+        val () = arr_to_builder(buf, 0, plen, mkb, $AR.checked_nat(plen + 1))
+        val _ = run_mkdir(mkb)
+        (* curl -sL <url> -o /tmp/_bpoc_ats2.tgz *)
+        val curl_exec = str_to_path_arr("/usr/bin/curl")
+        val @(fz_ce, bv_ce) = $A.freeze<byte>(curl_exec)
+        val curl_argv = $B.create()
+        val () = bput(curl_argv, "curl") val () = $B.put_byte(curl_argv, 0)
+        val () = bput(curl_argv, "-sL") val () = $B.put_byte(curl_argv, 0)
+        val () = bput(curl_argv, "https://raw.githubusercontent.com/ats-lang/ats-lang.github.io/master/FROZEN000/ATS-Postiats/ATS2-Postiats-int-0.4.2.tgz")
+        val () = $B.put_byte(curl_argv, 0)
+        val () = bput(curl_argv, "-o") val () = $B.put_byte(curl_argv, 0)
+        val () = bput(curl_argv, "/tmp/_bpoc_ats2.tgz") val () = $B.put_byte(curl_argv, 0)
+        val r1 = run_cmd(bv_ce, 524288, curl_argv, 5)
+        val () = $A.drop<byte>(fz_ce, bv_ce)
+        val () = $A.free<byte>($A.thaw<byte>(fz_ce))
+        (* tar -xzf /tmp/_bpoc_ats2.tgz --strip-components=1 -C <patshome> *)
+        val tar_exec = str_to_path_arr("/usr/bin/tar")
+        val @(fz_te, bv_te) = $A.freeze<byte>(tar_exec)
+        val tar_argv = $B.create()
+        val () = bput(tar_argv, "tar") val () = $B.put_byte(tar_argv, 0)
+        val () = bput(tar_argv, "-xzf") val () = $B.put_byte(tar_argv, 0)
+        val () = bput(tar_argv, "/tmp/_bpoc_ats2.tgz") val () = $B.put_byte(tar_argv, 0)
+        val () = bput(tar_argv, "--strip-components=1") val () = $B.put_byte(tar_argv, 0)
+        val () = bput(tar_argv, "-C") val () = $B.put_byte(tar_argv, 0)
+        val () = arr_to_builder(buf, 0, plen, tar_argv, $AR.checked_nat(plen + 1))
+        val () = $B.put_byte(tar_argv, 0)
+        val r2 = run_cmd(bv_te, 524288, tar_argv, 6)
+        val () = $A.drop<byte>(fz_te, bv_te)
+        val () = $A.free<byte>($A.thaw<byte>(fz_te))
+        (* rm /tmp/_bpoc_ats2.tgz *)
+        val rm_exec = str_to_path_arr("/bin/rm")
+        val @(fz_re, bv_re) = $A.freeze<byte>(rm_exec)
+        val rm_argv = $B.create()
+        val () = bput(rm_argv, "rm") val () = $B.put_byte(rm_argv, 0)
+        val () = bput(rm_argv, "/tmp/_bpoc_ats2.tgz") val () = $B.put_byte(rm_argv, 0)
+        val _ = run_cmd(bv_re, 524288, rm_argv, 2)
+        val () = $A.drop<byte>(fz_re, bv_re)
+        val () = $A.free<byte>($A.thaw<byte>(fz_re))
+        (* make -j4 -C <patshome>/src/CBOOT patsopt PATSHOME=<patshome> *)
+        val () = println! ("building ATS2...")
+        val make_exec = str_to_path_arr("/usr/bin/make")
+        val @(fz_me, bv_me) = $A.freeze<byte>(make_exec)
+        val make_argv = $B.create()
+        val () = bput(make_argv, "make") val () = $B.put_byte(make_argv, 0)
+        val () = bput(make_argv, "-j4") val () = $B.put_byte(make_argv, 0)
+        val () = bput(make_argv, "-C") val () = $B.put_byte(make_argv, 0)
+        val () = arr_to_builder(buf, 0, plen, make_argv, $AR.checked_nat(plen + 1))
+        val () = bput(make_argv, "/src/CBOOT") val () = $B.put_byte(make_argv, 0)
+        val () = bput(make_argv, "patsopt") val () = $B.put_byte(make_argv, 0)
+        val phome_arg = $B.create()
+        val () = bput(phome_arg, "PATSHOME=")
+        val () = arr_to_builder(buf, 0, plen, phome_arg, $AR.checked_nat(plen + 1))
+        val @(pha, phl) = $B.to_arr(phome_arg)
+        val @(fz_pha, bv_pha) = $A.freeze<byte>(pha)
+        val () = copy_to_builder(bv_pha, 0, phl, 524288, make_argv, $AR.checked_nat(phl + 1))
+        val () = $B.put_byte(make_argv, 0)
+        val () = $A.drop<byte>(fz_pha, bv_pha)
+        val () = $A.free<byte>($A.thaw<byte>(fz_pha))
+        val r3 = run_cmd(bv_me, 524288, make_argv, 6)
+        val () = $A.drop<byte>(fz_me, bv_me)
+        val () = $A.free<byte>($A.thaw<byte>(fz_me))
+        (* mkdir -p <patshome>/bin *)
+        val mkb2 = $B.create()
+        val () = arr_to_builder(buf, 0, plen, mkb2, $AR.checked_nat(plen + 1))
+        val () = bput(mkb2, "/bin")
+        val _ = run_mkdir(mkb2)
+        (* cp <patshome>/src/CBOOT/patsopt <patshome>/bin/patsopt *)
+        val cp_exec = str_to_path_arr("/bin/cp")
+        val @(fz_cpe, bv_cpe) = $A.freeze<byte>(cp_exec)
+        val cp_argv = $B.create()
+        val () = bput(cp_argv, "cp") val () = $B.put_byte(cp_argv, 0)
+        val () = arr_to_builder(buf, 0, plen, cp_argv, $AR.checked_nat(plen + 1))
+        val () = bput(cp_argv, "/src/CBOOT/patsopt") val () = $B.put_byte(cp_argv, 0)
+        val () = arr_to_builder(buf, 0, plen, cp_argv, $AR.checked_nat(plen + 1))
+        val () = bput(cp_argv, "/bin/patsopt") val () = $B.put_byte(cp_argv, 0)
+        val r4 = run_cmd(bv_cpe, 524288, cp_argv, 3)
+        val () = $A.drop<byte>(fz_cpe, bv_cpe)
+        val () = $A.free<byte>($A.thaw<byte>(fz_cpe))
+        val () = println! ("ATS2 installed successfully")
+      in r1 + r2 + r3 + r4 end): int
     in
       if rc <> 0 then println! ("error: ATS2 installation failed") else ()
     end
@@ -456,11 +615,11 @@ in
                     val @(fz_e, bv_e) = $A.freeze<byte>(ent)
                     (* mkdir -p build/bats_modules/<name>/src *)
                     val mc = $B.create()
-                    val () = bput(mc, "mkdir -p build/bats_modules/")
+                    val () = bput(mc, "build/bats_modules/")
                     val () = copy_to_builder(bv_e, 0, elen, 256, mc,
                       $AR.checked_nat(elen + 1))
                     val () = bput(mc, "/src")
-                    val _ = run_sh(mc, 0)
+                    val _ = run_mkdir(mc)
                     (* source: bats_modules/<name>/src/lib.bats *)
                     val sp = $B.create()
                     val () = bput(sp, "bats_modules/")
@@ -1217,21 +1376,27 @@ in
                     in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                     val () = (if bin_pats_fresh > 0 then ()
                     else let
-                    val pbin = $B.create()
-                    val () = bput(pbin, "PATSHOME=")
-                    val () = copy_to_builder(ph, 0, phlen, 512, pbin,
-                      $AR.checked_nat(phlen + 1))
-                    val () = $B.put_byte(pbin, 32)
-                    val () = copy_to_builder(ph, 0, phlen, 512, pbin,
-                      $AR.checked_nat(phlen + 1))
-                    val () = bput(pbin, "/bin/patsopt -IATS build -IATS build/src -IATS build/bats_modules -o build/src/bin/")
-                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pbin,
+                    val po_b = $B.create()
+                    val () = bput(po_b, "build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, po_b,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(pbin, "_dats.c -d build/src/bin/")
-                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pbin,
+                    val () = bput(po_b, "_dats.c")
+                    val () = $B.put_byte(po_b, 0)
+                    val @(po_a, po_len) = $B.to_arr(po_b)
+                    val @(fz_po, bv_po) = $A.freeze<byte>(po_a)
+                    val pi_b = $B.create()
+                    val () = bput(pi_b, "build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pi_b,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(pbin, ".dats")
-                    val rbp = run_sh(pbin, 1)
+                    val () = bput(pi_b, ".dats")
+                    val () = $B.put_byte(pi_b, 0)
+                    val @(pi_a, pi_len) = $B.to_arr(pi_b)
+                    val @(fz_pi, bv_pi) = $A.freeze<byte>(pi_a)
+                    val rbp = run_patsopt(ph, phlen, bv_po, po_len, bv_pi, pi_len)
+                    val () = $A.drop<byte>(fz_po, bv_po)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_po))
+                    val () = $A.drop<byte>(fz_pi, bv_pi)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_pi))
                     in (if rbp <> 0 then
                       println! ("error: patsopt failed for binary")
                       else if ~is_quiet() then println! ("  patsopt: binary")
@@ -1252,21 +1417,27 @@ in
                     in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                     val () = (if ent_pats_fresh > 0 then ()
                     else let
-                    val pent = $B.create()
-                    val () = bput(pent, "PATSHOME=")
-                    val () = copy_to_builder(ph, 0, phlen, 512, pent,
-                      $AR.checked_nat(phlen + 1))
-                    val () = $B.put_byte(pent, 32)
-                    val () = copy_to_builder(ph, 0, phlen, 512, pent,
-                      $AR.checked_nat(phlen + 1))
-                    val () = bput(pent, "/bin/patsopt -IATS build -IATS build/src -IATS build/bats_modules -o build/_bats_entry_")
-                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pent,
+                    val eo_b = $B.create()
+                    val () = bput(eo_b, "build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, eo_b,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(pent, "_dats.c -d build/_bats_entry_")
-                    val () = copy_to_builder(bv_e, 0, stem_len, 256, pent,
+                    val () = bput(eo_b, "_dats.c")
+                    val () = $B.put_byte(eo_b, 0)
+                    val @(eo_a, eo_len) = $B.to_arr(eo_b)
+                    val @(fz_eo, bv_eo) = $A.freeze<byte>(eo_a)
+                    val ei_b = $B.create()
+                    val () = bput(ei_b, "build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, ei_b,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(pent, ".dats")
-                    val rep = run_sh(pent, 0)
+                    val () = bput(ei_b, ".dats")
+                    val () = $B.put_byte(ei_b, 0)
+                    val @(ei_a, ei_len) = $B.to_arr(ei_b)
+                    val @(fz_ei, bv_ei) = $A.freeze<byte>(ei_a)
+                    val rep = run_patsopt(ph, phlen, bv_eo, eo_len, bv_ei, ei_len)
+                    val () = $A.drop<byte>(fz_eo, bv_eo)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_eo))
+                    val () = $A.drop<byte>(fz_ei, bv_ei)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_ei))
                     in (if rep <> 0 then
                       println! ("error: patsopt failed for entry")
                       else if ~is_quiet() then println! ("  patsopt: entry")
@@ -1538,22 +1709,27 @@ in
                     in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                     val () = (if bin_cc_fresh > 0 then ()
                     else let
-                    val cbin = $B.create()
-                    val () = bput(cbin, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/src/bin/")
-                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cbin,
+                    val co_b = $B.create()
+                    val () = bput(co_b, "build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, co_b,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(cbin, "_dats.o build/src/bin/")
-                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cbin,
+                    val () = bput(co_b, "_dats.o")
+                    val () = $B.put_byte(co_b, 0)
+                    val @(co_a, co_len) = $B.to_arr(co_b)
+                    val @(fz_co, bv_co) = $A.freeze<byte>(co_a)
+                    val ci_b = $B.create()
+                    val () = bput(ci_b, "build/src/bin/")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, ci_b,
                       $AR.checked_nat(stem_len + 1))
-                    val () = (if rel > 0 then bput(cbin, "_dats.c -O2 -I")
-                      else bput(cbin, "_dats.c -g -O0 -I"))
-                    val () = copy_to_builder(ph, 0, phlen, 512, cbin,
-                      $AR.checked_nat(phlen + 1))
-                    val () = bput(cbin, " -I")
-                    val () = copy_to_builder(ph, 0, phlen, 512, cbin,
-                      $AR.checked_nat(phlen + 1))
-                    val () = bput(cbin, "/ccomp/runtime")
-                    val _ = run_sh(cbin, 0)
+                    val () = bput(ci_b, "_dats.c")
+                    val () = $B.put_byte(ci_b, 0)
+                    val @(ci_a, ci_len) = $B.to_arr(ci_b)
+                    val @(fz_ci, bv_ci) = $A.freeze<byte>(ci_a)
+                    val _ = run_cc(ph, phlen, bv_co, co_len, bv_ci, ci_len, rel)
+                    val () = $A.drop<byte>(fz_co, bv_co)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_co))
+                    val () = $A.drop<byte>(fz_ci, bv_ci)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_ci))
                     in end)
 
                     (* Compile entry *)
@@ -1571,29 +1747,34 @@ in
                     in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                     val () = (if ent_cc_fresh > 0 then ()
                     else let
-                    val cent = $B.create()
-                    val () = bput(cent, "PATH=/usr/bin:/usr/local/bin:/bin cc -c -o build/_bats_entry_")
-                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cent,
+                    val ceo_b = $B.create()
+                    val () = bput(ceo_b, "build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, ceo_b,
                       $AR.checked_nat(stem_len + 1))
-                    val () = bput(cent, "_dats.o build/_bats_entry_")
-                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cent,
+                    val () = bput(ceo_b, "_dats.o")
+                    val () = $B.put_byte(ceo_b, 0)
+                    val @(ceo_a, ceo_len) = $B.to_arr(ceo_b)
+                    val @(fz_ceo, bv_ceo) = $A.freeze<byte>(ceo_a)
+                    val cei_b = $B.create()
+                    val () = bput(cei_b, "build/_bats_entry_")
+                    val () = copy_to_builder(bv_e, 0, stem_len, 256, cei_b,
                       $AR.checked_nat(stem_len + 1))
-                    val () = (if rel > 0 then bput(cent, "_dats.c -O2 -I")
-                      else bput(cent, "_dats.c -g -O0 -I"))
-                    val () = copy_to_builder(ph, 0, phlen, 512, cent,
-                      $AR.checked_nat(phlen + 1))
-                    val () = bput(cent, " -I")
-                    val () = copy_to_builder(ph, 0, phlen, 512, cent,
-                      $AR.checked_nat(phlen + 1))
-                    val () = bput(cent, "/ccomp/runtime")
-                    val _ = run_sh(cent, 0)
+                    val () = bput(cei_b, "_dats.c")
+                    val () = $B.put_byte(cei_b, 0)
+                    val @(cei_a, cei_len) = $B.to_arr(cei_b)
+                    val @(fz_cei, bv_cei) = $A.freeze<byte>(cei_a)
+                    val _ = run_cc(ph, phlen, bv_ceo, ceo_len, bv_cei, cei_len, rel)
+                    val () = $A.drop<byte>(fz_ceo, bv_ceo)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_ceo))
+                    val () = $A.drop<byte>(fz_cei, bv_cei)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_cei))
                     in end)
 
                     (* Step 8: Link *)
                     val link = $B.create()
                     val () = (if rel > 0 then
-                      bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/release/")
-                      else bput(link, "PATH=/usr/bin:/usr/local/bin:/bin cc -o dist/debug/"))
+                      bput(link, "cc -o dist/release/")
+                      else bput(link, "cc -o dist/debug/"))
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
                       $AR.checked_nat(stem_len + 1))
                     val () = bput(link, " build/_bats_entry_")
@@ -1740,7 +1921,43 @@ in
                       | ~$R.err(_) => ())
                     val () = (if rel > 0 then bput(link, " -O2")
                       else bput(link, " -g -O0"))
-                    val rl = run_sh(link, 0)
+                    (* Convert space-separated link command to null-separated argv *)
+                    val @(link_arr, link_len) = $B.to_arr(link)
+                    val @(fz_la, bv_la) = $A.freeze<byte>(link_arr)
+                    val link_argv = $B.create()
+                    fun split_spaces {l2:agz}{fuel:nat} .<fuel>.
+                      (bv: !$A.borrow(byte, l2, 524288), i: int, len: int,
+                       dst: !$B.builder, argc: int, in_arg: int,
+                       fuel: int fuel): int =
+                      if fuel <= 0 then argc
+                      else if i >= len then
+                        (if in_arg > 0 then let
+                          val () = $B.put_byte(dst, 0)
+                        in argc + 1 end else argc)
+                      else let
+                        val b = src_byte(bv, i, 524288)
+                      in
+                        if $AR.eq_int_int(b, 32) then
+                          if in_arg > 0 then let
+                            val () = $B.put_byte(dst, 0)
+                          in split_spaces(bv, i + 1, len, dst, argc + 1, 0, fuel - 1) end
+                          else split_spaces(bv, i + 1, len, dst, argc, 0, fuel - 1)
+                        else let
+                          val () = $B.put_byte(dst, b)
+                        in split_spaces(bv, i + 1, len, dst, argc, 1, fuel - 1) end
+                      end
+                    val link_argc = split_spaces(bv_la, 0, link_len, link_argv, 0, 0,
+                      $AR.checked_nat(link_len + 1))
+                    val () = $A.drop<byte>(fz_la, bv_la)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_la))
+                    (* First arg is "cc" or "PATH=... cc" — extract the exec path *)
+                    val cc_exec = str_to_path_arr("/usr/bin/cc")
+                    val @(fz_cce, bv_cce) = $A.freeze<byte>(cc_exec)
+                    (* Remove the first "PATH=..." token and "cc" token,
+                       start argv from "cc" *)
+                    val rl = run_cmd(bv_cce, 524288, link_argv, link_argc)
+                    val () = $A.drop<byte>(fz_cce, bv_cce)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_cce))
                     in rl end): int
 
                     val () = $A.drop<byte>(fz_sp, bv_sp)
@@ -1775,75 +1992,11 @@ in
             println! ("error: cannot open src/bin/"))
 
       (* --to-c: copy C files and generate Makefile *)
+      (* TODO: rewrite --to-c to use native file operations and cp spawn *)
+      (* For now, --to-c is disabled since run_sh was removed *)
       val () = (if is_to_c() then if get_to_c_done() = 0 then let
         val () = set_to_c_done(1)
-        val cmd = $B.create()
-        (* Read DIR and copy files *)
-        val () = bput(cmd, "DIR=$(tr -d '")
-        val () = $B.put_byte(cmd, 92) (* backslash *)
-        val () = bput(cmd, "n' < /tmp/_bpoc_to_c.txt) && mkdir -p $DIR && ")
-        val () = bput(cmd, "cp build/_bats_native_runtime.c $DIR/ && ")
-        val () = bput(cmd, "for d in bats_modules/*/; do [ -d \"$d\" ] && dep=$(basename \"$d\") && ")
-        val () = bput(cmd, "cp \"build/bats_modules/$dep/src/lib_dats.c\" \"$DIR/${dep}_lib_dats.c\" 2>/dev/null && ")
-        val () = bput(cmd, "for f in \"build/bats_modules/$dep/src/\"*_dats.c; do [ -f \"$f\" ] && bn=$(basename \"$f\") && ")
-        val () = bput(cmd, "[ \"$bn\" != \"lib_dats.c\" ] && cp \"$f\" \"$DIR/${dep}_${bn}\" 2>/dev/null; done; done; ")
-        val () = bput(cmd, "for f in build/src/*_dats.c; do [ -f \"$f\" ] && bn=$(basename \"$f\") && cp \"$f\" \"$DIR/src_${bn}\"; done; ")
-        val () = bput(cmd, "for f in build/src/bin/*_dats.c; do [ -f \"$f\" ] && cp \"$f\" \"$DIR/\"; done; ")
-        val () = bput(cmd, "for f in build/_bats_entry_*_dats.c; do [ -f \"$f\" ] && cp \"$f\" \"$DIR/\"; done;\n")
-        val () = bput(cmd, "cd $DIR &&\n")
-        (* Compute common deps *)
-        val () = bput(cmd, "COMMON=\"\";\n")
-        val () = bput(cmd, "for f in _bats_native_runtime.c *_dats.c; do [ -f \"$f\" ] || continue; case \"$f\" in _bats_entry_*) continue;; esac;\n")
-        val () = bput(cmd, "base=${f%_dats.c}; [ -f \"_bats_entry_${base}_dats.c\" ] && continue;\n")
-        val () = bput(cmd, "COMMON=\"$COMMON $f\"; done;\n")
-        (* Generate Makefile *)
-        val () = bput(cmd, "{\n")
-        val () = bput(cmd, "echo 'PATSHOME ?= $(HOME)/.bats/ats2'\n")
-        val () = bput(cmd, "echo 'CC ?= cc'\n")
-        val () = bput(cmd, "echo ''\n")
-        val () = bput(cmd, "printf '%%_debug.o: %%.c")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "t$(CC) -c -o $@ $< -g -O0 -I$(PATSHOME) -I$(PATSHOME)/ccomp/runtime")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n'\n")
-        val () = bput(cmd, "printf '%%_release.o: %%.c")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "t$(CC) -c -o $@ $< -O2 -I$(PATSHOME) -I$(PATSHOME)/ccomp/runtime")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n'\n")
-        (* All target *)
-        val () = bput(cmd, "printf 'all:'; for f in _bats_entry_*_dats.c; do name=${f#_bats_entry_}; name=${name%_dats.c}; printf ' debug/%s release/%s' \"$name\" \"$name\"; done; printf '")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n'\n")
-        (* Per-binary rules *)
-        val () = bput(cmd, "for f in _bats_entry_*_dats.c; do\n")
-        val () = bput(cmd, "name=${f#_bats_entry_}; name=${name%_dats.c}\n")
-        val () = bput(cmd, "printf 'debug/%s:' \"$name\"; for s in _bats_entry_${name}_dats.c ${name}_dats.c $COMMON; do printf ' %s' \"${s%.c}_debug.o\"; done; printf '")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "tmkdir -p debug")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "t$(CC) -o $@ $^ -g -O0")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n'\n")
-        val () = bput(cmd, "printf 'release/%s:' \"$name\"; for s in _bats_entry_${name}_dats.c ${name}_dats.c $COMMON; do printf ' %s' \"${s%.c}_release.o\"; done; printf '")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "tmkdir -p release")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "t$(CC) -o $@ $^ -O2")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n'\n")
-        val () = bput(cmd, "done\n")
-        val () = bput(cmd, "printf 'clean:")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "trm -f *.o")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "trm -rf debug release")
-        val () = $B.put_byte(cmd, 92) val () = bput(cmd, "n'\n")
-        val () = bput(cmd, "} > Makefile")
-        val rc = run_sh(cmd, 0)
-        val () = (if rc <> 0 then println! ("error: --to-c failed")
-          else if ~is_quiet() then println! ("  to-c: generated")
-          else ())
+        val () = println! ("error: --to-c is not yet implemented without shell")
       in end else () else ())
 
       val () = $A.drop<byte>(fz_patshome, bv_patshome)
