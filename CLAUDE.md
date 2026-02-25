@@ -48,6 +48,12 @@ Segfaults must never happen. A segfault means something is fundamentally wrong â
 
 Don't guess. Don't "try" things. Read the code. Carefully reason about what is happening. Understand before acting.
 
+Do not assume Linux. Code must be portable (macOS, Linux, BSDs). Do not use `/proc/self/exe` or other Linux-specific paths.
+
+Do not use bats-old unless it's an emergency. The self-hosting compiler is the primary build tool.
+
+Fix problems regardless of size. Never say "too large for this session" or defer work. Do the work.
+
 ## Task Rules
 
 A task should never be more than one thing: if it requires the word "and", for example, it should be broken up. If it refers to plurals, it should be broken up. If it has a comma, it should be broken up.

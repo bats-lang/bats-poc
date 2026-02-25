@@ -25,6 +25,7 @@ val g_repo: ref(string) = ref("")
 val g_bin: ref(string) = ref("")
 val g_to_c = ref<int>(0)
 val g_to_c_done = ref<int>(0)
+val g_self_path: ref(string) = ref("")
 
 #pub fn is_verbose(): bool
 
@@ -60,6 +61,10 @@ val g_to_c_done = ref<int>(0)
 
 #pub fn get_to_c_done(): int
 
+#pub fn set_self_path {sn:nat} (s: string sn): void
+
+#pub fn get_self_path(): string
+
 implement is_verbose() = !g_verbose
 implement is_quiet() = !g_quiet
 implement is_test_mode() = !g_test_mode
@@ -77,6 +82,8 @@ implement set_to_c(v) = !g_to_c := v
 implement get_to_c() = !g_to_c
 implement set_to_c_done(v) = !g_to_c_done := v
 implement get_to_c_done() = !g_to_c_done
+implement set_self_path(s) = !g_self_path := s
+implement get_self_path() = !g_self_path
 
 (* ============================================================
    String builder helpers
@@ -438,51 +445,51 @@ end
    Process execution
    ============================================================ *)
 
-#pub fn run_sh(cmd_b: $B.builder, remap_offset: int): int
 
-implement run_sh(cmd_b, remap_offset) = let
-  val @(cmd_arr, cmd_len) = $B.to_arr(cmd_b)
-  val @(fz_cmd, bv_cmd) = $A.freeze<byte>(cmd_arr)
-  val _verbose = if is_verbose() then 1 else 0
-  val () = (if $AR.gt_int_int(_verbose, 0) then let
-    val () = print! ("  + ")
-    val () = print_borrow(bv_cmd, 0, cmd_len, 524288,
-      $AR.checked_nat(cmd_len + 1))
-  in print_newline() end else ())
-  val sh_path = $A.alloc<byte>(7)
-  val () = $A.write_byte(sh_path, 0, 47)
-  val () = $A.write_byte(sh_path, 1, 98)
-  val () = $A.write_byte(sh_path, 2, 105)
-  val () = $A.write_byte(sh_path, 3, 110)
-  val () = $A.write_byte(sh_path, 4, 47)
-  val () = $A.write_byte(sh_path, 5, 115)
-  val () = $A.write_byte(sh_path, 6, 104)
-  val @(fz_sh, bv_sh) = $A.freeze<byte>(sh_path)
-  val argv_b = $B.create()
-  val () = $B.put_byte(argv_b, 115)
-  val () = $B.put_byte(argv_b, 104)
-  val () = $B.put_byte(argv_b, 0)
-  val () = $B.put_byte(argv_b, 45)
-  val () = $B.put_byte(argv_b, 99)
-  val () = $B.put_byte(argv_b, 0)
-  val () = copy_to_builder(bv_cmd, 0, cmd_len, 524288, argv_b,
-    $AR.checked_nat(cmd_len + 1))
-  val () = $B.put_byte(argv_b, 0)
+(* Run a program directly. exec_path is null-terminated path to executable.
+   argv_b is a builder with null-separated arguments (consumed).
+   argc is the number of arguments.
+   Returns exit code or -1 on error. *)
+(* Run mkdir -p <path>. path_b is consumed. Returns exit code. *)
+#pub fn run_mkdir(path_b: $B.builder): int
+
+implement run_mkdir(path_b) = let
+  val () = $B.put_byte(path_b, 0)
+  val exec = str_to_path_arr("/bin/mkdir")
+  val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
+  val argv = $B.create()
+  val () = bput(argv, "mkdir")
+  val () = $B.put_byte(argv, 0)
+  val () = bput(argv, "-p")
+  val () = $B.put_byte(argv, 0)
+  val @(pa, pl) = $B.to_arr(path_b)
+  val @(fz_p, bv_p) = $A.freeze<byte>(pa)
+  val () = copy_to_builder(bv_p, 0, pl, 524288, argv, $AR.checked_nat(pl + 1))
+  val () = $A.drop<byte>(fz_p, bv_p)
+  val () = $A.free<byte>($A.thaw<byte>(fz_p))
+  val rc = run_cmd(bv_exec, 524288, argv, 3)
+  val () = $A.drop<byte>(fz_exec, bv_exec)
+  val () = $A.free<byte>($A.thaw<byte>(fz_exec))
+in rc end
+
+#pub fn run_cmd {le:agz}
+  (exec_bv: !$A.borrow(byte, le, 524288), exec_len: int,
+   argv_b: $B.builder, argc: int): int
+
+implement run_cmd (exec_bv, exec_len, argv_b, argc) = let
   val @(argv_arr, _) = $B.to_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
-  val envp = $A.alloc<byte>(1)
-  val () = $A.write_byte(envp, 0, 0)
-  val @(fz_e, bv_e) = $A.freeze<byte>(envp)
-  val sr = $P.spawn(bv_sh, 7, bv_a, 3, bv_e, 0,
+  val envp_b = $B.create()
+  val () = bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
+  val () = $B.put_byte(envp_b, 0)
+  val @(envp_arr, _) = $B.to_arr(envp_b)
+  val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
+  val sr = $P.spawn(exec_bv, 524288, bv_a, argc, bv_e, 1,
     $P.dev_null(), $P.dev_null(), $P.pipe_new())
-  val () = $A.drop<byte>(fz_sh, bv_sh)
-  val () = $A.free<byte>($A.thaw<byte>(fz_sh))
   val () = $A.drop<byte>(fz_a, bv_a)
   val () = $A.free<byte>($A.thaw<byte>(fz_a))
   val () = $A.drop<byte>(fz_e, bv_e)
   val () = $A.free<byte>($A.thaw<byte>(fz_e))
-  val () = $A.drop<byte>(fz_cmd, bv_cmd)
-  val () = $A.free<byte>($A.thaw<byte>(fz_cmd))
 in
   case+ sr of
   | ~$R.ok(sp) => let
@@ -490,8 +497,6 @@ in
       val () = $P.pipe_end_close(sin_p)
       val () = $P.pipe_end_close(sout_p)
       val+ ~$P.pipe_fd(err_fd) = serr_p
-      (* Read stderr BEFORE waiting — prevents deadlock if child
-         writes more than PIPE_BUF (64KB) to stderr *)
       val eb = $A.alloc<byte>(65536)
       val err_r = $F.file_read(err_fd, eb, 65536)
       val elen = (case+ err_r of
