@@ -124,76 +124,180 @@ implement do_lock(dev, dry_run) = let
     | ~$R.err(_) => let val rb = $A.alloc<byte>(4096) in @(rb, 0) end): [lrb:agz] @($A.arr(byte, lrb, 4096), int)
 in
   if rplen > 0 then let
-    (* Full lock resolution with repository *)
+    (* Native lock resolution: read bats.toml deps, find in repo, unzip, write lock *)
     val @(fz_rb3, bv_rb3) = $A.freeze<byte>(repo_buf)
-    (* Spawn self via /proc/self/exe to avoid shell PATH issues *)
-    val self_path = str_to_path_arr("/proc/self/exe")
-    val @(fz_self, bv_self) = $A.freeze<byte>(self_path)
-    val argv_b = $B.create()
-    val () = bput(argv_b, "bats")
-    val () = $B.put_byte(argv_b, 0)
-    val () = bput(argv_b, "lock")
-    val () = $B.put_byte(argv_b, 0)
-    val () = bput(argv_b, "--repository")
-    val () = $B.put_byte(argv_b, 0)
-    val () = copy_to_builder(bv_rb3, 0, rplen, 4096, argv_b, $AR.checked_nat(rplen + 1))
-    val () = $B.put_byte(argv_b, 0)
+    val bt = str_to_path_arr("bats.toml")
+    val @(fz_bt, bv_bt) = $A.freeze<byte>(bt)
+    val bt_or = $F.file_open(bv_bt, 524288, 0, 0)
+    val () = $A.drop<byte>(fz_bt, bv_bt)
+    val () = $A.free<byte>($A.thaw<byte>(fz_bt))
+    val () = (case+ bt_or of
+      | ~$R.ok(btfd) => let
+          val tbl = $A.alloc<byte>(4096)
+          val tr = $F.file_read(btfd, tbl, 4096)
+          val tl = (case+ tr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+          val tcr = $F.file_close(btfd)
+          val () = $R.discard<int><int>(tcr)
+          val @(fz_tbl, bv_tbl) = $A.freeze<byte>(tbl)
+          val pr = $T.parse(bv_tbl, 4096)
+          val () = $A.drop<byte>(fz_tbl, bv_tbl)
+          val () = $A.free<byte>($A.thaw<byte>(fz_tbl))
+        in case+ pr of
+          | ~$R.ok(doc) => let
+              val @(dk, dk_sz) = str_to_borrow("dependencies")
+              val @(fz_dk, bv_dk) = $A.freeze<byte>(dk)
+              val keys = $A.alloc<byte>(4096)
+              val kr = $T.keys(doc, bv_dk, dk_sz, keys, 4096)
+              val klen = (case+ kr of | ~$R.some(n) => n | ~$R.none() => 0): int
+              val () = $A.drop<byte>(fz_dk, bv_dk)
+              val () = $A.free<byte>($A.thaw<byte>(fz_dk))
+              val mbb = $B.create()
+              val () = bput(mbb, "bats_modules")
+              val _ = run_mkdir(mbb)
+              val lock_b = $B.create()
+              (* Resolve each dependency *)
+              fun resolve {lk:agz}{lr:agz}{fuel:nat} .<fuel>.
+                (ks: !$A.arr(byte, lk, 4096), pos: int, kl: int,
+                 rb: !$A.borrow(byte, lr, 4096), rl: int,
+                 lb: !$B.builder, cnt: int, fuel: int fuel): int =
+                if fuel <= 0 then cnt
+                else if pos >= kl then cnt
+                else let
+                  val de = find_null(ks, pos, 4096, $AR.checked_nat(kl - pos + 1))
+                  val dl = de - pos
+                in if dl <= 0 then resolve(ks, de + 1, kl, rb, rl, lb, cnt, fuel - 1)
+                  else let
+                    (* Strip quotes from key name *)
+                    val p0 = g1ofg0(pos)
+                    val first_byte = (if p0 >= 0 then if p0 < 4096 then
+                      byte2int0($A.get<byte>(ks, p0)) else 0 else 0): int
+                    val dep_start = (if $AR.eq_int_int(first_byte, 34) then pos + 1 else pos): int
+                    val last_pos = g1ofg0(de - 1)
+                    val last_byte = (if last_pos >= 0 then if last_pos < 4096 then
+                      byte2int0($A.get<byte>(ks, last_pos)) else 0 else 0): int
+                    val dep_end = (if $AR.eq_int_int(last_byte, 34) then de - 1 else de): int
+                    val dl = dep_end - dep_start
+                    (* Scan repo/<dep>/ for latest .bats archive *)
+                    val dir_b = $B.create()
+                    val () = copy_to_builder(rb, 0, rl, 4096, dir_b, $AR.checked_nat(rl + 1))
+                    val () = bput(dir_b, "/")
+                    val () = arr_range_to_builder(ks, dep_start, dep_end, dir_b, $AR.checked_nat(dl + 1))
+                    val () = $B.put_byte(dir_b, 0)
+                    val @(da, _) = $B.to_arr(dir_b)
+                    val @(fz_da, bv_da) = $A.freeze<byte>(da)
+                    val dr = $F.dir_open(bv_da, 524288)
+                    val () = $A.drop<byte>(fz_da, bv_da)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_da))
+                  in case+ dr of
+                    | ~$R.ok(d) => let
+                        (* Find a .bats file in dir (any version — first found) *)
+                        fun scan_v {f2:nat} .<f2>.
+                          (d: !$F.dir, f2: int f2): @([lb2:agz] $A.arr(byte, lb2, 256), int) =
+                          if f2 <= 0 then let val z = $A.alloc<byte>(256) in @(z, 0) end
+                          else let
+                            val e = $A.alloc<byte>(256)
+                            val nr = $F.dir_next(d, e, 256)
+                            val el = $R.option_unwrap_or<int>(nr, ~1)
+                          in if el < 0 then @(e, 0)
+                            else let
+                              val ib = has_suffix(e, el, 256, ".bats", 5)
+                              val is = has_suffix(e, el, 256, ".sha256", 7)
+                            in if ib then if is then let val () = $A.free<byte>(e) in scan_v(d, f2 - 1) end
+                              else @(e, el)
+                            else let val () = $A.free<byte>(e) in scan_v(d, f2 - 1) end end
+                          end
+                        val @(best, blen) = scan_v(d, 1000)
+                        val dcr = $F.dir_close(d)
+                        val () = $R.discard<int><int>(dcr)
+                      in if blen <= 0 then let
+                          val () = print! ("error: no version for ")
+                          val () = print_arr(ks, dep_start, dep_end, 4096, $AR.checked_nat(dl + 1))
+                          val () = print_newline()
+                          val () = $A.free<byte>(best)
+                        in resolve(ks, de+1, kl, rb, rl, lb, cnt, fuel-1) end
+                        else let
+                          (* mkdir + unzip *)
+                          val mb = $B.create()
+                          val () = bput(mb, "bats_modules/")
+                          val () = arr_range_to_builder(ks, dep_start, dep_end, mb, $AR.checked_nat(dl+1))
+                          val _ = run_mkdir(mb)
+                          val uz = str_to_path_arr("/usr/bin/unzip")
+                          val @(fz_uz, bv_uz) = $A.freeze<byte>(uz)
+                          val ua = $B.create()
+                          val () = bput(ua, "unzip") val () = $B.put_byte(ua, 0)
+                          val () = bput(ua, "-o") val () = $B.put_byte(ua, 0)
+                          val () = bput(ua, "-q") val () = $B.put_byte(ua, 0)
+                          val () = copy_to_builder(rb, 0, rl, 4096, ua, $AR.checked_nat(rl+1))
+                          val () = bput(ua, "/")
+                          val () = arr_range_to_builder(ks, dep_start, dep_end, ua, $AR.checked_nat(dl+1))
+                          val () = bput(ua, "/")
+                          val @(fz_b, bv_b) = $A.freeze<byte>(best)
+                          val () = copy_to_builder(bv_b, 0, blen, 256, ua, $AR.checked_nat(blen+1))
+                          val () = $B.put_byte(ua, 0)
+                          val () = bput(ua, "-d") val () = $B.put_byte(ua, 0)
+                          val () = bput(ua, "bats_modules/")
+                          val () = arr_range_to_builder(ks, dep_start, dep_end, ua, $AR.checked_nat(dl+1))
+                          val () = $B.put_byte(ua, 0)
+                          val _ = run_cmd(bv_uz, 524288, ua, 6)
+                          val () = $A.drop<byte>(fz_uz, bv_uz)
+                          val () = $A.free<byte>($A.thaw<byte>(fz_uz))
+                          (* Write lock line *)
+                          val () = arr_range_to_builder(ks, dep_start, dep_end, lb, $AR.checked_nat(dl+1))
+                          val () = $B.put_byte(lb, 32)
+                          (* Version from filename *)
+                          val pfx = $B.create()
+                          fun mkp {ls4:agz}{f4:nat} .<f4>.
+                            (s: !$A.arr(byte, ls4, 4096), i: int, l: int, d3: !$B.builder, f4: int f4): void =
+                            if f4 <= 0 then () else if i >= l then ()
+                            else let val ii = g1ofg0(i) in
+                              if ii >= 0 then if ii < 4096 then let val c = byte2int0($A.get<byte>(s, ii))
+                              in (if $AR.eq_int_int(c,47) then $B.put_byte(d3,95) else $B.put_byte(d3,c));
+                                mkp(s, i+1, l, d3, f4-1) end else () else () end
+                          val () = mkp(ks, dep_start, dep_end, pfx, $AR.checked_nat(dl+1))
+                          val () = $B.put_byte(pfx, 95)
+                          val pl = $B.length(pfx)
+                          val () = $B.builder_free(pfx)
+                          val vs = pl val ve = blen - 5
+                          val () = (if vs < ve then
+                            copy_to_builder(bv_b, vs, ve, 256, lb, $AR.checked_nat(ve-vs+1))
+                          else bput(lb, "unknown"))
+                          val () = $B.put_byte(lb, 32)
+                          val () = bput(lb, "0") (* TODO: compute sha256 *)
+                          val () = $B.put_byte(lb, 10)
+                          val () = print! ("fetched ")
+                          val () = print_arr(ks, dep_start, dep_end, 4096, $AR.checked_nat(dl+1))
+                          val () = print! (" v")
+                          val () = (if vs < ve then
+                            print_borrow(bv_b, vs, ve, 256, $AR.checked_nat(ve-vs+1))
+                          else print! ("unknown"))
+                          val () = print_newline()
+                          val () = $A.drop<byte>(fz_b, bv_b)
+                          val () = $A.free<byte>($A.thaw<byte>(fz_b))
+                        in resolve(ks, de+1, kl, rb, rl, lb, cnt+1, fuel-1) end
+                      end
+                    | ~$R.err(_) => let
+                        val () = print! ("error: package not found: ")
+                        val () = print_arr(ks, dep_start, dep_end, 4096, $AR.checked_nat(dl+1))
+                        val () = print_newline()
+                      in resolve(ks, de+1, kl, rb, rl, lb, cnt, fuel-1) end
+                  end
+                end
+              val n = resolve(keys, 0, klen, bv_rb3, rplen, lock_b, 0, 200)
+              val () = $A.free<byte>(keys)
+              val lp = str_to_path_arr("bats.lock")
+              val @(fz_lp, bv_lp) = $A.freeze<byte>(lp)
+              val _ = write_file_from_builder(bv_lp, 524288, lock_b)
+              val () = $A.drop<byte>(fz_lp, bv_lp)
+              val () = $A.free<byte>($A.thaw<byte>(fz_lp))
+              val () = println! ("wrote bats.lock (", n, " dependencies)")
+              val () = $T.toml_free(doc)
+            in end
+          | ~$R.err(e) => println! ("error: cannot parse bats.toml: ", e)
+        end
+      | ~$R.err(_) => println! ("error: cannot open bats.toml"))
     val () = $A.drop<byte>(fz_rb3, bv_rb3)
     val () = $A.free<byte>($A.thaw<byte>(fz_rb3))
-    val lock_argc = (if dev > 0 then
-      (if dry_run > 0 then let
-        val () = bput(argv_b, "--dev") val () = $B.put_byte(argv_b, 0)
-        val () = bput(argv_b, "--dry-run") val () = $B.put_byte(argv_b, 0)
-      in 6 end
-      else let
-        val () = bput(argv_b, "--dev") val () = $B.put_byte(argv_b, 0)
-      in 5 end)
-    else (if dry_run > 0 then let
-        val () = bput(argv_b, "--dry-run") val () = $B.put_byte(argv_b, 0)
-      in 5 end
-      else 4)): int
-    val @(argv_arr, _) = $B.to_arr(argv_b)
-    val @(fz_av, bv_av) = $A.freeze<byte>(argv_arr)
-    val envp = $A.alloc<byte>(1)
-    val () = $A.write_byte(envp, 0, 0)
-    val @(fz_ev, bv_ev) = $A.freeze<byte>(envp)
-    val sr = $P.spawn(bv_self, 524288, bv_av, lock_argc, bv_ev, 0,
-      $P.dev_null(), $P.dev_null(), $P.pipe_new())
-    val () = $A.drop<byte>(fz_self, bv_self)
-    val () = $A.free<byte>($A.thaw<byte>(fz_self))
-    val () = $A.drop<byte>(fz_av, bv_av)
-    val () = $A.free<byte>($A.thaw<byte>(fz_av))
-    val () = $A.drop<byte>(fz_ev, bv_ev)
-    val () = $A.free<byte>($A.thaw<byte>(fz_ev))
-    val rc = (case+ sr of
-      | ~$R.ok(sp) => let
-          val+ ~$P.spawn_pipes_mk(child, sin_p, sout_p, serr_p) = sp
-          val () = $P.pipe_end_close(sin_p)
-          val () = $P.pipe_end_close(sout_p)
-          val+ ~$P.pipe_fd(err_fd) = serr_p
-          val eb = $A.alloc<byte>(65536)
-          val err_r = $F.file_read(err_fd, eb, 65536)
-          val elen = (case+ err_r of
-            | ~$R.ok(n) => n | ~$R.err(_) => 0): int
-          val ecr = $F.file_close(err_fd)
-          val () = $R.discard<int><int>(ecr)
-          val wr = $P.child_wait(child)
-          val ec = (case+ wr of
-            | ~$R.ok(n) => n | ~$R.err(_) => ~1): int
-        in
-          if ec <> 0 then let
-            val @(fz_eb2, bv_eb2) = $A.freeze<byte>(eb)
-            val () = print_borrow(bv_eb2, 0, elen, 65536, $AR.checked_nat(elen + 1))
-            val () = $A.drop<byte>(fz_eb2, bv_eb2)
-            val () = $A.free<byte>($A.thaw<byte>(fz_eb2))
-          in ec end
-          else let val () = $A.free<byte>(eb) in 0 end
-        end
-      | ~$R.err(_) => ~1): int
-  in
-    if rc <> 0 then println! ("error: lock resolution failed")
-    else ()
-  end
+  in end
   else let
     (* No repository - just read existing lockfile *)
     val () = $A.free<byte>(repo_buf)
