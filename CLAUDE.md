@@ -6,7 +6,7 @@ bats must be:
 
 1. **The bats compiler**: Self-hosting bats compiler written in Bats. The old Rust implementation is archived at `/home/moshez/src/bats-lang/bats-old/`.
 
-2. **Safe**: `unsafe = false` (or no `unsafe` key) in `bats.toml`. No `$UNSAFE begin...end` blocks in bats source. C code belongs in library packages (file, process, sha256, etc.) that expose safe typed APIs. If a package must be `unsafe = true`, keep the unsafety minimal — expose safe wrappers so dependents can be `unsafe = false`.
+2. **Safe**: `unsafe = false` (or no `unsafe` key) in `bats.toml`. No `$UNSAFE begin...end` blocks in bats source. No `$extfcall` — it is an unsafe construct. C code belongs in library packages (file, process, sha256, etc.) that expose safe typed APIs. If a package must be `unsafe = true`, keep the unsafety minimal — expose safe wrappers so dependents can be `unsafe = false`. Being in an unsafe package is not carte blanche to add more unsafety.
 
 ## Build & Test
 
@@ -17,7 +17,8 @@ dist/debug/bats build --repository /home/moshez/src/bats-lang/repository-prototy
 
 ## Architecture
 
-Single binary: `src/bin/bats.bats`
+Entry point: `src/bin/bats.bats`
+Shared modules: `src/helpers.bats`, `src/lexer.bats`, `src/emitter.bats`, `src/build.bats`, `src/commands.bats`
 
 Dependencies: argparse, array, arith, builder, env, file, path, process, result, sha256, str, toml
 
@@ -34,6 +35,18 @@ Never ask permission to keep going. Keep going until the success criterion is me
 ## Allowed Divergences from old Rust bats
 
 bats uses `--only <value>` (repeatable) instead of the old Rust bats' `--release` flag and `--only native|wasm`. Values: `debug`, `release`, `native`, `wasm`. Multiple `--only` flags narrow the build matrix. Default (no `--only`): build all. Example: `--only debug --only native` builds only debug native. This is the only allowed divergence. All other flags and behaviors must match the old Rust bats exactly.
+
+## Problem Resolution
+
+A problem already existing is never a good reason to ignore it. Problems must be fixed. Safety problems must be prioritized.
+
+## Safety Philosophy
+
+Never add runtime checks (assertions, bounds checks at runtime, abort-on-overflow). The type system must prevent bad states at compile time. If you cannot prove safety statically, the API is wrong — fix the API, don't add a runtime check. Runtime checks are a sign that the type system is not being used correctly. The whole point of ATS2 and Bats is that safety is enforced by the compiler, not by runtime guards.
+
+Segfaults must never happen. A segfault means something is fundamentally wrong — do not work around it, do not accept it, do not split files to avoid it. Find the root cause and fix it systemically. If it's caused by unbounded recursion, figure out how ATS2 is supposed to handle this (it has tail-call optimization). Use web search to understand the correct solution. Do not settle for less than correct.
+
+Don't guess. Don't "try" things. Read the code. Carefully reason about what is happening. Understand before acting.
 
 ## Task Rules
 
