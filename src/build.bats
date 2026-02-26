@@ -284,6 +284,92 @@ in
                 end
               val n = resolve(keys, 0, klen, bv_rb3, rplen, lock_b, 0, 200)
               val () = $A.free<byte>(keys)
+              (* Resolve transitive deps by running resolve again on deps found
+                 in extracted packages' bats.toml files. Repeat until stable. *)
+              fun resolve_pass {lr2:agz}{fuel:nat} .<fuel>.
+                (rb2: !$A.borrow(byte, lr2, 4096), rl2: int,
+                 lb2: !$B.builder, prev_cnt: int, fuel: int fuel): int =
+                if fuel <= 0 then prev_cnt
+                else let
+                  val bmd = str_to_path_arr("bats_modules")
+                  val @(fz_bmd, bv_bmd) = $A.freeze<byte>(bmd)
+                  val bdr = $F.dir_open(bv_bmd, 524288)
+                  val () = $A.drop<byte>(fz_bmd, bv_bmd)
+                  val () = $A.free<byte>($A.thaw<byte>(fz_bmd))
+                  val @(tk, tkl2) = (case+ bdr of
+                    | ~$R.ok(bd) => let
+                        val tk = $A.alloc<byte>(4096)
+                        val tkl = ref<int>(0)
+                        fun sdt {ltk:agz}{f3:nat} .<f3>.
+                          (bd: !$F.dir, tk: !$A.arr(byte, ltk, 4096), tkl: ref(int), f3: int f3): void =
+                          if f3 <= 0 then ()
+                          else let
+                            val de = $A.alloc<byte>(256)
+                            val nr = $F.dir_next(bd, de, 256)
+                            val del = $R.option_unwrap_or<int>(nr, ~1)
+                          in if del < 0 then $A.free<byte>(de)
+                            else let val dd = is_dot_or_dotdot(de, del, 256) in
+                              if dd then let val () = $A.free<byte>(de) in sdt(bd, tk, tkl, f3-1) end
+                              else let
+                                val tp = $B.create()
+                                val () = bput(tp, "bats_modules/")
+                                val @(fz_de, bv_de) = $A.freeze<byte>(de)
+                                val () = copy_to_builder(bv_de, 0, del, 256, tp, $AR.checked_nat(del+1))
+                                val () = $A.drop<byte>(fz_de, bv_de)
+                                val () = $A.free<byte>($A.thaw<byte>(fz_de))
+                                val () = bput(tp, "/bats.toml")
+                                val () = $B.put_byte(tp, 0)
+                                val @(tpa, _) = $B.to_arr(tp)
+                                val @(fz_tpa, bv_tpa) = $A.freeze<byte>(tpa)
+                                val tfo = $F.file_open(bv_tpa, 524288, 0, 0)
+                                val () = $A.drop<byte>(fz_tpa, bv_tpa)
+                                val () = $A.free<byte>($A.thaw<byte>(fz_tpa))
+                                val () = (case+ tfo of
+                                  | ~$R.ok(tfd) => let
+                                      val tb = $A.alloc<byte>(4096)
+                                      val tr = $F.file_read(tfd, tb, 4096)
+                                      val tl = (case+ tr of | ~$R.ok(n2) => n2 | ~$R.err(_) => 0): int
+                                      val tc = $F.file_close(tfd)
+                                      val () = $R.discard<int><int>(tc)
+                                      val @(fz_tb, bv_tb) = $A.freeze<byte>(tb)
+                                      val pr = $T.parse(bv_tb, 4096)
+                                      val () = $A.drop<byte>(fz_tb, bv_tb)
+                                      val () = $A.free<byte>($A.thaw<byte>(fz_tb))
+                                    in case+ pr of
+                                      | ~$R.ok(doc2) => let
+                                          val @(dka, dksz) = str_to_borrow("dependencies")
+                                          val @(fz_dka, bv_dka) = $A.freeze<byte>(dka)
+                                          val kr2 = $T.keys(doc2, bv_dka, dksz, tk, 4096)
+                                          val () = (case+ kr2 of
+                                            | ~$R.some(kl2) => !tkl := kl2
+                                            | ~$R.none() => ())
+                                          val () = $A.drop<byte>(fz_dka, bv_dka)
+                                          val () = $A.free<byte>($A.thaw<byte>(fz_dka))
+                                          val () = $T.toml_free(doc2)
+                                        in end
+                                      | ~$R.err(_) => ()
+                                    end
+                                  | ~$R.err(_) => ())
+                                (* TODO: also scan src/lib.bats for #use directives *)
+                              in sdt(bd, tk, tkl, f3-1) end
+                            end
+                          end
+                        val () = sdt(bd, tk, tkl, 200)
+                        val dcr3 = $F.dir_close(bd)
+                        val () = $R.discard<int><int>(dcr3)
+                        val tklv = !tkl
+                      in @(tk, tklv) end
+                    | ~$R.err(_) => let
+                        val z = $A.alloc<byte>(4096)
+                      in @(z, 0) end): [ltk:agz] @($A.arr(byte, ltk, 4096), int)
+                  val new_cnt = resolve(tk, 0, tkl2, rb2, rl2, lb2, prev_cnt, 200)
+                  val () = $A.free<byte>(tk)
+                in
+                  if new_cnt > prev_cnt then
+                    resolve_pass(rb2, rl2, lb2, new_cnt, fuel - 1)
+                  else new_cnt
+                end
+              val n = resolve_pass(bv_rb3, rplen, lock_b, n, 10)
               val lp = str_to_path_arr("bats.lock")
               val @(fz_lp, bv_lp) = $A.freeze<byte>(lp)
               val _ = write_file_from_builder(bv_lp, 524288, lock_b)
