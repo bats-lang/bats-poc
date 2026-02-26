@@ -513,10 +513,24 @@ fn lex_target_decl {l:agz}{n:pos}
    spans: !$B.builder, start: int, count: int): @(int, int) = let
   val p0 = skip_ws(src, start + 7, max, 256)
   val ident_end = skip_ident(src, p0, max, 4096)
-  val ep = skip_to_eol(src, ident_end, src_len, max, $AR.checked_nat(src_len))
   val target = (if $AR.eq_int_int(src_byte(src, p0, max), 119) then 1 else 0): int
-  val () = put_span(spans, 7, 2, start, ep, target, 0, 0, 0)
-in @(ep, count + 1) end
+  (* Check for block form: #target wasm begin...end *)
+  val p1 = skip_ws(src, ident_end, max, 256)
+in
+  if looking_at_begin(src, p1, max) then let
+    (* Block form: find matching end, store content range *)
+    val contents_start = p1 + 5
+    val end_pos = find_end_kw(src, contents_start, src_len, max, 0, $AR.checked_nat(src_len))
+    val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
+    (* kind=11: target_block. aux1=target(0=native,1=wasm), aux2/aux3=content range *)
+    val () = put_span(spans, 11, 0, start, ep, target, contents_start, end_pos, 0)
+  in @(ep, count + 1) end
+  else let
+    (* Line form: just the directive *)
+    val ep = skip_to_eol(src, ident_end, src_len, max, $AR.checked_nat(src_len))
+    val () = put_span(spans, 7, 2, start, ep, target, 0, 0, 0)
+  in @(ep, count + 1) end
+end
 
 (* ============================================================
    Lexer: passthrough scanner

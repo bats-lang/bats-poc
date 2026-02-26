@@ -1325,7 +1325,7 @@ in
                     (* Now emit .sats/.dats *)
                     val @(fz_sp, bv_sp) = $A.freeze<byte>(span_arr)
                     val @(sats_arr, sats_len, dats_arr, dats_len, pre_lines) =
-                      do_emit(bv_lb, lbytes, 524288, bv_sp, 524288, span_count)
+                      do_emit(bv_lb, lbytes, 524288, bv_sp, 524288, span_count, 0)
                     val () = $A.drop<byte>(fz_sp, bv_sp)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sp))
                     val () = $A.drop<byte>(fz_lb, bv_lb)
