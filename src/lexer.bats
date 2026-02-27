@@ -252,25 +252,6 @@ fn looking_at_extkind {l:agz}{n:pos}
   $AR.eq_int_int(src_byte(src, pos + 7, max), 100) &&
   is_kw_boundary(src, pos + 8, max)
 
-(* "prfun" = 112,114,102,117,110 *)
-fn looking_at_prfun {l:agz}{n:pos}
-  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 102) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 117) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 110) &&
-  is_kw_boundary(src, pos + 5, max)
-
-(* "prfn" = 112,114,102,110 *)
-fn looking_at_prfn {l:agz}{n:pos}
-  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 102) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 110) &&
-  is_kw_boundary(src, pos + 4, max)
-
 (* "no_mangle" = 110,111,95,109,97,110,103,108,101 *)
 fn looking_at_no_mangle {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
@@ -801,15 +782,6 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       val ep = pos + 6
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-    else if looking_at_prfun(src, pos, max) then let
-      val ep = pos + 5
-      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
-    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-    else if looking_at_prfn(src, pos, max) then let
-      val ep = pos + 4
-      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
-    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-
     (* Default: passthrough *)
     else let
       val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
