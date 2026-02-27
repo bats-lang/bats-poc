@@ -287,6 +287,86 @@ fun _has_metric {l:agz}{n:pos}{fuel:nat} .<fuel>.
     else _has_metric(src, pos + 1, max, fuel - 1)
   end
 
+(* "prfun" = 112,114,102,117,110 — only unsafe if #pub without primplement *)
+fn _content_starts_prfun {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 102) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 117) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 110) &&
+  is_kw_boundary(src, pos + 5, max)
+
+(* "prfn" = 112,114,102,110 *)
+fn _content_starts_prfn {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 102) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 110) &&
+  is_kw_boundary(src, pos + 4, max)
+
+(* "primplement" = 112,114,105,109,112,108,101,109,101,110,116 *)
+fn _looking_at_primplement {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 105) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 109) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 112) &&
+  $AR.eq_int_int(src_byte(src, pos + 5, max), 108) &&
+  $AR.eq_int_int(src_byte(src, pos + 6, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 7, max), 109) &&
+  $AR.eq_int_int(src_byte(src, pos + 8, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 9, max), 110) &&
+  $AR.eq_int_int(src_byte(src, pos + 10, max), 116)
+
+(* Extract the declaration name start position after prfun/prfn keyword *)
+fun _skip_to_name {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n, fuel: int fuel): int =
+  if fuel <= 0 then pos
+  else if pos >= max then pos
+  else let val b = src_byte(src, pos, max) in
+    if $AR.eq_int_int(b, 32) || $AR.eq_int_int(b, 9) || $AR.eq_int_int(b, 10) then
+      _skip_to_name(src, pos + 1, max, fuel - 1)
+    else if $AR.eq_int_int(b, 123) then let (* skip {quantifiers} *)
+      fun _skip_brace {l:agz}{n:pos}{f:nat} .<f>.
+        (src: !$A.borrow(byte, l, n), p: int, max: int n, f: int f): int =
+        if f <= 0 then p
+        else if p >= max then p
+        else if $AR.eq_int_int(src_byte(src, p, max), 125) then p + 1
+        else _skip_brace(src, p + 1, max, f - 1)
+    in _skip_to_name(src, _skip_brace(src, pos + 1, max, fuel - 1), max, fuel - 1) end
+    else pos
+  end
+
+(* Check if primplement exists for a name starting at name_start with length name_len *)
+fun _has_primplement {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
+   name_start: int, name_len: int, scan_pos: int, fuel: int fuel): bool =
+  if fuel <= 0 then false
+  else if scan_pos >= src_len then false
+  else
+    if _looking_at_primplement(src, scan_pos, max) then let
+      val after = scan_pos + 11
+      val p = _skip_to_name(src, after, max, 256)
+      fun _names_match {l:agz}{n:pos}{f:nat} .<f>.
+        (src: !$A.borrow(byte, l, n), a: int, b: int, len: int, max: int n, f: int f): bool =
+        if f <= 0 then true
+        else if len <= 0 then true
+        else if $AR.eq_int_int(src_byte(src, a, max), src_byte(src, b, max)) then
+          _names_match(src, a + 1, b + 1, len - 1, max, f - 1)
+        else false
+      val nend = skip_ident(src, p, max, 4096)
+      val found_len = nend - p
+    in
+      if $AR.eq_int_int(found_len, name_len) then
+        if _names_match(src, name_start, p, name_len, max, $AR.checked_nat(name_len)) then true
+        else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
+      else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
+    end
+    else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
+
 (* "no_mangle" = 110,111,95,109,97,110,103,108,101 *)
 fn looking_at_no_mangle {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
@@ -736,7 +816,20 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       val p0 = skip_ws(src, pos + 4, max, 256)
       val contents_start = p0
       val ep = lex_pub_lines(src, p0, src_len, max, $AR.checked_nat(src_len))
-      val () = put_span(spans, 2, 1, pos, ep, contents_start, ep, 0, 0)
+      val is_prfun = _content_starts_prfun(src, contents_start, max)
+      val is_prfn = if is_prfun then false else _content_starts_prfn(src, contents_start, max)
+      val span_kind =
+        if is_prfun || is_prfn then let
+          val kw_len = if is_prfun then 5 else 4
+          val name_pos = _skip_to_name(src, contents_start + kw_len, max, 256)
+          val name_end = skip_ident(src, name_pos, max, 4096)
+          val name_len = name_end - name_pos
+        in
+          if _has_primplement(src, src_len, max, name_pos, name_len, 0, $AR.checked_nat(src_len)) then 2
+          else 5
+        end
+        else 2
+      val () = put_span(spans, span_kind, 1, pos, ep, contents_start, ep, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
 
     (* #target *)
