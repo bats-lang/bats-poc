@@ -321,52 +321,6 @@ fn _looking_at_primplement {l:agz}{n:pos}
   $AR.eq_int_int(src_byte(src, pos + 9, max), 110) &&
   $AR.eq_int_int(src_byte(src, pos + 10, max), 116)
 
-(* Extract the declaration name start position after prfun/prfn keyword *)
-fun _skip_to_name {l:agz}{n:pos}{fuel:nat} .<fuel>.
-  (src: !$A.borrow(byte, l, n), pos: int, max: int n, fuel: int fuel): int =
-  if fuel <= 0 then pos
-  else if pos >= max then pos
-  else let val b = src_byte(src, pos, max) in
-    if $AR.eq_int_int(b, 32) || $AR.eq_int_int(b, 9) || $AR.eq_int_int(b, 10) then
-      _skip_to_name(src, pos + 1, max, fuel - 1)
-    else if $AR.eq_int_int(b, 123) then let (* skip {quantifiers} *)
-      fun _skip_brace {l:agz}{n:pos}{f:nat} .<f>.
-        (src: !$A.borrow(byte, l, n), p: int, max: int n, f: int f): int =
-        if f <= 0 then p
-        else if p >= max then p
-        else if $AR.eq_int_int(src_byte(src, p, max), 125) then p + 1
-        else _skip_brace(src, p + 1, max, f - 1)
-    in _skip_to_name(src, _skip_brace(src, pos + 1, max, fuel - 1), max, fuel - 1) end
-    else pos
-  end
-
-(* Check if primplement exists for a name starting at name_start with length name_len *)
-fun _has_primplement {l:agz}{n:pos}{fuel:nat} .<fuel>.
-  (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   name_start: int, name_len: int, scan_pos: int, fuel: int fuel): bool =
-  if fuel <= 0 then false
-  else if scan_pos >= src_len then false
-  else
-    if _looking_at_primplement(src, scan_pos, max) then let
-      val after = scan_pos + 11
-      val p = _skip_to_name(src, after, max, 256)
-      fun _names_match {l:agz}{n:pos}{f:nat} .<f>.
-        (src: !$A.borrow(byte, l, n), a: int, b: int, len: int, max: int n, f: int f): bool =
-        if f <= 0 then true
-        else if len <= 0 then true
-        else if $AR.eq_int_int(src_byte(src, a, max), src_byte(src, b, max)) then
-          _names_match(src, a + 1, b + 1, len - 1, max, f - 1)
-        else false
-      val nend = skip_ident(src, p, max, 4096)
-      val found_len = nend - p
-    in
-      if $AR.eq_int_int(found_len, name_len) then
-        if _names_match(src, name_start, p, name_len, max, $AR.checked_nat(name_len)) then true
-        else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
-      else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
-    end
-    else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
-
 (* "no_mangle" = 110,111,95,109,97,110,103,108,101 *)
 fn looking_at_no_mangle {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
@@ -416,6 +370,52 @@ fun skip_ident {l:agz}{n:pos}{fuel:nat} .<fuel>.
     if is_ident_byte(b) then skip_ident(src, pos + 1, max, fuel - 1)
     else pos
   end
+
+(* Extract the declaration name start position after prfun/prfn keyword *)
+fun _skip_to_name {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n, fuel: int fuel): int =
+  if fuel <= 0 then pos
+  else if pos >= max then pos
+  else let val b = src_byte(src, pos, max) in
+    if $AR.eq_int_int(b, 32) || $AR.eq_int_int(b, 9) || $AR.eq_int_int(b, 10) then
+      _skip_to_name(src, pos + 1, max, fuel - 1)
+    else if $AR.eq_int_int(b, 123) then let (* skip {quantifiers} *)
+      fun _skip_brace {l:agz}{n:pos}{f:nat} .<f>.
+        (src: !$A.borrow(byte, l, n), p: int, max: int n, f: int f): int =
+        if f <= 0 then p
+        else if p >= max then p
+        else if $AR.eq_int_int(src_byte(src, p, max), 125) then p + 1
+        else _skip_brace(src, p + 1, max, f - 1)
+    in _skip_to_name(src, _skip_brace(src, pos + 1, max, fuel - 1), max, fuel - 1) end
+    else pos
+  end
+
+(* Check if primplement exists for a name starting at name_start with length name_len *)
+fun _has_primplement {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
+   name_start: int, name_len: int, scan_pos: int, fuel: int fuel): bool =
+  if fuel <= 0 then false
+  else if scan_pos >= src_len then false
+  else
+    if _looking_at_primplement(src, scan_pos, max) then let
+      val after = scan_pos + 11
+      val p = _skip_to_name(src, after, max, 256)
+      fun _names_match {l:agz}{n:pos}{f:nat} .<f>.
+        (src: !$A.borrow(byte, l, n), a: int, b: int, len: int, max: int n, f: int f): bool =
+        if f <= 0 then true
+        else if len <= 0 then true
+        else if $AR.eq_int_int(src_byte(src, a, max), src_byte(src, b, max)) then
+          _names_match(src, a + 1, b + 1, len - 1, max, f - 1)
+        else false
+      val nend = skip_ident(src, p, max, 4096)
+      val found_len = nend - p
+    in
+      if $AR.eq_int_int(found_len, name_len) then
+        if _names_match(src, name_start, p, name_len, max, $AR.checked_nat(name_len)) then true
+        else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
+      else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
+    end
+    else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
 
 (* Skip non-whitespace *)
 fun skip_nonws {l:agz}{n:pos}{fuel:nat} .<fuel>.
