@@ -158,6 +158,100 @@ fn looking_at_as {l:agz}{n:pos}
   $AR.eq_int_int(src_byte(src, pos + 1, max), 115) &&
   is_kw_boundary(src, pos + 2, max)
 
+(* "castfn" = 99,97,115,116,102,110 *)
+fn looking_at_castfn {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 99) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 97) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 115) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 102) &&
+  $AR.eq_int_int(src_byte(src, pos + 5, max), 110) &&
+  is_kw_boundary(src, pos + 6, max)
+
+(* "praxi" = 112,114,97,120,105 *)
+fn looking_at_praxi {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 97) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 120) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 105) &&
+  is_kw_boundary(src, pos + 5, max)
+
+(* "extern" = 101,120,116,101,114,110 *)
+fn looking_at_extern {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 120) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 116) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 114) &&
+  $AR.eq_int_int(src_byte(src, pos + 5, max), 110) &&
+  is_kw_boundary(src, pos + 6, max)
+
+(* "assume" = 97,115,115,117,109,101 *)
+fn looking_at_assume {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 97) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 115) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 115) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 117) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 109) &&
+  $AR.eq_int_int(src_byte(src, pos + 5, max), 101) &&
+  is_kw_boundary(src, pos + 6, max)
+
+(* $extval — $-prefixed unsafe construct *)
+fn looking_at_extval {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 118) &&
+  $AR.eq_int_int(src_byte(src, pos + 5, max), 97) &&
+  $AR.eq_int_int(src_byte(src, pos + 6, max), 108) &&
+  is_kw_boundary(src, pos + 7, max)
+
+(* $extfcall *)
+fn looking_at_extfcall {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 102) &&
+  $AR.eq_int_int(src_byte(src, pos + 5, max), 99) &&
+  $AR.eq_int_int(src_byte(src, pos + 6, max), 97) &&
+  $AR.eq_int_int(src_byte(src, pos + 7, max), 108) &&
+  $AR.eq_int_int(src_byte(src, pos + 8, max), 108) &&
+  is_kw_boundary(src, pos + 9, max)
+
+(* $extype *)
+fn looking_at_extype {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 121) &&
+  $AR.eq_int_int(src_byte(src, pos + 5, max), 112) &&
+  $AR.eq_int_int(src_byte(src, pos + 6, max), 101) &&
+  is_kw_boundary(src, pos + 7, max)
+
+(* $extkind *)
+fn looking_at_extkind {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 107) &&
+  $AR.eq_int_int(src_byte(src, pos + 5, max), 105) &&
+  $AR.eq_int_int(src_byte(src, pos + 6, max), 110) &&
+  $AR.eq_int_int(src_byte(src, pos + 7, max), 100) &&
+  is_kw_boundary(src, pos + 8, max)
+
 (* "no_mangle" = 110,111,95,109,97,110,103,108,101 *)
 fn looking_at_no_mangle {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
@@ -615,6 +709,24 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       val @(np, nc) = lex_target_decl(src, src_len, max, spans, pos, count)
     in lex_main(src, src_len, max, spans, np, nc, fuel - 1) end
 
+    (* $extval, $extfcall, $extype, $extkind — unsafe constructs *)
+    else if looking_at_extval(src, pos, max) then let
+      val ep = pos + 7
+      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+    else if looking_at_extfcall(src, pos, max) then let
+      val ep = pos + 9
+      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+    else if looking_at_extype(src, pos, max) then let
+      val ep = pos + 7
+      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+    else if looking_at_extkind(src, pos, max) then let
+      val ep = pos + 8
+      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+
     (* $UNSAFE *)
     else if looking_at_unsafe(src, pos, max) then let
       val @(np, nc, matched) = lex_unsafe_dispatch(src, src_len, max, spans, pos, count)
@@ -652,6 +764,24 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
         val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
       in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     end
+
+    (* castfn, praxi, extern, assume — unsafe constructs *)
+    else if looking_at_castfn(src, pos, max) then let
+      val ep = pos + 6
+      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+    else if looking_at_praxi(src, pos, max) then let
+      val ep = pos + 5
+      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+    else if looking_at_extern(src, pos, max) then let
+      val ep = pos + 6
+      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+    else if looking_at_assume(src, pos, max) then let
+      val ep = pos + 6
+      val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
 
     (* Default: passthrough *)
     else let
