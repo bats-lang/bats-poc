@@ -252,6 +252,41 @@ fn looking_at_extkind {l:agz}{n:pos}
   $AR.eq_int_int(src_byte(src, pos + 7, max), 100) &&
   is_kw_boundary(src, pos + 8, max)
 
+(* "fun" = 102,117,110 — only unsafe WITHOUT termination metric *)
+fn looking_at_fun {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int(src_byte(src, pos, max), 102) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 117) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 110) &&
+  is_kw_boundary(src, pos + 3, max) &&
+  is_kw_boundary_before(src, pos, max)
+
+(* Scan forward from pos looking for ".< " before "=" to detect termination metric.
+   Returns true if .<...>. is found, meaning the fun IS safe. *)
+fun _has_metric {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n, fuel: int fuel): bool =
+  if fuel <= 0 then false
+  else if pos >= max then false
+  else let
+    val b = src_byte(src, pos, max)
+  in
+    (* Found ".< " — has metric *)
+    if $AR.eq_int_int(b, 46) then
+      if $AR.eq_int_int(src_byte(src, pos + 1, max), 60) then true
+      else _has_metric(src, pos + 1, max, fuel - 1)
+    (* Found "=" — end of signature, no metric *)
+    else if $AR.eq_int_int(b, 61) then false
+    (* Found newline followed by non-whitespace — end of declaration *)
+    else if $AR.eq_int_int(b, 10) then let
+      val nb = src_byte(src, pos + 1, max)
+    in
+      if $AR.eq_int_int(nb, 32) || $AR.eq_int_int(nb, 9) then
+        _has_metric(src, pos + 1, max, fuel - 1)
+      else false
+    end
+    else _has_metric(src, pos + 1, max, fuel - 1)
+  end
+
 (* "no_mangle" = 110,111,95,109,97,110,103,108,101 *)
 fn looking_at_no_mangle {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
@@ -762,6 +797,20 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       else let
         val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
         val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
+      in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+    end
+
+    (* fun without termination metric — unsafe (can diverge) *)
+    else if looking_at_fun(src, pos, max) then let
+      val after = pos + 3
+    in
+      if _has_metric(src, after, max, $AR.checked_nat(max)) then let
+        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
+        val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
+      in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+      else let
+        val ep = pos + 3
+        val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
       in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     end
 
