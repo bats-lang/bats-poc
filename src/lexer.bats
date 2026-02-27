@@ -821,7 +821,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       val span_kind =
         if is_prfun || is_prfn then let
           val kw_len = if is_prfun then 5 else 4
-          val name_pos = _skip_to_name(src, contents_start + kw_len, max, 256)
+          val name_pos = _skip_to_name(src, $AR.add_int_int(contents_start, kw_len), max, 256)
           val name_end = skip_ident(src, name_pos, max, 4096)
           val name_len = name_end - name_pos
         in
