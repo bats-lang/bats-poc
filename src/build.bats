@@ -22,10 +22,10 @@ staload "emitter.sats"
   (src_bv: !$A.borrow(byte, l1, 524288),
    sats_bv: !$A.borrow(byte, l2, 524288),
    dats_bv: !$A.borrow(byte, l3, 524288),
-   build_target: int): int
+   build_target: int, is_unsafe: int): int
 
 implement preprocess_one
-  (src_bv, sats_bv, dats_bv, build_target) = let
+  (src_bv, sats_bv, dats_bv, build_target, is_unsafe) = let
   (* Cache check: if .sats is newer than .bats source, skip preprocessing *)
   val fresh = (if is_newer(sats_bv, src_bv) then 1 else 0): int
 in
@@ -43,8 +43,8 @@ in
       val @(fz_src, bv_src) = $A.freeze<byte>(buf)
       val @(span_arr, _span_len, span_count) = do_lex(bv_src, nbytes, 524288)
       val @(fz_sp, bv_sp) = $A.freeze<byte>(span_arr)
-      val @(sats_arr, sats_len, dats_arr, dats_len, _pre) =
-        do_emit(bv_src, nbytes, 524288, bv_sp, 524288, span_count, build_target)
+      val @(sats_arr, sats_len, dats_arr, dats_len, _pre, safety_errors) =
+        do_emit(bv_src, nbytes, 524288, bv_sp, 524288, span_count, build_target, is_unsafe)
       val () = $A.drop<byte>(fz_sp, bv_sp)
       val () = $A.free<byte>($A.thaw<byte>(fz_sp))
       val () = $A.drop<byte>(fz_src, bv_src)
@@ -72,7 +72,8 @@ in
       val () = $A.free<byte>($A.thaw<byte>(fz_d))
       val r2 = write_file_from_builder(dats_bv, 524288, db)
     in
-      if r1 = 0 then (if r2 = 0 then 0 else ~1) else ~1
+      if safety_errors > 0 then safety_errors
+      else if r1 = 0 then (if r2 = 0 then 0 else ~1) else ~1
     end
   | ~$R.err(_) => ~1
 end end
@@ -604,9 +605,57 @@ implement do_build_wasm(release) =
      with clang --target=wasm32, then linked with wasm-ld. *)
   println! ("error: WASM build not yet implemented without shell")
 
+#pub fn read_unsafe_flag(): int
+
+implement read_unsafe_flag() = let
+  val bt = str_to_path_arr("bats.toml")
+  val @(fz_bt, bv_bt) = $A.freeze<byte>(bt)
+  val r = $F.file_open(bv_bt, 524288, 0, 0)
+  val () = $A.drop<byte>(fz_bt, bv_bt)
+  val () = $A.free<byte>($A.thaw<byte>(fz_bt))
+in case+ r of
+  | ~$R.ok(fd) => let
+      val buf = $A.alloc<byte>(4096)
+      val rr = $F.file_read(fd, buf, 4096)
+      val bl = (case+ rr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val cr = $F.file_close(fd)
+      val () = $R.discard<int><int>(cr)
+      val @(fz_b, bv_b) = $A.freeze<byte>(buf)
+      val pr = $T.parse(bv_b, 4096)
+      val () = $A.drop<byte>(fz_b, bv_b)
+      val () = $A.free<byte>($A.thaw<byte>(fz_b))
+    in case+ pr of
+      | ~$R.ok(doc) => let
+          val @(sk, skl) = str_to_borrow("package")
+          val @(fz_sk, bv_sk) = $A.freeze<byte>(sk)
+          val @(uk, ukl) = str_to_borrow("unsafe")
+          val @(fz_uk, bv_uk) = $A.freeze<byte>(uk)
+          val ubuf = $A.alloc<byte>(32)
+          val ur = $T.get(doc, bv_sk, skl, bv_uk, ukl, ubuf, 32)
+          val () = $A.drop<byte>(fz_uk, bv_uk)
+          val () = $A.free<byte>($A.thaw<byte>(fz_uk))
+          val () = $A.drop<byte>(fz_sk, bv_sk)
+          val () = $A.free<byte>($A.thaw<byte>(fz_sk))
+          val result = (case+ ur of
+            | ~$R.some(len) => let
+                (* Check if value starts with 't' for "true" *)
+                val b0 = byte2int0($A.get<byte>(ubuf, 0))
+                val () = $A.free<byte>(ubuf)
+              in if $AR.eq_int_int(b0, 116) then 1 else 0 end
+            | ~$R.none() => let
+                val () = $A.free<byte>(ubuf)
+              in 0 end): int
+          val () = $T.toml_free(doc)
+        in result end
+      | ~$R.err(_) => 0
+    end
+  | ~$R.err(_) => 0
+end
+
 #pub fn do_build(release: int): void
 
 implement do_build(release) = let
+  val is_unsafe = read_unsafe_flag()
   (* Step 1: mkdir build directories *)
   val mb1 = $B.create()
   val () = bput(mb1, "build/src/bin")
@@ -913,7 +962,7 @@ in
                                     val () = $B.put_byte(sd2, 0)
                                     val @(sda2, _) = $B.to_arr(sd2)
                                     val @(fz_sd2, bv_sd2) = $A.freeze<byte>(sda2)
-                                    val pr2 = preprocess_one(bv_sp2, bv_ss2, bv_sd2, 0)
+                                    val pr2 = preprocess_one(bv_sp2, bv_ss2, bv_sd2, 0, 1)
                                     val () = (if pr2 <> 0 then let
                                       val () = print! ("warning: preprocess failed for dep ")
                                       val () = print_borrow(ns_bv, 0, ns_len, 256, $AR.checked_nat(ns_len + 1))
@@ -982,7 +1031,7 @@ in
                     val () = $B.put_byte(sd, 0)
                     val @(sda, _) = $B.to_arr(sd)
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
-                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, 0)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, 0, 1)
                     val () = (if pr <> 0 then let
                       val () = print! ("warning: preprocess failed for dep ")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
@@ -1062,7 +1111,7 @@ in
                                     val () = $B.put_byte(sd_ex, 0)
                                     val @(sda_ex, _) = $B.to_arr(sd_ex)
                                     val @(fz_sda, bv_sda) = $A.freeze<byte>(sda_ex)
-                                    val pr_ex = preprocess_one(bv_spa, bv_ssa, bv_sda, 0)
+                                    val pr_ex = preprocess_one(bv_spa, bv_ssa, bv_sda, 0, 1)
                                     val () = (if pr_ex <> 0 then let
                                       val () = print! ("warning: preprocess failed for extra file in dep ")
                                       val () = print_borrow(dep_bv, 0, dep_len, 256,
@@ -1165,7 +1214,7 @@ in
                     val () = $B.put_byte(sd_sm, 0)
                     val @(sda_sm, _) = $B.to_arr(sd_sm)
                     val @(fz_sda_sm, bv_sda_sm) = $A.freeze<byte>(sda_sm)
-                    val pr_sm = preprocess_one(bv_spa_sm, bv_ssa_sm, bv_sda_sm, 0)
+                    val pr_sm = preprocess_one(bv_spa_sm, bv_ssa_sm, bv_sda_sm, 0, is_unsafe)
                     val () = (if pr_sm <> 0 then let
                       val () = print! ("warning: preprocess failed for src/")
                       val () = print_borrow(bv_esm, 0, elen_sm, 256,
@@ -1252,7 +1301,7 @@ in
                     val () = $B.put_byte(sd, 0)
                     val @(sda, _) = $B.to_arr(sd)
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
-                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, 0)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, 0, is_unsafe)
                     val () = (if pr <> 0 then let
                       val () = print! ("error: preprocess failed for ")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))

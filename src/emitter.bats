@@ -281,9 +281,9 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
    sats: !$B.builder, dats: !$B.builder,
-   build_target: int, fuel: int fuel): void =
-  if fuel <= 0 then ()
-  else if idx >= span_count then ()
+   build_target: int, is_unsafe: int, errors: int, fuel: int fuel): int =
+  if fuel <= 0 then errors
+  else if idx >= span_count then errors
   else let
     val kind = span_kind(spans, idx, span_max)
     val dest = span_dest(spans, idx, span_max)
@@ -306,7 +306,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
                   emit_blanks(src, ss, se, src_max, dats)
                 else ())
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
     (* kind=1: hash_use - emit aliased staload in dats, blank in sats *)
     else if $AR.eq_int_int(kind, 1) then let
@@ -314,7 +314,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       (* In dats: emit staload ALIAS = "pkg/src/lib.sats" at the #use position *)
       val () = emit_dep_staload_sats(src, src_max, spans, idx, span_max, dats)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
     (* kind=2: pub_decl - content to sats, blanks to dats *)
     else if $AR.eq_int_int(kind, 2) then let
@@ -328,7 +328,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       (* Blank everything in dats *)
       val () = emit_blanks(src, ss, se, src_max, dats)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
     (* kind=3: qualified_access - emit $alias.member respecting dest *)
     else if $AR.eq_int_int(kind, 3) then let
@@ -339,40 +339,40 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
                   emit_qualified(src, src_max, spans, idx, span_max, sats)
                 else ())
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
-    (* kind=4: unsafe_block - emit contents respecting dest *)
-    else if $AR.eq_int_int(kind, 4) then let
-      val cs = span_aux1(spans, idx, span_max)
-      val ce = span_aux2(spans, idx, span_max)
-      (* Blank the $UNSAFE begin marker *)
-      val () = emit_blanks(src, ss, cs, src_max, dats)
-      val () = emit_blanks(src, ss, cs, src_max, sats)
-      (* Emit contents respecting dest *)
-      val fuel2 = $AR.checked_nat(ce - cs + 1)
-      val () = (if $AR.eq_int_int(dest, 0) || $AR.eq_int_int(dest, 2) then
-                  emit_range(src, cs, ce, src_max, dats, fuel2)
-                else ())
-      val () = (if $AR.eq_int_int(dest, 1) || $AR.eq_int_int(dest, 2) then
-                  emit_range(src, cs, ce, src_max, sats, fuel2)
-                else ())
-      (* Blank the end marker *)
-      val () = emit_blanks(src, ce, se, src_max, dats)
-      val () = emit_blanks(src, ce, se, src_max, sats)
-    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+    (* kind=4: unsafe_block - emit contents if unsafe=true, error if unsafe=false *)
+    else if $AR.eq_int_int(kind, 4) then
+      if $AR.gt_int_int(is_unsafe, 0) then let
+        val cs = span_aux1(spans, idx, span_max)
+        val ce = span_aux2(spans, idx, span_max)
+        val () = emit_blanks(src, ss, cs, src_max, dats)
+        val () = emit_blanks(src, ss, cs, src_max, sats)
+        val fuel2 = $AR.checked_nat(ce - cs + 1)
+        val () = (if $AR.eq_int_int(dest, 0) || $AR.eq_int_int(dest, 2) then
+                    emit_range(src, cs, ce, src_max, dats, fuel2)
+                  else ())
+        val () = (if $AR.eq_int_int(dest, 1) || $AR.eq_int_int(dest, 2) then
+                    emit_range(src, cs, ce, src_max, sats, fuel2)
+                  else ())
+        val () = emit_blanks(src, ce, se, src_max, dats)
+        val () = emit_blanks(src, ce, se, src_max, sats)
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
+      else let
+        val () = println! ("error: $UNSAFE block at byte ", ss, " not allowed in safe package")
+        val () = emit_blanks(src, ss, se, src_max, dats)
+        val () = emit_blanks(src, ss, se, src_max, sats)
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors + 1, fuel - 1) end
 
-    (* kind=5: unsafe_construct - emit respecting dest *)
+    (* kind=5: unsafe_construct outside $UNSAFE block — error *)
     else if $AR.eq_int_int(kind, 5) then let
-      val fuel2 = $AR.checked_nat(se - ss + 1)
-      val () = (if $AR.eq_int_int(dest, 0) || $AR.eq_int_int(dest, 2) then
-                  emit_range(src, ss, se, src_max, dats, fuel2)
-                else ())
-      val () = (if $AR.eq_int_int(dest, 1) || $AR.eq_int_int(dest, 2) then
-                  emit_range(src, ss, se, src_max, sats, fuel2)
-                else ())
+      val () = println! ("error: unsafe construct at byte ", ss, " outside $UNSAFE block")
+      val () = emit_blanks(src, ss, se, src_max, dats)
+      val () = emit_blanks(src, ss, se, src_max, sats)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors + 1, fuel - 1) end
 
     (* kind=6: extcode_block - emit as-is to dats *)
     else if $AR.eq_int_int(kind, 6) then let
@@ -380,14 +380,14 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       val () = emit_range(src, ss, se, src_max, dats, fuel2)
       val () = emit_blanks(src, ss, se, src_max, sats)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
     (* kind=7: target_decl - blank everything *)
     else if $AR.eq_int_int(kind, 7) then let
       val () = emit_blanks(src, ss, se, src_max, sats)
       val () = emit_blanks(src, ss, se, src_max, dats)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
     (* kind=8: unittest_block - emit contents in test mode, blank otherwise *)
     else if $AR.eq_int_int(kind, 8) then let
@@ -408,19 +408,16 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
         val () = emit_blanks(src, ss, se, src_max, dats)
       in end)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
-    (* kind=9: restricted_keyword - emit respecting dest *)
+    (* kind=9: restricted_keyword — same as kind 5, error *)
     else if $AR.eq_int_int(kind, 9) then let
-      val fuel2 = $AR.checked_nat(se - ss + 1)
-      val () = (if $AR.eq_int_int(dest, 0) || $AR.eq_int_int(dest, 2) then
-                  emit_range(src, ss, se, src_max, dats, fuel2)
-                else ())
-      val () = (if $AR.eq_int_int(dest, 1) || $AR.eq_int_int(dest, 2) then
-                  emit_range(src, ss, se, src_max, sats, fuel2)
-                else ())
+      val () = println! ("error: unsafe construct at byte ", ss, " outside $UNSAFE block")
+      val () = emit_blanks(src, ss, se, src_max, dats)
+      val () = emit_blanks(src, ss, se, src_max, sats)
+      val errors = errors + 1
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
     (* kind=10: unittest_run - emit contents in test mode, blank otherwise *)
     else if $AR.eq_int_int(kind, 10) then let
@@ -441,7 +438,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
         val () = emit_blanks(src, ss, se, src_max, dats)
       in end)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1) end
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
     (* kind=11: target_block - emit contents only if build_target matches *)
     else if $AR.eq_int_int(kind, 11) then let
@@ -460,19 +457,19 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
         val () = emit_blanks(src, ce, se, src_max, dats)
         val () = emit_blanks(src, ce, se, src_max, sats)
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                    sats, dats, build_target, fuel - 1) end
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
       else let
         (* Target doesn't match: blank everything *)
         val () = emit_blanks(src, ss, se, src_max, sats)
         val () = emit_blanks(src, ss, se, src_max, dats)
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                    sats, dats, build_target, fuel - 1) end
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
     end
 
     (* Unknown kind: skip *)
     else
       emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, fuel - 1)
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1)
   end
 
 (* Build dats prelude: self-staload + dependency staloads *)
@@ -520,11 +517,11 @@ fun build_prelude_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
 #pub fn do_emit {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (src: !$A.borrow(byte, ls, ns), src_len: int, src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
-   span_count: int, build_target: int
+   span_count: int, build_target: int, is_unsafe: int
   ): @([la:agz] $A.arr(byte, la, 524288), int,
-      [lb:agz] $A.arr(byte, lb, 524288), int, int)
+      [lb:agz] $A.arr(byte, lb, 524288), int, int, int)
 
-implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_target) = let
+implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_target, is_unsafe) = let
   val sats_b = $B.create()
   val dats_b = $B.create()
   val prelude_b = $B.create()
@@ -556,8 +553,8 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
   val () = $A.free<byte>($A.thaw<byte>(fz_spre))
 
   (* Emit all spans *)
-  val () = emit_spans(src, src_max, spans, span_max, span_count, 0,
-    sats_b, dats_b, build_target, $AR.checked_nat(span_count + 1))
+  val emit_errors = emit_spans(src, src_max, spans, span_max, span_count, 0,
+    sats_b, dats_b, build_target, is_unsafe, 0, $AR.checked_nat(span_count + 1))
 
   (* Rename the entry point function in the .dats output *)
   val @(dats_tmp, dats_tmp_len) = $B.to_arr(dats_b)
@@ -655,4 +652,4 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
 
   val @(sats_arr, sats_len) = $B.to_arr(sats_b)
   val @(dats_arr, dats_len) = $B.to_arr(dats_final)
-in @(sats_arr, sats_len, dats_arr, dats_len, prelude_lines) end
+in @(sats_arr, sats_len, dats_arr, dats_len, prelude_lines, emit_errors) end
