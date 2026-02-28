@@ -95,7 +95,7 @@ implement bput_loop(b, s, slen, i, fuel) =
   if fuel <= 0 then ()
   else if i >= slen then ()
   else let
-    val c = char2int0(string_get_at(s, $AR.checked_idx(i, slen)))
+    val c = char2int0(string_get_at(s, $AR.checked_idx(i, $AR.checked_pos(slen))))
     val () = $B.put_byte(b, c)
   in bput_loop(b, s, slen, i + 1, fuel - 1) end
 
@@ -970,7 +970,7 @@ implement fill_exact(arr, s, n, slen, i, fuel) =
   else if i >= slen then ()
   else if i >= n then ()
   else let
-    val c = char2int0(string_get_at(s, $AR.checked_idx(i, slen)))
+    val c = char2int0(string_get_at(s, $AR.checked_idx(i, $AR.checked_pos(slen))))
     val () = $A.set<byte>(arr, $AR.checked_idx(i, n), int2byte0(c))
   in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
 
