@@ -764,6 +764,12 @@ fun lex_passthrough_scan {l:agz}{n:pos}{fuel:nat} .<fuel>.
       (looking_at_pub(src, pos, max) || looking_at_use(src, pos, max) ||
        looking_at_target(src, pos, max)) then pos
     else if $AR.eq_int_int(b, 36) && is_ident_start(b1) then pos
+    (* Stop at unsafe keywords so lex_main can detect them *)
+    else if looking_at_castfn(src, pos, max) then pos
+    else if looking_at_praxi(src, pos, max) then pos
+    else if looking_at_extern(src, pos, max) then pos
+    else if looking_at_assume(src, pos, max) then pos
+    else if looking_at_fun(src, pos, max) then pos
     else lex_passthrough_scan(src, pos + 1, src_len, max, fuel - 1)
   end
 
