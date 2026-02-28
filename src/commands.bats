@@ -142,50 +142,39 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
            pos: int, len: int, fuel: int fuel): void =
           if fuel <= 0 then ()
           else if pos >= len then ()
+          else if pos < 0 then ()
+          else if pos + 4 >= 524288 then ()
           else let
-            val p = g1ofg0(pos)
+            val b0 = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, 524288)))
+            val b1 = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos + 1, 524288)))
+            val b2 = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos + 2, 524288)))
+            val b3 = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos + 3, 524288)))
+            val b4 = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos + 4, 524288)))
           in
-            if p >= 0 then
-              if p + 4 < 524288 then let
-                val b0 = byte2int0($A.get<byte>(buf, p))
-                val b1 = byte2int0($A.get<byte>(buf, p + 1))
-                val b2 = byte2int0($A.get<byte>(buf, p + 2))
-                val b3 = byte2int0($A.get<byte>(buf, p + 3))
-                val b4 = byte2int0($A.get<byte>(buf, p + 4))
-              in
-                if $AR.eq_int_int(b0, 35) then
-                  if $AR.eq_int_int(b1, 112) then
-                    if $AR.eq_int_int(b2, 117) then
-                      if $AR.eq_int_int(b3, 98) then
-                        if $AR.eq_int_int(b4, 32) then let
-                          (* Found #pub , copy rest of line *)
-                          val () = bput(doc, "```\n")
-                          fun copy_line {l3:agz}{fuel2:nat} .<fuel2>.
-                            (buf: !$A.arr(byte, l3, 524288), doc: !$B.builder,
-                             pos: int, fuel2: int fuel2): int =
-                            if fuel2 <= 0 then pos
-                            else let val pp = g1ofg0(pos) in
-                              if pp >= 0 then
-                                if pp < 524288 then let
-                                  val b = byte2int0($A.get<byte>(buf, pp))
-                                in
-                                  if $AR.eq_int_int(b, 10) then (pos + 1)
-                                  else let
-                                    val () = $B.put_byte(doc, b)
-                                  in copy_line(buf, doc, pos + 1, fuel2 - 1) end
-                                end
-                                else pos
-                              else pos
-                            end
-                          val np = copy_line(buf, doc, p + 5, $AR.checked_nat(len - p))
-                          val () = bput(doc, "\n```\n\n")
-                        in scan_pub(buf, doc, np, len, fuel - 1) end
+            if $AR.eq_int_int(b0, 35) then
+              if $AR.eq_int_int(b1, 112) then
+                if $AR.eq_int_int(b2, 117) then
+                  if $AR.eq_int_int(b3, 98) then
+                    if $AR.eq_int_int(b4, 32) then let
+                      (* Found #pub , copy rest of line *)
+                      val () = bput(doc, "```\n")
+                      fun copy_line {l3:agz}{fuel2:nat} .<fuel2>.
+                        (buf: !$A.arr(byte, l3, 524288), doc: !$B.builder,
+                         pos: int, fuel2: int fuel2): int =
+                        if fuel2 <= 0 then pos
+                        else if pos < 0 then pos
+                        else if pos >= 524288 then pos
                         else let
-                          val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
-                        in scan_pub(buf, doc, np + 1, len, fuel - 1) end
-                      else let
-                        val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
-                      in scan_pub(buf, doc, np + 1, len, fuel - 1) end
+                          val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, 524288)))
+                        in
+                          if $AR.eq_int_int(b, 10) then (pos + 1)
+                          else let
+                            val () = $B.put_byte(doc, b)
+                          in copy_line(buf, doc, pos + 1, fuel2 - 1) end
+                        end
+                      val np = copy_line(buf, doc, pos + 5, $AR.checked_nat(len - pos))
+                      val () = bput(doc, "\n```\n\n")
+                    in scan_pub(buf, doc, np, len, fuel - 1) end
                     else let
                       val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
                     in scan_pub(buf, doc, np + 1, len, fuel - 1) end
@@ -193,27 +182,27 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
                     val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
                   in scan_pub(buf, doc, np + 1, len, fuel - 1) end
                 else let
-                  (* Skip to next newline *)
-                  fun skip_line {l4:agz}{fuel3:nat} .<fuel3>.
-                    (buf: !$A.arr(byte, l4, 524288), pos: int, len: int,
-                     fuel3: int fuel3): int =
-                    if fuel3 <= 0 then pos
-                    else let val pp = g1ofg0(pos) in
-                      if pp >= 0 then
-                        if pp < 524288 then let
-                          val b = byte2int0($A.get<byte>(buf, pp))
-                        in
-                          if $AR.eq_int_int(b, 10) then pos + 1
-                          else skip_line(buf, pos + 1, len, fuel3 - 1)
-                        end
-                        else pos
-                      else pos
-                    end
-                  val np = skip_line(buf, pos, len, $AR.checked_nat(len - pos + 1))
-                in scan_pub(buf, doc, np, len, fuel - 1) end
-              end
-              else ()
-            else ()
+                  val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
+                in scan_pub(buf, doc, np + 1, len, fuel - 1) end
+              else let
+                val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
+              in scan_pub(buf, doc, np + 1, len, fuel - 1) end
+            else let
+              (* Skip to next newline *)
+              fun skip_line {l4:agz}{fuel3:nat} .<fuel3>.
+                (buf: !$A.arr(byte, l4, 524288), pos: int, len: int,
+                 fuel3: int fuel3): int =
+                if fuel3 <= 0 then pos
+                else if pos < 0 then pos
+                else if pos >= 524288 then pos
+                else let
+                  val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, 524288)))
+                in
+                  if $AR.eq_int_int(b, 10) then pos + 1
+                  else skip_line(buf, pos + 1, len, fuel3 - 1)
+                end
+              val np = skip_line(buf, pos, len, $AR.checked_nat(len - pos + 1))
+            in scan_pub(buf, doc, np, len, fuel - 1) end
           end
         val () = scan_pub(lbuf, doc_b, 0, llen, $AR.checked_nat(llen + 1))
         val () = $A.free<byte>(lbuf)
@@ -973,22 +962,17 @@ in
        pos: int, len: int, fuel: int fuel): void =
       if fuel <= 0 then ()
       else if pos >= len then ()
+      else if pos < 0 then ()
+      else if pos >= 4096 then ()
       else let
-        val p = g1ofg0(pos)
+        val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, 4096)))
       in
-        if p >= 0 then
-          if p < 4096 then let
-            val b = byte2int0($A.get<byte>(buf, p))
-          in
-            if $AR.eq_int_int(b, 0) then let
-              val () = $B.put_byte(out, 10) (* newline separator *)
-            in copy_extras(buf, out, pos + 1, len, fuel - 1) end
-            else let
-              val () = $B.put_byte(out, b)
-            in copy_extras(buf, out, pos + 1, len, fuel - 1) end
-          end
-          else ()
-        else ()
+        if $AR.eq_int_int(b, 0) then let
+          val () = $B.put_byte(out, 10) (* newline separator *)
+        in copy_extras(buf, out, pos + 1, len, fuel - 1) end
+        else let
+          val () = $B.put_byte(out, b)
+        in copy_extras(buf, out, pos + 1, len, fuel - 1) end
       end
     val () = copy_extras(buf, out, start, len, $AR.checked_nat(len - start + 1))
     val ep = str_to_path_arr("/tmp/_bpoc_extra.txt")

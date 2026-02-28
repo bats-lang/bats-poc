@@ -93,6 +93,7 @@ implement get_self_path() = !g_self_path
 
 implement bput_loop(b, s, slen, i, fuel) =
   if fuel <= 0 then ()
+  else if i >= slen then ()
   else let
     val ii = g1ofg0(i)
   in
@@ -110,7 +111,7 @@ implement bput_loop(b, s, slen, i, fuel) =
 implement bput(b, s) = let
   val slen_sz = string1_length(s)
   val slen = g1u2i(slen_sz)
-in bput_loop(b, s, slen, 0, $AR.checked_nat(g0ofg1(slen) + 1)) end
+in bput_loop(b, s, slen, 0, $AR.checked_nat(slen + 1)) end
 
 #pub fun print_arr {l:agz}{n:pos}{fuel:nat}  (buf: !$A.arr(byte, l, n), i: int, len: int, max: int n,
    fuel: int fuel): void
@@ -118,29 +119,21 @@ in bput_loop(b, s, slen, 0, $AR.checked_nat(g0ofg1(slen) + 1)) end
 implement print_arr(buf, i, len, max, fuel) =
   if fuel <= 0 then ()
   else if i >= len then ()
-  else let val ii = g1ofg0(i) in
-    if ii >= 0 then
-      if ii < max then let
-        val b = byte2int0($A.get<byte>(buf, ii))
-        val () = print_char(int2char0(b))
-      in print_arr(buf, i + 1, len, max, fuel - 1) end
-      else ()
-    else ()
-  end
+  else let
+    val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(i, max)))
+    val () = print_char(int2char0(b))
+  in print_arr(buf, i + 1, len, max, fuel - 1) end
 
 #pub fun find_null {l:agz}{n:pos}{fuel:nat}  (buf: !$A.arr(byte, l, n), pos: int, max: int n,
    fuel: int fuel): int
 
 implement find_null(buf, pos, max, fuel) =
   if fuel <= 0 then pos
-  else let val p = g1ofg0(pos) in
-    if p >= 0 then
-      if p < max then
-        if $AR.eq_int_int(byte2int0($A.get<byte>(buf, p)), 0) then pos
-        else find_null(buf, pos + 1, max, fuel - 1)
-      else pos
-    else pos
-  end
+  else if pos < 0 then pos
+  else if pos >= max then pos
+  else
+    if $AR.eq_int_int(byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, max))), 0) then pos
+    else find_null(buf, pos + 1, max, fuel - 1)
 
 #pub fn is_dot_or_dotdot {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
@@ -148,14 +141,9 @@ implement find_null(buf, pos, max, fuel) =
 implement is_dot_or_dotdot(ent, len, max) =
   if len = 1 then
     $AR.eq_int_int(byte2int0($A.get<byte>(ent, 0)), 46)
-  else if len = 2 then let val i1 = g1ofg0(1) in
-    if i1 >= 0 then
-      if i1 < max then
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, 0)), 46) &&
-        $AR.eq_int_int(byte2int0($A.get<byte>(ent, i1)), 46)
-      else false
-    else false
-  end
+  else if len = 2 then
+    $AR.eq_int_int(byte2int0($A.get<byte>(ent, 0)), 46) &&
+    $AR.eq_int_int(byte2int0($A.get<byte>(ent, $AR.checked_idx(1, max))), 46)
   else false
 
 (* ============================================================
@@ -169,18 +157,13 @@ implement bytes_match(ent, p, max, pat, pi, plen, fuel) =
   if fuel <= 0 then pi >= plen
   else if pi >= plen then true
   else let
-    val ei = g1ofg0(p + pi)
     val pii = g1ofg0(pi)
   in
-    if ei >= 0 then
-      if ei < max then
-        if pii >= 0 then
-          if $AR.lt1_int_int(pii, plen) then
-            if $AR.eq_int_int(byte2int0($A.get<byte>(ent, ei)),
-                 char2int0(string_get_at(pat, pii))) then
-              bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
-            else false
-          else false
+    if pii >= 0 then
+      if $AR.lt1_int_int(pii, plen) then
+        if $AR.eq_int_int(byte2int0($A.get<byte>(ent, $AR.checked_idx(p + pi, max))),
+             char2int0(string_get_at(pat, pii))) then
+          bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
         else false
       else false
     else false
@@ -192,11 +175,8 @@ implement bytes_match(ent, p, max, pat, pi, plen, fuel) =
 
 implement has_suffix(ent, len, max, suf, slen) =
   if len < slen then false
-  else let val p = g1ofg0(len - slen) in
-    if p >= 0 then bytes_match(ent, g0ofg1(p), max, suf, 0, slen,
-      $AR.checked_nat(slen + 1))
-    else false
-  end
+  else bytes_match(ent, len - slen, max, suf, 0, slen,
+    $AR.checked_nat(slen + 1))
 
 #pub fn name_eq {l:agz}{n:pos}{sn:nat}
   (ent: !$A.arr(byte, l, n), len: int, max: int n,
@@ -262,12 +242,9 @@ implement is_lib_dats_o(ent, len, max) =
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): int
 
 implement src_byte(src, pos, max) =
-  let val p = g1ofg0(pos) in
-    if p >= 0 then
-      if p < max then byte2int0($A.read<byte>(src, p))
-      else 0
-    else 0
-  end
+  if pos < 0 then 0
+  else if pos >= max then 0
+  else byte2int0($A.read<byte>(src, $AR.checked_idx(pos, max)))
 
 #pub fun print_borrow {l:agz}{n:pos}{fuel:nat}  (buf: !$A.borrow(byte, l, n), i: int, len: int, max: int n,
    fuel: int fuel): void
@@ -364,34 +341,22 @@ in result end
 implement token_eq_arr(buf, tstart, tend, sarr, si, fuel) =
   if fuel <= 0 then tstart >= tend
   else if tstart >= tend then
-    let
-      val si1 = g1ofg0(si)
+    if si < 0 then true
+    else if si >= 4096 then true
+    else $AR.eq_int_int(byte2int0($A.get<byte>(sarr, $AR.checked_idx(si, 4096))), 0)
+  else
+    if tstart < 0 then false
+    else if tstart >= 4096 then false
+    else if si < 0 then false
+    else if si >= 4096 then false
+    else let
+      val tb = byte2int0($A.get<byte>(buf, $AR.checked_idx(tstart, 4096)))
+      val sb = byte2int0($A.get<byte>(sarr, $AR.checked_idx(si, 4096)))
     in
-      if si1 >= 0 then
-        if si1 < 4096 then $AR.eq_int_int(byte2int0($A.get<byte>(sarr, si1)), 0)
-        else true
-      else true
+      if $AR.neq_int_int(tb, sb) then false
+      else if $AR.eq_int_int(sb, 0) then false
+      else token_eq_arr(buf, tstart + 1, tend, sarr, si + 1, fuel - 1)
     end
-  else let
-    val ti = g1ofg0(tstart)
-    val si1 = g1ofg0(si)
-  in
-    if ti >= 0 then
-      if ti < 4096 then
-        if si1 >= 0 then
-          if si1 < 4096 then let
-            val tb = byte2int0($A.get<byte>(buf, ti))
-            val sb = byte2int0($A.get<byte>(sarr, si1))
-          in
-            if $AR.neq_int_int(tb, sb) then false
-            else if $AR.eq_int_int(sb, 0) then false
-            else token_eq_arr(buf, tstart + 1, tend, sarr, si + 1, fuel - 1)
-          end
-          else false
-        else false
-      else false
-    else false
-  end
 
 #pub fun arr_range_to_builder {l:agz}{fuel:nat}  (src: !$A.arr(byte, l, 4096), i: int, lim: int,
    dst: !$B.builder, fuel: int fuel): void
@@ -399,32 +364,27 @@ implement token_eq_arr(buf, tstart, tend, sarr, si, fuel) =
 implement arr_range_to_builder(src, i, lim, dst, fuel) =
   if fuel <= 0 then ()
   else if i >= lim then ()
+  else if i < 0 then ()
+  else if i >= 4096 then ()
   else let
-    val ii = g1ofg0(i)
-  in
-    if ii >= 0 then
-      if $AR.lt1_int_int(ii, 4096) then let
-        val b = byte2int0($A.get<byte>(src, ii))
-        val () = $B.put_byte(dst, b)
-      in arr_range_to_builder(src, i + 1, lim, dst, fuel - 1) end
-      else ()
-    else ()
-  end
+    val b = byte2int0($A.get<byte>(src, $AR.checked_idx(i, 4096)))
+    val () = $B.put_byte(dst, b)
+  in arr_range_to_builder(src, i + 1, lim, dst, fuel - 1) end
 
 #pub fun str_fill_loop {lb:agz}{sn:nat}{fuel:nat}  (b: !$A.arr(byte, lb, 4096), s: string sn, slen: int sn, i: int, fuel: int fuel): void
 
 implement str_fill_loop(b, s, slen, i, fuel) =
   if fuel <= 0 then ()
+  else if i >= slen then ()
+  else if i >= 4096 then ()
   else let
     val ii = g1ofg0(i)
   in
     if ii >= 0 then
-      if $AR.lt1_int_int(ii, slen) then
-        if $AR.lt1_int_int(ii, 4096) then let
-          val c = char2int0(string_get_at(s, ii))
-          val () = $A.set<byte>(b, ii, int2byte0(c))
-        in str_fill_loop(b, s, slen, i + 1, fuel - 1) end
-        else ()
+      if $AR.lt1_int_int(ii, slen) then let
+        val c = char2int0(string_get_at(s, ii))
+        val () = $A.set<byte>(b, $AR.checked_idx(i, 4096), int2byte0(c))
+      in str_fill_loop(b, s, slen, i + 1, fuel - 1) end
       else ()
     else ()
   end
@@ -435,7 +395,7 @@ implement str_to_arr4096(s) = let
   val b = $A.alloc<byte>(4096)
   val slen_sz = string1_length(s)
   val slen = g1u2i(slen_sz)
-  val () = str_fill_loop(b, s, slen, 0, $AR.checked_nat(g0ofg1(slen) + 2))
+  val () = str_fill_loop(b, s, slen, 0, $AR.checked_nat(slen + 2))
 in
   (if slen < 4096 then $A.set<byte>(b, slen, int2byte0(0))
   else ()); b
@@ -880,39 +840,24 @@ in arr end
 
 implement strip_newline_arr(buf, len) =
   if len <= 0 then 0
-  else let val last = g1ofg0(len - 1) in
-    if last >= 0 then
-      if last < 4096 then
-        (if byte2int0($A.get<byte>(buf, last)) = 10 then len - 1 else len): int
-      else len
-    else len
-  end
+  else if len > 4096 then len
+  else (if byte2int0($A.get<byte>(buf, $AR.checked_idx(len - 1, 4096))) = 10 then len - 1 else len): int
 
 #pub fn strip_newline_arr524288 {l:agz}
   (buf: !$A.arr(byte, l, 524288), len: int): int
 
 implement strip_newline_arr524288(buf, len) =
   if len <= 0 then 0
-  else let val last = g1ofg0(len - 1) in
-    if last >= 0 then
-      if last < 524288 then
-        (if byte2int0($A.get<byte>(buf, last)) = 10 then len - 1 else len): int
-      else len
-    else len
-  end
+  else if len > 524288 then len
+  else (if byte2int0($A.get<byte>(buf, $AR.checked_idx(len - 1, 524288))) = 10 then len - 1 else len): int
 
 #pub fn strip_newline_arr256 {l:agz}
   (buf: !$A.arr(byte, l, 256), len: int): int
 
 implement strip_newline_arr256(buf, len) =
   if len <= 0 then 0
-  else let val last = g1ofg0(len - 1) in
-    if last >= 0 then
-      if last < 256 then
-        (if byte2int0($A.get<byte>(buf, last)) = 10 then len - 1 else len): int
-      else len
-    else len
-  end
+  else if len > 256 then len
+  else (if byte2int0($A.get<byte>(buf, $AR.checked_idx(len - 1, 256))) = 10 then len - 1 else len): int
 
 (* ============================================================
    String constant builders
@@ -1019,19 +964,14 @@ implement make_proc_cmdline(buf) =
 implement count_argc_loop(buf, pos, len, max, count, fuel) =
   if fuel <= 0 then count
   else if pos >= len then count
+  else if pos < 0 then count
+  else if pos >= max then count
   else let
-    val p = g1ofg0(pos)
+    val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, max)))
   in
-    if p >= 0 then
-      if p < max then let
-        val b = byte2int0($A.get<byte>(buf, p))
-      in
-        if $AR.eq_int_int(b, 0) then
-          count_argc_loop(buf, pos + 1, len, max, count + 1, fuel - 1)
-        else count_argc_loop(buf, pos + 1, len, max, count, fuel - 1)
-      end
-      else count
-    else count
+    if $AR.eq_int_int(b, 0) then
+      count_argc_loop(buf, pos + 1, len, max, count + 1, fuel - 1)
+    else count_argc_loop(buf, pos + 1, len, max, count, fuel - 1)
   end
 
 #pub fn count_argc {l:agz}
@@ -1045,14 +985,16 @@ implement count_argc(buf, len) =
 
 implement fill_exact(arr, s, n, slen, i, fuel) =
   if fuel <= 0 then ()
-  else let val ii = g1ofg0(i) in
+  else if i >= slen then ()
+  else if i >= n then ()
+  else let
+    val ii = g1ofg0(i)
+  in
     if ii >= 0 then
-      if $AR.lt1_int_int(ii, slen) then
-        if $AR.lt1_int_int(ii, n) then let
-          val c = char2int0(string_get_at(s, ii))
-          val () = $A.set<byte>(arr, ii, int2byte0(c))
-        in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
-        else ()
+      if $AR.lt1_int_int(ii, slen) then let
+        val c = char2int0(string_get_at(s, ii))
+        val () = $A.set<byte>(arr, $AR.checked_idx(i, n), int2byte0(c))
+      in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
       else ()
     else ()
   end
@@ -1063,9 +1005,9 @@ implement fill_exact(arr, s, n, slen, i, fuel) =
 implement str_to_borrow(s) = let
   val slen_sz = string1_length(s)
   val slen = g1u2i(slen_sz)
-  val n = $AR.checked_arr_size(g0ofg1(slen))
+  val n = $AR.checked_arr_size(slen)
   val arr = $A.alloc<byte>(n)
-  val () = fill_exact(arr, s, n, slen, 0, $AR.checked_nat(g0ofg1(slen) + 1))
+  val () = fill_exact(arr, s, n, slen, 0, $AR.checked_nat(slen + 1))
 in @(arr, n) end
 
 #pub fn ap_flag {sn:pos}{sh:pos}
