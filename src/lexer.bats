@@ -649,6 +649,17 @@ fn looking_at_let {l:agz}{n:pos}
   $AR.eq_int_int(src_byte(src, pos + 2, max), 116) &&
   is_kw_boundary(src, pos + 3, max)
 
+(* "local" = 108,111,99,97,108 *)
+fn looking_at_local {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  is_kw_boundary_before(src, pos, max) &&
+  $AR.eq_int_int(src_byte(src, pos, max), 108) &&
+  $AR.eq_int_int(src_byte(src, pos + 1, max), 111) &&
+  $AR.eq_int_int(src_byte(src, pos + 2, max), 99) &&
+  $AR.eq_int_int(src_byte(src, pos + 3, max), 97) &&
+  $AR.eq_int_int(src_byte(src, pos + 4, max), 108) &&
+  is_kw_boundary(src, pos + 5, max)
+
 fun find_end_kw {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, l, n), pos: int, src_len: int, max: int n,
    depth: int, fuel: int fuel): int =
@@ -661,6 +672,8 @@ fun find_end_kw {l:agz}{n:pos}{fuel:nat} .<fuel>.
     find_end_kw(src, pos + 5, src_len, max, depth + 1, fuel - 1)
   else if looking_at_let(src, pos, max) then
     find_end_kw(src, pos + 3, src_len, max, depth + 1, fuel - 1)
+  else if looking_at_local(src, pos, max) then
+    find_end_kw(src, pos + 5, src_len, max, depth + 1, fuel - 1)
   else find_end_kw(src, pos + 1, src_len, max, depth, fuel - 1)
 
 fn lex_unsafe_dispatch {l:agz}{n:pos}
