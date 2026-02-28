@@ -79,29 +79,22 @@ fun find_dashdash {l:agz}{fuel:nat} .<fuel>.
   if fuel <= 0 then ~1
   else if pos >= len then ~1
   else let
-    val p = g1ofg0(pos)
+    val b0 = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, 4096)))
+    val b1 = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos + 1, 4096)))
+    val b2 = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos + 2, 4096)))
   in
-    if p >= 0 then
-      if p + 2 < 4096 then let
-        val b0 = byte2int0($A.get<byte>(buf, p))
-        val b1 = byte2int0($A.get<byte>(buf, p + 1))
-        val b2 = byte2int0($A.get<byte>(buf, p + 2))
-      in
-        if $AR.eq_int_int(b0, 45) then
-          if $AR.eq_int_int(b1, 45) then
-            if $AR.eq_int_int(b2, 0) then pos
-            else let
-              val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
-            in find_dashdash(buf, next + 1, len, fuel - 1) end
-          else let
-            val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
-          in find_dashdash(buf, next + 1, len, fuel - 1) end
+    if $AR.eq_int_int(b0, 45) then
+      if $AR.eq_int_int(b1, 45) then
+        if $AR.eq_int_int(b2, 0) then pos
         else let
           val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
         in find_dashdash(buf, next + 1, len, fuel - 1) end
-      end
-      else ~1
-    else ~1
+      else let
+        val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+      in find_dashdash(buf, next + 1, len, fuel - 1) end
+    else let
+      val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+    in find_dashdash(buf, next + 1, len, fuel - 1) end
   end
 
 (* Scan --only values: read all repeated --only tokens from cmdline.
@@ -112,17 +105,15 @@ fun scan_only {l:agz}{fuel:nat} .<fuel>.
   if fuel <= 0 then mask
   else if pos >= len then mask
   else let
-    val p = g1ofg0(pos)
-  in
-    if p >= 0 then
-      if p + 5 < 4096 then let
+    val p = pos
+  in let
         (* Check if this token is "--only" : 45,45,111,110,108,121,0 *)
-        val b0 = byte2int0($A.get<byte>(buf, p))
-        val b1 = byte2int0($A.get<byte>(buf, p + 1))
-        val b2 = byte2int0($A.get<byte>(buf, p + 2))
-        val b3 = byte2int0($A.get<byte>(buf, p + 3))
-        val b4 = byte2int0($A.get<byte>(buf, p + 4))
-        val b5 = byte2int0($A.get<byte>(buf, p + 5))
+        val b0 = byte2int0($A.get<byte>(buf, $AR.checked_idx(p, 4096)))
+        val b1 = byte2int0($A.get<byte>(buf, $AR.checked_idx(p + 1, 4096)))
+        val b2 = byte2int0($A.get<byte>(buf, $AR.checked_idx(p + 2, 4096)))
+        val b3 = byte2int0($A.get<byte>(buf, $AR.checked_idx(p + 3, 4096)))
+        val b4 = byte2int0($A.get<byte>(buf, $AR.checked_idx(p + 4, 4096)))
+        val b5 = byte2int0($A.get<byte>(buf, $AR.checked_idx(p + 5, 4096)))
       in
         if $AR.eq_int_int(b0, 45) then
           if $AR.eq_int_int(b1, 45) then
@@ -134,11 +125,7 @@ fun scan_only {l:agz}{fuel:nat} .<fuel>.
                     val val_start = next + 1
                   in
                     if val_start < len then let
-                      val vs = g1ofg0(val_start)
-                    in
-                      if vs >= 0 then
-                        if vs < 4096 then let
-                          val v0 = byte2int0($A.get<byte>(buf, vs))
+                          val v0 = byte2int0($A.get<byte>(buf, $AR.checked_idx(val_start, 4096)))
                           val vend = find_null(buf, val_start, 4096, $AR.checked_nat(len - val_start + 1))
                           val vlen = vend - val_start
                           val new_mask = (
@@ -152,9 +139,6 @@ fun scan_only {l:agz}{fuel:nat} .<fuel>.
                               (if ((mask / 8) mod 2) = 0 then mask + 8 else mask)
                             else mask): int
                         in scan_only(buf, vend + 1, len, new_mask, fuel - 1) end
-                        else scan_only(buf, val_start + 1, len, mask, fuel - 1)
-                      else scan_only(buf, val_start + 1, len, mask, fuel - 1)
-                    end
                     else mask
                   end
                   else let
@@ -176,8 +160,6 @@ fun scan_only {l:agz}{fuel:nat} .<fuel>.
           val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
         in scan_only(buf, next + 1, len, mask, fuel - 1) end
       end
-      else mask
-    else mask
   end
 
 (* ============================================================
