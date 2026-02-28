@@ -639,7 +639,7 @@ in case+ r of
           val result = (case+ ur of
             | ~$R.some(len) => let
                 (* Check if value starts with 't' for "true" *)
-                val b0 = byte2int0($A.read_byte(ubuf, 0, 32))
+                val b0 = byte2int0($A.get<byte>(ubuf, 0))
                 val () = $A.free<byte>(ubuf)
               in if $AR.eq_int_int(b0, 116) then 1 else 0 end
             | ~$R.none() => let
