@@ -156,13 +156,18 @@ implement is_dot_or_dotdot(ent, len, max) =
 implement bytes_match(ent, p, max, pat, pi, plen, fuel) =
   if fuel <= 0 then pi >= plen
   else if pi >= plen then true
-  else if p + pi < 0 then false
-  else if p + pi >= max then false
-  else
-    if $AR.eq_int_int(byte2int0($A.get<byte>(ent, $AR.checked_idx(p + pi, max))),
-         char2int0(string_get_at(pat, $AR.checked_idx(pi, plen)))) then
-      bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
+  else let
+    val pii = g1ofg0(pi)
+  in
+    if pii >= 0 then
+      if $AR.lt1_int_int(pii, plen) then
+        if $AR.eq_int_int(byte2int0($A.get<byte>(ent, $AR.checked_idx(p + pi, max))),
+             char2int0(string_get_at(pat, pii))) then
+          bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
+        else false
+      else false
     else false
+  end
 
 #pub fn has_suffix {l:agz}{n:pos}{sn:nat}
   (ent: !$A.arr(byte, l, n), len: int, max: int n,
