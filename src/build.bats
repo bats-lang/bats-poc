@@ -195,6 +195,72 @@ in
                         (* Find latest .bats file: scan all entries, keep last found *)
                         val best_arr = $A.alloc<byte>(256)
                         val best_len = ref<int>(0)
+                        (* Extract version number from filename at part index.
+                           name_YYYY.M.D.secs.bats — find '_', then parse dot-separated parts *)
+                        fun extract_ver_part {la2:agz}{f3:nat} .<f3>.
+                          (a: !$A.arr(byte, la2, 256), len: int, part: int, f3: int f3): int =
+                          if f3 <= 0 then 0
+                          else let
+                            (* Find '_' separator *)
+                            fun find_under {la3:agz}{f4:nat} .<f4>.
+                              (a: !$A.arr(byte, la3, 256), i: int, len: int, f4: int f4): int =
+                              if f4 <= 0 then len
+                              else if i >= len then len
+                              else if i < 0 then len
+                              else if $AR.eq_int_int(byte2int0($A.get<byte>(a, $AR.checked_idx(i, 256))), 95) then i
+                              else find_under(a, i + 1, len, f4 - 1)
+                            val us = find_under(a, 0, len, $AR.checked_nat(len + 1))
+                            (* Parse part: skip to the right dot-separated segment *)
+                            fun skip_parts {la3:agz}{f4:nat} .<f4>.
+                              (a: !$A.arr(byte, la3, 256), pos: int, len: int, remaining: int, f4: int f4): int =
+                              if f4 <= 0 then pos
+                              else if remaining <= 0 then pos
+                              else if pos >= len then pos
+                              else if pos < 0 then pos
+                              else if $AR.eq_int_int(byte2int0($A.get<byte>(a, $AR.checked_idx(pos, 256))), 46) then
+                                skip_parts(a, pos + 1, len, remaining - 1, f4 - 1)
+                              else skip_parts(a, pos + 1, len, remaining, f4 - 1)
+                            val vstart = skip_parts(a, us + 1, len, part, $AR.checked_nat(len + 1))
+                            (* Parse decimal at vstart *)
+                            fun parse_num {la3:agz}{f4:nat} .<f4>.
+                              (a: !$A.arr(byte, la3, 256), pos: int, len: int, acc: int, f4: int f4): int =
+                              if f4 <= 0 then acc
+                              else if pos >= len then acc
+                              else if pos < 0 then acc
+                              else let
+                                val b = byte2int0($A.get<byte>(a, $AR.checked_idx(pos, 256)))
+                              in if b >= 48 then if b <= 57 then parse_num(a, pos + 1, len, acc * 10 + (b - 48), f4 - 1)
+                                else acc else acc
+                              end
+                          in parse_num(a, vstart, len, 0, $AR.checked_nat(len + 1)) end
+                        (* Compare two version filenames: returns true if e is newer than b *)
+                        fn is_newer_ver {la2:agz}{lb3:agz}
+                          (e: !$A.arr(byte, la2, 256), el: int,
+                           b: !$A.arr(byte, lb3, 256), bl: int): bool = let
+                          val ey = extract_ver_part(e, el, 0, 256)
+                          val by = extract_ver_part(b, bl, 0, 256)
+                        in
+                          if ey > by then true
+                          else if ey < by then false
+                          else let
+                            val em = extract_ver_part(e, el, 1, 256)
+                            val bm = extract_ver_part(b, bl, 1, 256)
+                          in
+                            if em > bm then true
+                            else if em < bm then false
+                            else let
+                              val ed = extract_ver_part(e, el, 2, 256)
+                              val bd = extract_ver_part(b, bl, 2, 256)
+                            in
+                              if ed > bd then true
+                              else if ed < bd then false
+                              else let
+                                val es = extract_ver_part(e, el, 3, 256)
+                                val bs = extract_ver_part(b, bl, 3, 256)
+                              in es > bs end
+                            end
+                          end
+                        end
                         fun scan_v {lb3:agz}{f2:nat} .<f2>.
                           (d: !$F.dir, b: !$A.arr(byte, lb3, 256), bl: ref(int),
                            f2: int f2): void =
@@ -210,7 +276,11 @@ in
                             in if ib then if is then let val () = $A.free<byte>(e)
                               in scan_v(d, b, bl, f2 - 1) end
                               else let
-                                (* Always copy — take last found in dir order *)
+                                (* Compare: only copy if newer than current best *)
+                                val cur_bl = !bl
+                                val newer = (if cur_bl <= 0 then true
+                                  else is_newer_ver(e, el, b, cur_bl)): bool
+                              in if newer then let
                                 fun cp_name {ls2:agz}{ld2:agz}{f3:nat} .<f3>.
                                   (s: !$A.arr(byte, ls2, 256), d2: !$A.arr(byte, ld2, 256),
                                    i: int, l: int, f3: int f3): void =
@@ -225,6 +295,8 @@ in
                                 val () = !bl := el
                                 val () = $A.free<byte>(e)
                               in scan_v(d, b, bl, f2 - 1) end
+                              else let val () = $A.free<byte>(e)
+                              in scan_v(d, b, bl, f2 - 1) end end
                             else let val () = $A.free<byte>(e)
                             in scan_v(d, b, bl, f2 - 1) end end
                           end
