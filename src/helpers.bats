@@ -549,28 +549,46 @@ implement timestamp_to_calver(ts) = let
   val days = ts / day_secs
   val secs_of_day = ts - days * day_secs
   val z = days + 719468
-  val era = (if z >= 0 then z else z - 146096) / 146097
-  val doe = z - era * 146097
-  val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
-  val y = yoe + era * 400
-  val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
-  val mp = (5 * doy + 2) / 153
-  val d = doy - (153 * mp + 2) / 5 + 1
-  val m = (if mp < 10 then mp + 3 else mp - 9): int
-  val y2 = (if m <= 2 then y + 1 else y): int
+  val zz = (if z >= 0 then z else z - 146096): int
+  val era = $AR.div_int_int(zz, 146097)
+  val doe = z - $AR.mul_int_int(era, 146097)
+  val yoe = $AR.div_int_int(doe - $AR.div_int_int(doe, 1460) + $AR.div_int_int(doe, 36524) - $AR.div_int_int(doe, 146096), 365)
+  val y = yoe + $AR.mul_int_int(era, 400)
+  val doy = doe - ($AR.mul_int_int(365, yoe) + $AR.div_int_int(yoe, 4) - $AR.div_int_int(yoe, 100))
+  val mp = $AR.div_int_int($AR.mul_int_int(5, doy) + 2, 153)
+  val d = doy - $AR.div_int_int($AR.mul_int_int(153, mp) + 2, 5) + 1
+  val m = (if mp < 10 then $AR.add_int_int(mp, 3) else $AR.sub_int_int(mp, 9)): int
+  val y2 = (if m <= 2 then $AR.add_int_int(y, 1) else y): int
 in @(y2, m, d, secs_of_day) end
 
 (* Write an integer as decimal into a builder *)
 #pub fn bput_int(b: !$B.builder, v: int): void
 
-implement bput_int(b, v) =
-  if v < 0 then let
-    val () = $B.put_byte(b, 45)
-  in bput_int(b, 0 - v) end
-  else if v < 10 then $B.put_byte(b, 48 + v)
-  else let
-    val () = bput_int(b, v / 10)
-  in $B.put_byte(b, 48 + v mod 10) end
+implement bput_int(b, v) = let
+  val digits = $A.alloc<byte>(16)
+  fun fill {ld:agz}{fuel:nat} .<fuel>.
+    (digits: !$A.arr(byte, ld, 16), v: int, pos: int, fuel: int fuel): int =
+    if fuel <= 0 then pos
+    else if v < 10 then let
+      val () = $A.set<byte>(digits, $AR.checked_idx(pos, 16), int2byte0(48 + v))
+    in pos + 1 end
+    else let
+      val () = $A.set<byte>(digits, $AR.checked_idx(pos, 16), int2byte0(48 + $AR.mod_int_int(v, 10)))
+    in fill(digits, $AR.div_int_int(v, 10), pos + 1, fuel - 1) end
+  val is_neg = v < 0
+  val abs_v = (if is_neg then 0 - v else v): int
+  val ndigits = fill(digits, abs_v, 0, 15)
+  val () = (if is_neg then $B.put_byte(b, 45) else ())
+  fun emit {ld:agz}{fuel:nat} .<fuel>.
+    (digits: !$A.arr(byte, ld, 16), b: !$B.builder, pos: int, fuel: int fuel): void =
+    if fuel <= 0 then ()
+    else if pos < 0 then ()
+    else let
+      val () = $B.put_byte(b, byte2int0($A.get<byte>(digits, $AR.checked_idx(pos, 16))))
+    in emit(digits, b, pos - 1, fuel - 1) end
+  val () = emit(digits, b, ndigits - 1, 16)
+  val () = $A.free<byte>(digits)
+in end
 
 (* Run a command and capture stdout into outbuf. Returns @(exit_code, stdout_len). *)
 #pub fn run_cmd_capture {le:agz}{lo:agz}
