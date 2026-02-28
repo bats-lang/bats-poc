@@ -276,10 +276,23 @@ in
                             in if ib then if is then let val () = $A.free<byte>(e)
                               in scan_v(d, b, bl, f2 - 1) end
                               else let
-                                (* Compare: only copy if newer than current best *)
                                 val cur_bl = !bl
+                                val ey = extract_ver_part(e, el, 0, 256)
+                                val by = (if cur_bl > 0 then extract_ver_part(b, cur_bl, 0, 256) else 0): int
+                                val em = extract_ver_part(e, el, 1, 256)
+                                val bm = (if cur_bl > 0 then extract_ver_part(b, cur_bl, 1, 256) else 0): int
+                                val ed = extract_ver_part(e, el, 2, 256)
+                                val bd = (if cur_bl > 0 then extract_ver_part(b, cur_bl, 2, 256) else 0): int
+                                val es = extract_ver_part(e, el, 3, 256)
+                                val bs = (if cur_bl > 0 then extract_ver_part(b, cur_bl, 3, 256) else 0): int
                                 val newer = (if cur_bl <= 0 then true
-                                  else is_newer_ver(e, el, b, cur_bl)): bool
+                                  else if ey > by then true
+                                  else if ey < by then false
+                                  else if em > bm then true
+                                  else if em < bm then false
+                                  else if ed > bd then true
+                                  else if ed < bd then false
+                                  else es > bs): bool
                               in if newer then let
                                 fun cp_name {ls2:agz}{ld2:agz}{f3:nat} .<f3>.
                                   (s: !$A.arr(byte, ls2, 256), d2: !$A.arr(byte, ld2, 256),
