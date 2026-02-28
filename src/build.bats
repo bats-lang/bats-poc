@@ -170,13 +170,11 @@ in
                 in if dl <= 0 then resolve(ks, de + 1, kl, rb, rl, lb, cnt, fuel - 1)
                   else let
                     (* Strip quotes from key name *)
-                    val p0 = g1ofg0(pos)
-                    val first_byte = (if p0 >= 0 then if p0 < 4096 then
-                      byte2int0($A.get<byte>(ks, p0)) else 0 else 0): int
+                    val first_byte = (if pos >= 0 then if pos < 4096 then
+                      byte2int0($A.get<byte>(ks, $AR.checked_idx(pos, 4096))) else 0 else 0): int
                     val dep_start = (if $AR.eq_int_int(first_byte, 34) then pos + 1 else pos): int
-                    val last_pos = g1ofg0(de - 1)
-                    val last_byte = (if last_pos >= 0 then if last_pos < 4096 then
-                      byte2int0($A.get<byte>(ks, last_pos)) else 0 else 0): int
+                    val last_byte = (if de - 1 >= 0 then if de - 1 < 4096 then
+                      byte2int0($A.get<byte>(ks, $AR.checked_idx(de - 1, 4096))) else 0 else 0): int
                     val dep_end = (if $AR.eq_int_int(last_byte, 34) then de - 1 else de): int
                     val dl = dep_end - dep_start
                     (* Scan repo/<dep>/ for latest .bats archive *)
@@ -216,12 +214,12 @@ in
                                   (s: !$A.arr(byte, ls2, 256), d2: !$A.arr(byte, ld2, 256),
                                    i: int, l: int, f3: int f3): void =
                                   if f3 <= 0 then () else if i >= l then ()
-                                  else let val ii = g1ofg0(i) in
-                                    if ii >= 0 then if ii < 256 then let
-                                      val v = byte2int0($A.get<byte>(s, ii))
-                                      val () = $A.set<byte>(d2, ii, int2byte0(v))
-                                    in cp_name(s, d2, i+1, l, f3-1) end else () else ()
-                                  end
+                                  else if i < 0 then () else if i >= 256 then ()
+                                  else let
+                                    val idx = $AR.checked_idx(i, 256)
+                                    val v = byte2int0($A.get<byte>(s, idx))
+                                    val () = $A.set<byte>(d2, idx, int2byte0(v))
+                                  in cp_name(s, d2, i+1, l, f3-1) end
                                 val () = cp_name(e, b, 0, el, $AR.checked_nat(el+1))
                                 val () = !bl := el
                                 val () = $A.free<byte>(e)
@@ -274,10 +272,10 @@ in
                           fun mkp {ls4:agz}{f4:nat} .<f4>.
                             (s: !$A.arr(byte, ls4, 4096), i: int, l: int, d3: !$B.builder, f4: int f4): void =
                             if f4 <= 0 then () else if i >= l then ()
-                            else let val ii = g1ofg0(i) in
-                              if ii >= 0 then if ii < 4096 then let val c = byte2int0($A.get<byte>(s, ii))
-                              in (if $AR.eq_int_int(c,47) then $B.put_byte(d3,95) else $B.put_byte(d3,c));
-                                mkp(s, i+1, l, d3, f4-1) end else () else () end
+                            else if i < 0 then () else if i >= 4096 then ()
+                            else let val c = byte2int0($A.get<byte>(s, $AR.checked_idx(i, 4096)))
+                            in (if $AR.eq_int_int(c,47) then $B.put_byte(d3,95) else $B.put_byte(d3,c));
+                              mkp(s, i+1, l, d3, f4-1) end
                           val () = mkp(ks, dep_start, dep_end, pfx, $AR.checked_nat(dl+1))
                           val () = $B.put_byte(pfx, 95)
                           val pl = $B.length(pfx)
@@ -713,21 +711,21 @@ in
     (* Append /.bats/ats2 to HOME *)
     fn append_bats_path {l:agz}
       (buf: !$A.arr(byte, l, 512), pos: int): int =
-      let val p = g1ofg0(pos) in
-        if p >= 0 then if p + 10 < 512 then let
-          val () = $A.set<byte>(buf, p, int2byte0(47))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+1,512), int2byte0(46))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+2,512), int2byte0(98))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+3,512), int2byte0(97))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+4,512), int2byte0(116))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+5,512), int2byte0(115))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+6,512), int2byte0(47))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+7,512), int2byte0(97))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+8,512), int2byte0(116))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+9,512), int2byte0(115))
-          val () = $A.set<byte>(buf, $AR.checked_idx(p+10,512), int2byte0(50))
-        in pos + 11 end else pos else pos
-      end
+      if pos < 0 then pos
+      else if pos + 10 >= 512 then pos
+      else let
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos,512), int2byte0(47))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+1,512), int2byte0(46))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+2,512), int2byte0(98))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+3,512), int2byte0(97))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+4,512), int2byte0(116))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+5,512), int2byte0(115))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+6,512), int2byte0(47))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+7,512), int2byte0(97))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+8,512), int2byte0(116))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+9,512), int2byte0(115))
+        val () = $A.set<byte>(buf, $AR.checked_idx(pos+10,512), int2byte0(50))
+      in pos + 11 end
     val phlen = append_bats_path(phbuf, hlen)
     (* Check if patsopt exists, install if not — single freeze *)
     (* Copy arr bytes to builder — uses src_byte to avoid !arr in conditional *)

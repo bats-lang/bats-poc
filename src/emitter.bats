@@ -40,17 +40,12 @@ in scan(src, max, pos - 1, $AR.checked_nat(pos)) end
 
 fn read_i32 {l:agz}{n:pos}
   (bv: !$A.borrow(byte, l, n), off: int, max: int n): int =
-  let val o = g1ofg0(off) in
-    if o >= 0 then
-      if o + 3 < max then let
-        val b0 = byte2int0($A.read<byte>(bv, o))
-        val b1 = byte2int0($A.read<byte>(bv, o + 1))
-        val b2 = byte2int0($A.read<byte>(bv, o + 2))
-        val b3 = byte2int0($A.read<byte>(bv, o + 3))
-      in b0 + b1 * 256 + b2 * 65536 + b3 * 16777216 end
-      else 0
-    else 0
-  end
+  let
+    val b0 = byte2int0($A.read<byte>(bv, $AR.checked_idx(off, max)))
+    val b1 = byte2int0($A.read<byte>(bv, $AR.checked_idx(off + 1, max)))
+    val b2 = byte2int0($A.read<byte>(bv, $AR.checked_idx(off + 2, max)))
+    val b3 = byte2int0($A.read<byte>(bv, $AR.checked_idx(off + 3, max)))
+  in b0 + b1 * 256 + b2 * 65536 + b3 * 16777216 end
 
 fn span_kind {l:agz}{n:pos}
   (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
@@ -614,10 +609,8 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
     if fuel <= 0 then ~1
     else if pos + 15 > len then ~1
     else let
-      val p = g1ofg0(pos)
-    in
-      if p >= 0 then if p + 14 < max then let
-        val b0 = byte2int0($A.read<byte>(bv, p))
+      val p = pos
+      val b0 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p, max)))
       in
         if $AR.eq_int_int(b0, 105) then let (* 'i' *)
           val b4 = byte2int0($A.read<byte>(bv, $AR.checked_idx(p + 4, max)))
@@ -670,7 +663,7 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
           else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
         end
         else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
-      end else ~1 else ~1
+      end
     end
   val main0_pos = find_impl_main0(bv_dt, dats_tmp_len, 524288,
     0, $AR.checked_nat(dats_tmp_len + 1))
