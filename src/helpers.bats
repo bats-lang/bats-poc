@@ -94,10 +94,11 @@ implement get_self_path() = !g_self_path
 implement bput_loop(b, s, slen, i, fuel) =
   if fuel <= 0 then ()
   else if i >= slen then ()
-  else let
-    val c = char2int0(string_get_at(s, $AR.checked_idx(i, $AR.checked_pos(slen))))
+  else if $AR.lt1_int_int(i, slen) then let
+    val c = char2int0(string_get_at(s, i))
     val () = $B.put_byte(b, c)
   in bput_loop(b, s, slen, i + 1, fuel - 1) end
+  else ()
 
 #pub fn bput {sn:nat} (b: !$B.builder, s: string sn): void
 
@@ -969,10 +970,11 @@ implement fill_exact(arr, s, n, slen, i, fuel) =
   if fuel <= 0 then ()
   else if i >= slen then ()
   else if i >= n then ()
-  else let
-    val c = char2int0(string_get_at(s, $AR.checked_idx(i, $AR.checked_pos(slen))))
+  else if $AR.lt1_int_int(i, slen) then let
+    val c = char2int0(string_get_at(s, i))
     val () = $A.set<byte>(arr, $AR.checked_idx(i, n), int2byte0(c))
   in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
+  else ()
 
 #pub fn str_to_borrow {sn:pos}
   (s: string sn): [l:agz][n:pos] @($A.arr(byte, l, n), int n)
