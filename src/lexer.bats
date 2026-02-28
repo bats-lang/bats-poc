@@ -5,6 +5,7 @@
 #use array as A
 #use arith as AR
 #use builder as B
+#use str as S
 
 staload "helpers.sats"
 
@@ -65,199 +66,199 @@ in end
 fn looking_at_2 {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n,
    c0: int, c1: int): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), c0) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), c1)
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), c0) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), c1)
 
 fn is_kw_boundary {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   if pos >= max then true
-  else ~(is_ident_byte(src_byte(src, pos, max)))
+  else ~(is_ident_byte($S.borrow_byte(src, pos, max)))
 
 fn is_kw_boundary_before {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   if pos <= 0 then true
-  else ~(is_ident_byte(src_byte(src, pos - 1, max)))
+  else ~(is_ident_byte($S.borrow_byte(src, pos - 1, max)))
 
 (* #pub = 35,112,117,98 *)
 fn looking_at_pub {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 35) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 117) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 98) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 35) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 117) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 98) &&
   is_kw_boundary(src, pos + 4, max)
 
 (* #use = 35,117,115,101 *)
 fn looking_at_use {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 35) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 117) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 115) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 35) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 117) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 101) &&
   is_kw_boundary(src, pos + 4, max)
 
 (* #target = 35,116,97,114,103,101,116 *)
 fn looking_at_target {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 35) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 116) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 114) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 103) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 35) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 114) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 103) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 116) &&
   is_kw_boundary(src, pos + 7, max)
 
 (* $UNSAFE = 36,85,78,83,65,70,69 *)
 fn looking_at_unsafe {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 85) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 78) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 83) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 65) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 70) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 69)
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 85) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 78) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 83) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 65) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 70) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 69)
 
 (* $UNITTEST = 36,85,78,73,84,84,69,83,84 *)
 fn looking_at_unittest {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 85) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 78) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 73) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 84) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 84) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 69) &&
-  $AR.eq_int_int(src_byte(src, pos + 7, max), 83) &&
-  $AR.eq_int_int(src_byte(src, pos + 8, max), 84)
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 85) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 78) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 73) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 84) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 84) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 69) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 7, max), 83) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 8, max), 84)
 
 (* "begin" = 98,101,103,105,110 *)
 fn looking_at_begin {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 98) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 103) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 105) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 98) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 103) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 105) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 110) &&
   is_kw_boundary(src, pos + 5, max)
 
 (* "end" = 101,110,100 *)
 fn looking_at_end {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 110) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 100) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 100) &&
   is_kw_boundary(src, pos + 3, max) &&
   is_kw_boundary_before(src, pos, max)
 
 (* "as" = 97,115 *)
 fn looking_at_as {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 115) &&
   is_kw_boundary(src, pos + 2, max)
 
 (* "castfn" = 99,97,115,116,102,110 *)
 fn looking_at_castfn {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 99) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 115) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 102) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 99) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 102) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
   is_kw_boundary(src, pos + 6, max)
 
 (* "praxi" = 112,114,97,120,105 *)
 fn looking_at_praxi {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 120) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 105) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 105) &&
   is_kw_boundary(src, pos + 5, max)
 
 (* "extern" = 101,120,116,101,114,110 *)
 fn looking_at_extern {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 120) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 116) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 114) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 114) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
   is_kw_boundary(src, pos + 6, max)
 
 (* "assume" = 97,115,115,117,109,101 *)
 fn looking_at_assume {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 115) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 115) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 117) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 109) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 117) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 109) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 101) &&
   is_kw_boundary(src, pos + 6, max)
 
 (* $extval — $-prefixed unsafe construct *)
 fn looking_at_extval {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 120) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 118) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 118) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 108) &&
   is_kw_boundary(src, pos + 7, max)
 
 (* $extfcall *)
 fn looking_at_extfcall {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 120) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 102) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 99) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 7, max), 108) &&
-  $AR.eq_int_int(src_byte(src, pos + 8, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 102) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 99) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 7, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 8, max), 108) &&
   is_kw_boundary(src, pos + 9, max)
 
 (* $extype *)
 fn looking_at_extype {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 120) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 121) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 121) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 101) &&
   is_kw_boundary(src, pos + 7, max)
 
 (* $extkind *)
 fn looking_at_extkind {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 36) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 120) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 116) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 107) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 105) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 110) &&
-  $AR.eq_int_int(src_byte(src, pos + 7, max), 100) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 107) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 105) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 7, max), 100) &&
   is_kw_boundary(src, pos + 8, max)
 
 (* "fun" = 102,117,110 — only unsafe WITHOUT termination metric *)
 fn looking_at_fun {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 102) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 117) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 102) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 117) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 110) &&
   is_kw_boundary(src, pos + 3, max) &&
   is_kw_boundary_before(src, pos, max)
 
@@ -268,16 +269,16 @@ fun _has_metric {l:agz}{n:pos}{fuel:nat} .<fuel>.
   if fuel <= 0 then false
   else if pos >= max then false
   else let
-    val b = src_byte(src, pos, max)
+    val b = $S.borrow_byte(src, pos, max)
   in
     (* Found ".< " — has metric *)
     if $AR.eq_int_int(b, 46) then
-      if $AR.eq_int_int(src_byte(src, pos + 1, max), 60) then true
+      if $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 60) then true
       else _has_metric(src, pos + 1, max, fuel - 1)
     (* Found standalone "=" — end of signature, no metric *)
     (* Skip <= >= == != by checking previous byte *)
     else if $AR.eq_int_int(b, 61) then let
-      val prev = (if pos > 0 then src_byte(src, pos - 1, max) else 32): int
+      val prev = (if pos > 0 then $S.borrow_byte(src, pos - 1, max) else 32): int
     in
       if $AR.eq_int_int(prev, 60) then _has_metric(src, pos + 1, max, fuel - 1)
       else if $AR.eq_int_int(prev, 62) then _has_metric(src, pos + 1, max, fuel - 1)
@@ -287,7 +288,7 @@ fun _has_metric {l:agz}{n:pos}{fuel:nat} .<fuel>.
     end
     (* Found newline followed by non-whitespace — end of declaration *)
     else if $AR.eq_int_int(b, 10) then let
-      val nb = src_byte(src, pos + 1, max)
+      val nb = $S.borrow_byte(src, pos + 1, max)
     in
       if $AR.eq_int_int(nb, 32) || $AR.eq_int_int(nb, 9) then
         _has_metric(src, pos + 1, max, fuel - 1)
@@ -299,49 +300,49 @@ fun _has_metric {l:agz}{n:pos}{fuel:nat} .<fuel>.
 (* "prfun" = 112,114,102,117,110 — only unsafe if #pub without primplement *)
 fn _content_starts_prfun {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 102) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 117) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 102) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 117) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 110) &&
   is_kw_boundary(src, pos + 5, max)
 
 (* "prfn" = 112,114,102,110 *)
 fn _content_starts_prfn {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 102) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 102) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 110) &&
   is_kw_boundary(src, pos + 4, max)
 
 (* "primplement" = 112,114,105,109,112,108,101,109,101,110,116 *)
 fn _looking_at_primplement {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 114) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 105) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 109) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 112) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 108) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 7, max), 109) &&
-  $AR.eq_int_int(src_byte(src, pos + 8, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 9, max), 110) &&
-  $AR.eq_int_int(src_byte(src, pos + 10, max), 116)
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 105) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 109) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 7, max), 109) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 8, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 9, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 10, max), 116)
 
 (* "no_mangle" = 110,111,95,109,97,110,103,108,101 *)
 fn looking_at_no_mangle {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $AR.eq_int_int(src_byte(src, pos, max), 110) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 111) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 95) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 109) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 5, max), 110) &&
-  $AR.eq_int_int(src_byte(src, pos + 6, max), 103) &&
-  $AR.eq_int_int(src_byte(src, pos + 7, max), 108) &&
-  $AR.eq_int_int(src_byte(src, pos + 8, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 111) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 95) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 109) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 103) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 7, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 8, max), 101) &&
   is_kw_boundary(src, pos + 9, max)
 
 (* ============================================================
@@ -353,7 +354,7 @@ fun skip_ws {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, l, n), pos: int, max: int n,
    fuel: int fuel): int =
   if fuel <= 0 then pos
-  else let val b = src_byte(src, pos, max) in
+  else let val b = $S.borrow_byte(src, pos, max) in
     if $AR.eq_int_int(b, 32) || $AR.eq_int_int(b, 9) then
       skip_ws(src, pos + 1, max, fuel - 1)
     else pos
@@ -365,7 +366,7 @@ fun skip_to_eol {l:agz}{n:pos}{fuel:nat} .<fuel>.
    fuel: int fuel): int =
   if fuel <= 0 then pos
   else if pos >= src_len then pos
-  else let val b = src_byte(src, pos, max) in
+  else let val b = $S.borrow_byte(src, pos, max) in
     if $AR.eq_int_int(b, 10) then pos + 1
     else skip_to_eol(src, pos + 1, src_len, max, fuel - 1)
   end
@@ -375,7 +376,7 @@ fun skip_ident {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, l, n), pos: int, max: int n,
    fuel: int fuel): int =
   if fuel <= 0 then pos
-  else let val b = src_byte(src, pos, max) in
+  else let val b = $S.borrow_byte(src, pos, max) in
     if is_ident_byte(b) then skip_ident(src, pos + 1, max, fuel - 1)
     else pos
   end
@@ -385,7 +386,7 @@ fun _skip_to_name {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, l, n), pos: int, max: int n, fuel: int fuel): int =
   if fuel <= 0 then pos
   else if pos >= max then pos
-  else let val b = src_byte(src, pos, max) in
+  else let val b = $S.borrow_byte(src, pos, max) in
     if $AR.eq_int_int(b, 32) || $AR.eq_int_int(b, 9) || $AR.eq_int_int(b, 10) then
       _skip_to_name(src, pos + 1, max, fuel - 1)
     else if $AR.eq_int_int(b, 123) then let (* skip {quantifiers} *)
@@ -393,7 +394,7 @@ fun _skip_to_name {l:agz}{n:pos}{fuel:nat} .<fuel>.
         (src: !$A.borrow(byte, l, n), p: int, max: int n, f: int f): int =
         if f <= 0 then p
         else if p >= max then p
-        else if $AR.eq_int_int(src_byte(src, p, max), 125) then p + 1
+        else if $AR.eq_int_int($S.borrow_byte(src, p, max), 125) then p + 1
         else _skip_brace(src, p + 1, max, f - 1)
     in _skip_to_name(src, _skip_brace(src, pos + 1, max, fuel - 1), max, fuel - 1) end
     else pos
@@ -413,7 +414,7 @@ fun _has_primplement {l:agz}{n:pos}{fuel:nat} .<fuel>.
         (src: !$A.borrow(byte, l, n), a: int, b: int, len: int, max: int n, f: int f): bool =
         if f <= 0 then true
         else if len <= 0 then true
-        else if $AR.eq_int_int(src_byte(src, a, max), src_byte(src, b, max)) then
+        else if $AR.eq_int_int($S.borrow_byte(src, a, max), $S.borrow_byte(src, b, max)) then
           _names_match(src, a + 1, b + 1, len - 1, max, f - 1)
         else false
       val nend = skip_ident(src, p, max, 4096)
@@ -431,7 +432,7 @@ fun skip_nonws {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, l, n), pos: int, max: int n,
    fuel: int fuel): int =
   if fuel <= 0 then pos
-  else let val b = src_byte(src, pos, max) in
+  else let val b = $S.borrow_byte(src, pos, max) in
     if $AR.eq_int_int(b, 32) || $AR.eq_int_int(b, 9) ||
        $AR.eq_int_int(b, 10) || $AR.eq_int_int(b, 0)
     then pos
@@ -442,8 +443,8 @@ fun skip_nonws {l:agz}{n:pos}{fuel:nat} .<fuel>.
 fn lex_line_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
    spans: !$B.builder, start: int, count: int): @(int, int) =
-  if $AR.eq_int_int(src_byte(src, start + 2, max), 47) &&
-     $AR.eq_int_int(src_byte(src, start + 3, max), 47) then let
+  if $AR.eq_int_int($S.borrow_byte(src, start + 2, max), 47) &&
+     $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 47) then let
     val () = put_span(spans, 0, 0, start, src_len, 0, 0, 0, 0)
   in @(src_len, count + 1) end
   else let
@@ -457,8 +458,8 @@ fun lex_c_comment_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
    fuel: int fuel): int =
   if fuel <= 0 then pos
   else if pos + 1 >= src_len then src_len
-  else if $AR.eq_int_int(src_byte(src, pos, max), 42) &&
-          $AR.eq_int_int(src_byte(src, pos + 1, max), 47) then
+  else if $AR.eq_int_int($S.borrow_byte(src, pos, max), 42) &&
+          $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 47) then
     pos + 2
   else lex_c_comment_inner(src, pos + 1, src_len, max, fuel - 1)
 
@@ -477,8 +478,8 @@ fun lex_ml_comment_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
   else if depth <= 0 then pos
   else if pos + 1 >= src_len then src_len
   else let
-    val b0 = src_byte(src, pos, max)
-    val b1 = src_byte(src, pos + 1, max)
+    val b0 = $S.borrow_byte(src, pos, max)
+    val b1 = $S.borrow_byte(src, pos + 1, max)
   in
     if $AR.eq_int_int(b0, 40) && $AR.eq_int_int(b1, 42) then
       lex_ml_comment_inner(src, pos + 2, src_len, max, depth + 1, fuel - 1)
@@ -501,7 +502,7 @@ fun lex_string_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
    fuel: int fuel): int =
   if fuel <= 0 then pos
   else if pos >= src_len then pos
-  else let val b = src_byte(src, pos, max) in
+  else let val b = $S.borrow_byte(src, pos, max) in
     if $AR.eq_int_int(b, 92) then
       lex_string_inner(src, pos + 2, src_len, max, fuel - 1)
     else if $AR.eq_int_int(b, 34) then pos + 1
@@ -520,9 +521,9 @@ fn lex_char_lit {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
    spans: !$B.builder, start: int, count: int): @(int, int) = let
   val p1 = start + 1
-  val b1 = src_byte(src, p1, max)
+  val b1 = $S.borrow_byte(src, p1, max)
   val p2 = (if $AR.eq_int_int(b1, 92) then p1 + 2 else p1 + 1): int
-  val p3 = (if $AR.eq_int_int(src_byte(src, p2, max), 39) then p2 + 1 else p2): int
+  val p3 = (if $AR.eq_int_int($S.borrow_byte(src, p2, max), 39) then p2 + 1 else p2): int
   val () = put_span(spans, 0, 0, start, p3, 0, 0, 0, 0)
 in @(p3, count + 1) end
 
@@ -532,8 +533,8 @@ fun lex_extcode_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
    fuel: int fuel): int =
   if fuel <= 0 then pos
   else if pos + 1 >= src_len then src_len
-  else if $AR.eq_int_int(src_byte(src, pos, max), 37) &&
-          $AR.eq_int_int(src_byte(src, pos + 1, max), 125) then
+  else if $AR.eq_int_int($S.borrow_byte(src, pos, max), 37) &&
+          $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 125) then
     pos + 2
   else lex_extcode_inner(src, pos + 1, src_len, max, fuel - 1)
 
@@ -541,7 +542,7 @@ fn lex_extcode {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
    spans: !$B.builder, start: int, count: int): @(int, int) = let
   val after_open = start + 2
-  val bk = src_byte(src, after_open, max)
+  val bk = $S.borrow_byte(src, after_open, max)
   val @(kind, cstart) =
     (if $AR.eq_int_int(bk, 94) then @(1, after_open + 1)
      else if $AR.eq_int_int(bk, 36) then @(2, after_open + 1)
@@ -577,7 +578,7 @@ fn lex_qualified {l:agz}{n:pos}
    spans: !$B.builder, start: int, count: int): @(int, int, bool) = let
   val alias_start = start + 1
   val alias_end = skip_ident(src, alias_start, max, 4096)
-  val dot_byte = src_byte(src, alias_end, max)
+  val dot_byte = $S.borrow_byte(src, alias_end, max)
 in
   if $AR.eq_int_int(dot_byte, 46) then let
     val member_start = alias_end + 1
@@ -598,7 +599,7 @@ fun is_blank_line {l:agz}{n:pos}{fuel:nat} .<fuel>.
    fuel: int fuel): bool =
   if fuel <= 0 then true
   else if pos >= src_len then true
-  else let val b = src_byte(src, pos, max) in
+  else let val b = $S.borrow_byte(src, pos, max) in
     if $AR.eq_int_int(b, 10) then true
     else if $AR.eq_int_int(b, 32) || $AR.eq_int_int(b, 9) then
       is_blank_line(src, pos + 1, src_len, max, fuel - 1)
@@ -621,30 +622,30 @@ fun lex_pub_lines {l:agz}{n:pos}{fuel:nat} .<fuel>.
     else if looking_at_target(src, eol, max) then eol
     else if looking_at_unsafe(src, eol, max) then eol
     else if looking_at_unittest(src, eol, max) then eol
-    else let val b = src_byte(src, eol, max) in
+    else let val b = $S.borrow_byte(src, eol, max) in
       if $AR.eq_int_int(b, 102) &&
-         ($AR.eq_int_int(src_byte(src, eol + 1, max), 117) &&
-          $AR.eq_int_int(src_byte(src, eol + 2, max), 110) &&
+         ($AR.eq_int_int($S.borrow_byte(src, eol + 1, max), 117) &&
+          $AR.eq_int_int($S.borrow_byte(src, eol + 2, max), 110) &&
           is_kw_boundary(src, eol + 3, max)) then eol
       else if $AR.eq_int_int(b, 102) &&
-              $AR.eq_int_int(src_byte(src, eol + 1, max), 110) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 1, max), 110) &&
               is_kw_boundary(src, eol + 2, max) then eol
       else if $AR.eq_int_int(b, 118) &&
-              $AR.eq_int_int(src_byte(src, eol + 1, max), 97) &&
-              $AR.eq_int_int(src_byte(src, eol + 2, max), 108) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 1, max), 97) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 2, max), 108) &&
               is_kw_boundary(src, eol + 3, max) then eol
       else if $AR.eq_int_int(b, 105) &&
-              $AR.eq_int_int(src_byte(src, eol + 1, max), 109) &&
-              $AR.eq_int_int(src_byte(src, eol + 2, max), 112) &&
-              $AR.eq_int_int(src_byte(src, eol + 3, max), 108) &&
-              $AR.eq_int_int(src_byte(src, eol + 4, max), 101) &&
-              $AR.eq_int_int(src_byte(src, eol + 5, max), 109) &&
-              $AR.eq_int_int(src_byte(src, eol + 6, max), 101) &&
-              $AR.eq_int_int(src_byte(src, eol + 7, max), 110) &&
-              $AR.eq_int_int(src_byte(src, eol + 8, max), 116) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 1, max), 109) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 2, max), 112) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 3, max), 108) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 4, max), 101) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 5, max), 109) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 6, max), 101) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 7, max), 110) &&
+              $AR.eq_int_int($S.borrow_byte(src, eol + 8, max), 116) &&
               is_kw_boundary(src, eol + 9, max) then eol
       else if $AR.eq_int_int(b, 37) &&
-              $AR.eq_int_int(src_byte(src, eol + 1, max), 123) then eol
+              $AR.eq_int_int($S.borrow_byte(src, eol + 1, max), 123) then eol
       else lex_pub_lines(src, eol, src_len, max, fuel - 1)
     end
   end
@@ -653,20 +654,20 @@ fun lex_pub_lines {l:agz}{n:pos}{fuel:nat} .<fuel>.
 fn looking_at_let {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   is_kw_boundary_before(src, pos, max) &&
-  $AR.eq_int_int(src_byte(src, pos, max), 108) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 101) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 116) &&
   is_kw_boundary(src, pos + 3, max)
 
 (* "local" = 108,111,99,97,108 *)
 fn looking_at_local {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   is_kw_boundary_before(src, pos, max) &&
-  $AR.eq_int_int(src_byte(src, pos, max), 108) &&
-  $AR.eq_int_int(src_byte(src, pos + 1, max), 111) &&
-  $AR.eq_int_int(src_byte(src, pos + 2, max), 99) &&
-  $AR.eq_int_int(src_byte(src, pos + 3, max), 97) &&
-  $AR.eq_int_int(src_byte(src, pos + 4, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 111) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 99) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 108) &&
   is_kw_boundary(src, pos + 5, max)
 
 fun find_end_kw {l:agz}{n:pos}{fuel:nat} .<fuel>.
@@ -689,7 +690,7 @@ fn lex_unsafe_dispatch {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
    spans: !$B.builder, start: int, count: int): @(int, int, bool) = let
   val after = start + 7
-  val next = src_byte(src, after, max)
+  val next = $S.borrow_byte(src, after, max)
 in
   if $AR.eq_int_int(next, 46) then let
     val ident_end = skip_ident(src, after + 1, max, 4096)
@@ -713,11 +714,11 @@ fn lex_unittest_dispatch {l:agz}{n:pos}
    spans: !$B.builder, start: int, count: int): @(int, int, bool) = let
   val after = start + 9
   val p0 = skip_ws(src, after, max, 256)
-  val is_dot = $AR.eq_int_int(src_byte(src, p0, max), 46)
+  val is_dot = $AR.eq_int_int($S.borrow_byte(src, p0, max), 46)
   val is_run = is_dot &&
-    $AR.eq_int_int(src_byte(src, p0 + 1, max), 114) &&
-    $AR.eq_int_int(src_byte(src, p0 + 2, max), 117) &&
-    $AR.eq_int_int(src_byte(src, p0 + 3, max), 110)
+    $AR.eq_int_int($S.borrow_byte(src, p0 + 1, max), 114) &&
+    $AR.eq_int_int($S.borrow_byte(src, p0 + 2, max), 117) &&
+    $AR.eq_int_int($S.borrow_byte(src, p0 + 3, max), 110)
 in
   if is_run then let
     val p1 = skip_ws(src, p0 + 4, max, 256)
@@ -744,7 +745,7 @@ fn lex_target_decl {l:agz}{n:pos}
    spans: !$B.builder, start: int, count: int): @(int, int) = let
   val p0 = skip_ws(src, start + 7, max, 256)
   val ident_end = skip_ident(src, p0, max, 4096)
-  val target = (if $AR.eq_int_int(src_byte(src, p0, max), 119) then 1 else 0): int
+  val target = (if $AR.eq_int_int($S.borrow_byte(src, p0, max), 119) then 1 else 0): int
   (* Check for block form: #target wasm begin...end *)
   val p1 = skip_ws(src, ident_end, max, 256)
 in
@@ -773,8 +774,8 @@ fun lex_passthrough_scan {l:agz}{n:pos}{fuel:nat} .<fuel>.
   if fuel <= 0 then pos
   else if pos >= src_len then pos
   else let
-    val b = src_byte(src, pos, max)
-    val b1 = src_byte(src, pos + 1, max)
+    val b = $S.borrow_byte(src, pos, max)
+    val b1 = $S.borrow_byte(src, pos + 1, max)
   in
     if $AR.eq_int_int(b, 47) && ($AR.eq_int_int(b1, 47) || $AR.eq_int_int(b1, 42))
     then pos
@@ -806,8 +807,8 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
   if fuel <= 0 then @(pos, count)
   else if pos >= src_len then @(pos, count)
   else let
-    val b0 = src_byte(src, pos, max)
-    val b1 = src_byte(src, pos + 1, max)
+    val b0 = $S.borrow_byte(src, pos, max)
+    val b1 = $S.borrow_byte(src, pos + 1, max)
   in
     (* // line comment *)
     if $AR.eq_int_int(b0, 47) && $AR.eq_int_int(b1, 47) then let

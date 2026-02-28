@@ -7,6 +7,7 @@
 #use arith as AR
 #use builder as B
 #use file as F
+#use str as S
 #use process as P
 #use result as R
 
@@ -87,13 +88,13 @@ fun find_dashdash {l:agz}{fuel:nat} .<fuel>.
       if $AR.eq_int_int(b1, 45) then
         if $AR.eq_int_int(b2, 0) then pos
         else let
-          val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+          val next = $S.find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
         in find_dashdash(buf, next + 1, len, fuel - 1) end
       else let
-        val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+        val next = $S.find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
       in find_dashdash(buf, next + 1, len, fuel - 1) end
     else let
-      val next = find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+      val next = $S.find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
     in find_dashdash(buf, next + 1, len, fuel - 1) end
   end
 
@@ -121,12 +122,12 @@ fun scan_only {l:agz}{fuel:nat} .<fuel>.
               if $AR.eq_int_int(b3, 110) then
                 if $AR.eq_int_int(b4, 108) then
                   if $AR.eq_int_int(b5, 121) then let
-                    val next = find_null(buf, p + 6, 4096, $AR.checked_nat(len - p))
+                    val next = $S.find_null(buf, p + 6, 4096, $AR.checked_nat(len - p))
                     val val_start = next + 1
                   in
                     if val_start < len then let
                           val v0 = byte2int0($A.get<byte>(buf, $AR.checked_idx(val_start, 4096)))
-                          val vend = find_null(buf, val_start, 4096, $AR.checked_nat(len - val_start + 1))
+                          val vend = $S.find_null(buf, val_start, 4096, $AR.checked_nat(len - val_start + 1))
                           val vlen = vend - val_start
                           val new_mask = (
                             if $AR.eq_int_int(v0, 100) then
@@ -142,22 +143,22 @@ fun scan_only {l:agz}{fuel:nat} .<fuel>.
                     else mask
                   end
                   else let
-                    val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+                    val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
                   in scan_only(buf, next + 1, len, mask, fuel - 1) end
                 else let
-                  val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+                  val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
                 in scan_only(buf, next + 1, len, mask, fuel - 1) end
               else let
-                val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+                val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
               in scan_only(buf, next + 1, len, mask, fuel - 1) end
             else let
-              val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+              val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
             in scan_only(buf, next + 1, len, mask, fuel - 1) end
           else let
-            val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+            val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
           in scan_only(buf, next + 1, len, mask, fuel - 1) end
         else let
-          val next = find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+          val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
         in scan_only(buf, next + 1, len, mask, fuel - 1) end
       end
   end
@@ -189,9 +190,9 @@ in
           val argc = count_argc(cl_buf, effective_len)
           val only_mask = scan_only(cl_buf, 0, effective_len, 0, $AR.checked_nat(effective_len + 1))
           val @(fz_cb, bv_cb) = $A.freeze<byte>(cl_buf)
-          val @(pna, pnl) = str_to_borrow("bats")
+          val @(pna, pnl) = $S.str_to_borrow("bats")
           val @(fzpn, bvpn) = $A.freeze<byte>(pna)
-          val @(pha, phl) = str_to_borrow("bats build tool")
+          val @(pha, phl) = $S.str_to_borrow("bats build tool")
           val @(fzph, bvph) = $A.freeze<byte>(pha)
           val p = $AP.parser_new(bvpn, pnl, bvph, phl)
           val () = $A.drop<byte>(fzpn, bvpn)

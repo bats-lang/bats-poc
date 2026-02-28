@@ -5,6 +5,7 @@
 #use array as A
 #use arith as AR
 #use builder as B
+#use str as S
 
 staload "helpers.sats"
 
@@ -49,11 +50,11 @@ fn read_i32 {l:agz}{n:pos}
 
 fn span_kind {l:agz}{n:pos}
   (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
-  src_byte(spans, idx * 28, max)
+  $S.borrow_byte(spans, idx * 28, max)
 
 fn span_dest {l:agz}{n:pos}
   (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
-  src_byte(spans, idx * 28 + 1, max)
+  $S.borrow_byte(spans, idx * 28 + 1, max)
 
 fn span_start {l:agz}{n:pos}
   (spans: !$A.borrow(byte, l, n), idx: int, max: int n): int =
@@ -90,7 +91,7 @@ fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
-    val b = src_byte(src, start, max)
+    val b = $S.borrow_byte(src, start, max)
     val () = $B.put_byte(out, b)
   in emit_range(src, start + 1, end_pos, max, out, fuel - 1) end
 
@@ -101,7 +102,7 @@ fun emit_blanks_count {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   if fuel <= 0 then count
   else if start >= end_pos then count
   else let
-    val b = src_byte(src, start, max)
+    val b = $S.borrow_byte(src, start, max)
     val new_count = (if $AR.eq_int_int(b, 10) then count + 1 else count): int
   in emit_blanks_count(src, start + 1, end_pos, max, new_count, fuel - 1) end
 
@@ -164,7 +165,7 @@ fun emit_mangled_pkg {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
-    val b = src_byte(src, start, max)
+    val b = $S.borrow_byte(src, start, max)
     val () = emit_mangled_byte(out, b)
   in emit_mangled_pkg(src, start + 1, end_pos, max, out, fuel - 1) end
 
@@ -675,7 +676,7 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
     val () = emit_range(bv_dt, 0, main0_pos, 524288, dats_final,
       $AR.checked_nat(main0_pos + 1))
     (* Write replacement *)
-    val () = bput(dats_final, "implement __BATS_main0")
+    val () = $B.bput(dats_final, "implement __BATS_main0")
     (* Copy after match+15 *)
     val after = main0_pos + 15
     val () = emit_range(bv_dt, after, dats_tmp_len, 524288, dats_final,
@@ -689,7 +690,7 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
   val () = $A.free<byte>($A.thaw<byte>(fz_dt))
 
   (* If has main0, add declaration to sats *)
-  val () = (if has_main0 then bput(sats_b, "\nfun __BATS_main0 (): void\n") else ())
+  val () = (if has_main0 then $B.bput(sats_b, "\nfun __BATS_main0 (): void\n") else ())
 
   val @(sats_arr, sats_len) = $B.to_arr(sats_b)
   val @(dats_arr, dats_len) = $B.to_arr(dats_final)

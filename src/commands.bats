@@ -6,6 +6,7 @@
 #use arith as AR
 #use builder as B
 #use file as F
+#use str as S
 #use process as P
 #use result as R
 #use sha256 as SHA
@@ -57,7 +58,7 @@ in
               (* Read source file *)
               val spath = $B.create()
               val @(fz_e, bv_e) = $A.freeze<byte>(ent)
-              val () = bput(spath, "src/bin/")
+              val () = $B.bput(spath, "src/bin/")
               val () = copy_to_builder(bv_e, 0, elen, 256, spath,
                 $AR.checked_nat(elen + 1))
               val () = $B.put_byte(spath, 0)
@@ -119,7 +120,7 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
   if kind_is_lib = 0 then ()
   else let
     val cmd = $B.create()
-    val () = bput(cmd, "docs")
+    val () = $B.bput(cmd, "docs")
     val _ = run_mkdir(cmd)
     val lp = str_to_path_arr("src/lib.bats")
     val @(fz_lp, bv_lp) = $A.freeze<byte>(lp)
@@ -135,7 +136,7 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
         val lcr = $F.file_close(lfd)
         val () = $R.discard<int><int>(lcr)
         val doc_b = $B.create()
-        val () = bput(doc_b, "# API Reference\n\n")
+        val () = $B.bput(doc_b, "# API Reference\n\n")
         (* Scan for #pub lines: 35,112,117,98,32 *)
         fun scan_pub {l2:agz}{fuel:nat} .<fuel>.
           (buf: !$A.arr(byte, l2, 524288), doc: !$B.builder,
@@ -157,7 +158,7 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
                   if $AR.eq_int_int(b3, 98) then
                     if $AR.eq_int_int(b4, 32) then let
                       (* Found #pub , copy rest of line *)
-                      val () = bput(doc, "```\n")
+                      val () = $B.bput(doc, "```\n")
                       fun copy_line {l3:agz}{fuel2:nat} .<fuel2>.
                         (buf: !$A.arr(byte, l3, 524288), doc: !$B.builder,
                          pos: int, fuel2: int fuel2): int =
@@ -173,19 +174,19 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
                           in copy_line(buf, doc, pos + 1, fuel2 - 1) end
                         end
                       val np = copy_line(buf, doc, pos + 5, $AR.checked_nat(len - pos))
-                      val () = bput(doc, "\n```\n\n")
+                      val () = $B.bput(doc, "\n```\n\n")
                     in scan_pub(buf, doc, np, len, fuel - 1) end
                     else let
-                      val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
+                      val np = $S.find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
                     in scan_pub(buf, doc, np + 1, len, fuel - 1) end
                   else let
-                    val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
+                    val np = $S.find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
                   in scan_pub(buf, doc, np + 1, len, fuel - 1) end
                 else let
-                  val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
+                  val np = $S.find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
                 in scan_pub(buf, doc, np + 1, len, fuel - 1) end
               else let
-                val np = find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
+                val np = $S.find_null(buf, pos, 524288, $AR.checked_nat(len - pos + 1))
               in scan_pub(buf, doc, np + 1, len, fuel - 1) end
             else let
               (* Skip to next newline *)
@@ -213,7 +214,7 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
         val () = $A.free<byte>($A.thaw<byte>(fz_dp))
         (* Write docs/index.md *)
         val idx_b = $B.create()
-        val () = bput(idx_b, "# Documentation\n\n- [API Reference](lib.md)\n")
+        val () = $B.bput(idx_b, "# Documentation\n\n- [API Reference](lib.md)\n")
         val ip = str_to_path_arr("docs/index.md")
         val @(fz_ip, bv_ip) = $A.freeze<byte>(ip)
         val _ = write_file_from_builder(bv_ip, 524288, idx_b)
@@ -312,10 +313,10 @@ in
                 val @(fz_ge, bv_ge) = $A.freeze<byte>(git_exec)
                 (* Get commit timestamp *)
                 val ts_argv = $B.create()
-                val () = bput(ts_argv, "git") val () = $B.put_byte(ts_argv, 0)
-                val () = bput(ts_argv, "log") val () = $B.put_byte(ts_argv, 0)
-                val () = bput(ts_argv, "-1") val () = $B.put_byte(ts_argv, 0)
-                val () = bput(ts_argv, "--format=%ct") val () = $B.put_byte(ts_argv, 0)
+                val () = $B.bput(ts_argv, "git") val () = $B.put_byte(ts_argv, 0)
+                val () = $B.bput(ts_argv, "log") val () = $B.put_byte(ts_argv, 0)
+                val () = $B.bput(ts_argv, "-1") val () = $B.put_byte(ts_argv, 0)
+                val () = $B.bput(ts_argv, "--format=%ct") val () = $B.put_byte(ts_argv, 0)
                 val ts_out = $A.alloc<byte>(4096)
                 val @(ts_rc, ts_len) = run_cmd_capture(bv_ge, 524288, ts_argv, 4, ts_out)
                 val ts = parse_decimal(ts_out, ts_len, 4096)
@@ -323,10 +324,10 @@ in
                 val @(yr, mo, dy, secs) = timestamp_to_calver(ts)
                 (* Check if on main branch *)
                 val br_argv = $B.create()
-                val () = bput(br_argv, "git") val () = $B.put_byte(br_argv, 0)
-                val () = bput(br_argv, "rev-parse") val () = $B.put_byte(br_argv, 0)
-                val () = bput(br_argv, "--abbrev-ref") val () = $B.put_byte(br_argv, 0)
-                val () = bput(br_argv, "HEAD") val () = $B.put_byte(br_argv, 0)
+                val () = $B.bput(br_argv, "git") val () = $B.put_byte(br_argv, 0)
+                val () = $B.bput(br_argv, "rev-parse") val () = $B.put_byte(br_argv, 0)
+                val () = $B.bput(br_argv, "--abbrev-ref") val () = $B.put_byte(br_argv, 0)
+                val () = $B.bput(br_argv, "HEAD") val () = $B.put_byte(br_argv, 0)
                 val br_out = $A.alloc<byte>(4096)
                 val @(br_rc, br_len) = run_cmd_capture(bv_ge, 524288, br_argv, 4, br_out)
                 (* Check if branch is "main" (109,97,105,110) *)
@@ -345,14 +346,14 @@ in
                 val () = $A.free<byte>($A.thaw<byte>(fz_ge))
                 (* Build version string *)
                 val vb_b = $B.create()
-                val () = bput_int(vb_b, yr)
+                val () = $B.bput_int(vb_b, yr)
                 val () = $B.put_byte(vb_b, 46) (* . *)
-                val () = bput_int(vb_b, mo)
+                val () = $B.bput_int(vb_b, mo)
                 val () = $B.put_byte(vb_b, 46)
-                val () = bput_int(vb_b, dy)
+                val () = $B.bput_int(vb_b, dy)
                 val () = $B.put_byte(vb_b, 46)
-                val () = bput_int(vb_b, secs)
-                val () = (if ~is_main then bput(vb_b, "dev1") else ())
+                val () = $B.bput_int(vb_b, secs)
+                val () = (if ~is_main then $B.bput(vb_b, "dev1") else ())
                 val @(verbuf, verlen) = (let
                   val @(va, vl) = $B.to_arr(vb_b)
                 in @(va, vl) end): [lvb:agz] @($A.arr(byte, lvb, 524288), int)
@@ -362,11 +363,11 @@ in
                 val @(fz_rp, bv_rp) = $A.freeze<byte>(repo)
                 val () = copy_to_builder(bv_rp, 0, rplen, 524288, zip_path,
                   $AR.checked_nat(rplen + 1))
-                val () = bput(zip_path, "/")
+                val () = $B.bput(zip_path, "/")
                 val @(fz_nb, bv_nb) = $A.freeze<byte>(nbuf)
                 val () = copy_to_builder(bv_nb, 0, nlen, 256, zip_path,
                   $AR.checked_nat(nlen + 1))
-                val () = bput(zip_path, "/")
+                val () = $B.bput(zip_path, "/")
                 (* Build prefix: replace '/' with '_' in name *)
                 val pfx = $B.create()
                 val () = copy_to_builder(bv_nb, 0, nlen, 256, pfx,
@@ -376,10 +377,10 @@ in
                 val @(fz_px, bv_px) = $A.freeze<byte>(pfx_arr)
                 val () = copy_to_builder(bv_px, 0, pfx_len, 524288, zip_path,
                   $AR.checked_nat(pfx_len + 1))
-                val () = bput(zip_path, "_")
+                val () = $B.bput(zip_path, "_")
                 val () = copy_to_builder(bv_vb, 0, verlen, 524288, zip_path,
                   $AR.checked_nat(verlen + 1))
-                val () = bput(zip_path, ".bats")
+                val () = $B.bput(zip_path, ".bats")
                 val () = $B.put_byte(zip_path, 0)
                 val @(zpa, zpa_len) = $B.to_arr(zip_path)
                 val @(fz_zp, bv_zp) = $A.freeze<byte>(zpa)
@@ -387,20 +388,20 @@ in
                 val mkd = $B.create()
                 val () = copy_to_builder(bv_rp, 0, rplen, 524288, mkd,
                   $AR.checked_nat(rplen + 1))
-                val () = bput(mkd, "/")
+                val () = $B.bput(mkd, "/")
                 val () = copy_to_builder(bv_nb, 0, nlen, 256, mkd,
                   $AR.checked_nat(nlen + 1))
                 val _ = run_mkdir(mkd)
                 val zip_exec = str_to_path_arr("/usr/bin/zip")
                 val @(fz_ze, bv_ze) = $A.freeze<byte>(zip_exec)
                 val cmd = $B.create()
-                val () = bput(cmd, "zip") val () = $B.put_byte(cmd, 0)
-                val () = bput(cmd, "-r") val () = $B.put_byte(cmd, 0)
+                val () = $B.bput(cmd, "zip") val () = $B.put_byte(cmd, 0)
+                val () = $B.bput(cmd, "-r") val () = $B.put_byte(cmd, 0)
                 val () = copy_to_builder(bv_zp, 0, zpa_len - 1, 524288, cmd,
                   $AR.checked_nat(zpa_len + 1))
                 val () = $B.put_byte(cmd, 0)
-                val () = bput(cmd, "bats.toml") val () = $B.put_byte(cmd, 0)
-                val () = bput(cmd, "src/") val () = $B.put_byte(cmd, 0)
+                val () = $B.bput(cmd, "bats.toml") val () = $B.put_byte(cmd, 0)
+                val () = $B.bput(cmd, "src/") val () = $B.put_byte(cmd, 0)
                 val () = $A.drop<byte>(fz_nb, bv_nb)
                 val () = $A.free<byte>($A.thaw<byte>(fz_nb))
                 val () = $A.drop<byte>(fz_rp, bv_rp)
@@ -469,18 +470,18 @@ in
                     val @(fz_sh, bv_sh) = $A.freeze<byte>(sha_buf)
                     val () = copy_to_builder(bv_sh, 0, 64, 65, sidecar,
                       $AR.checked_nat(65))
-                    val () = bput(sidecar, "  ")
+                    val () = $B.bput(sidecar, "  ")
                     (* just the filename part of zip_path *)
                     val () = copy_to_builder(bv_zp, 0, zpa_len - 1, 524288,
                       sidecar, $AR.checked_nat(zpa_len + 1))
-                    val () = bput(sidecar, "\n")
+                    val () = $B.bput(sidecar, "\n")
                     val () = $A.drop<byte>(fz_sh, bv_sh)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sh))
                     (* write to zip_path + ".sha256" *)
                     val sp2 = $B.create()
                     val () = copy_to_builder(bv_zp, 0, zpa_len - 1, 524288,
                       sp2, $AR.checked_nat(zpa_len + 1))
-                    val () = bput(sp2, ".sha256")
+                    val () = $B.bput(sp2, ".sha256")
                     val () = $B.put_byte(sp2, 0)
                     val @(sp2a, _) = $B.to_arr(sp2)
                     val @(fz_sp2, bv_sp2) = $A.freeze<byte>(sp2a)
@@ -555,38 +556,38 @@ end
 
 implement write_claude_rules() = let
   val cmd = $B.create()
-  val () = bput(cmd, ".claude/rules")
+  val () = $B.bput(cmd, ".claude/rules")
   val _ = run_mkdir(cmd)
   val rb = $B.create()
-  val () = bput(rb, "# Writing Bats\n\n")
-  val () = bput(rb, "Bats is a language that compiles to ATS2.\n\n")
-  val () = bput(rb, "## Build commands\n\n")
-  val () = bput(rb, "```bash\n")
-  val () = bput(rb, "bats build    # Build binary project\n")
-  val () = bput(rb, "bats check    # Type-check without linking\n")
-  val () = bput(rb, "bats clean    # Remove generated artifacts\n")
-  val () = bput(rb, "```\n\n")
-  val () = bput(rb, "## Project layout\n\n")
-  val () = bput(rb, "- `bats.toml` -- package config\n")
-  val () = bput(rb, "- `src/lib.bats` -- library entry point (kind = \"lib\")\n")
-  val () = bput(rb, "- `src/bin/<name>.bats` -- binary entry points (kind = \"bin\")\n\n")
-  val () = bput(rb, "## Bats-specific syntax\n\n")
-  val () = bput(rb, "### `#pub` -- public declarations\n\n")
-  val () = bput(rb, "```bats\n")
-  val () = bput(rb, "#pub fun greet (name: string): void\n")
-  val () = bput(rb, "implement greet (name) = println! (\"hello \", name)\n")
-  val () = bput(rb, "```\n\n")
-  val () = bput(rb, "### `#use` -- package imports\n\n")
-  val () = bput(rb, "```bats\n")
-  val () = bput(rb, "#use mylib as M\n")
-  val () = bput(rb, "val x = $M.greeting ()\n")
-  val () = bput(rb, "```\n\n")
-  val () = bput(rb, "## ATS2 essentials\n\n")
-  val () = bput(rb, "- `println!` has a bang\n")
-  val () = bput(rb, "- `fun` declares functions, `val` binds values\n")
-  val () = bput(rb, "- Pattern matching: `case+ x of | 0 => ... | n => ...`\n")
-  val () = bput(rb, "- Types: `int`, `string`, `bool`, `void`\n")
-  val () = bput(rb, "- No semicolons at end of expressions\n")
+  val () = $B.bput(rb, "# Writing Bats\n\n")
+  val () = $B.bput(rb, "Bats is a language that compiles to ATS2.\n\n")
+  val () = $B.bput(rb, "## Build commands\n\n")
+  val () = $B.bput(rb, "```bash\n")
+  val () = $B.bput(rb, "bats build    # Build binary project\n")
+  val () = $B.bput(rb, "bats check    # Type-check without linking\n")
+  val () = $B.bput(rb, "bats clean    # Remove generated artifacts\n")
+  val () = $B.bput(rb, "```\n\n")
+  val () = $B.bput(rb, "## Project layout\n\n")
+  val () = $B.bput(rb, "- `bats.toml` -- package config\n")
+  val () = $B.bput(rb, "- `src/lib.bats` -- library entry point (kind = \"lib\")\n")
+  val () = $B.bput(rb, "- `src/bin/<name>.bats` -- binary entry points (kind = \"bin\")\n\n")
+  val () = $B.bput(rb, "## Bats-specific syntax\n\n")
+  val () = $B.bput(rb, "### `#pub` -- public declarations\n\n")
+  val () = $B.bput(rb, "```bats\n")
+  val () = $B.bput(rb, "#pub fun greet (name: string): void\n")
+  val () = $B.bput(rb, "implement greet (name) = println! (\"hello \", name)\n")
+  val () = $B.bput(rb, "```\n\n")
+  val () = $B.bput(rb, "### `#use` -- package imports\n\n")
+  val () = $B.bput(rb, "```bats\n")
+  val () = $B.bput(rb, "#use mylib as M\n")
+  val () = $B.bput(rb, "val x = $M.greeting ()\n")
+  val () = $B.bput(rb, "```\n\n")
+  val () = $B.bput(rb, "## ATS2 essentials\n\n")
+  val () = $B.bput(rb, "- `println!` has a bang\n")
+  val () = $B.bput(rb, "- `fun` declares functions, `val` binds values\n")
+  val () = $B.bput(rb, "- Pattern matching: `case+ x of | 0 => ... | n => ...`\n")
+  val () = $B.bput(rb, "- Types: `int`, `string`, `bool`, `void`\n")
+  val () = $B.bput(rb, "- No semicolons at end of expressions\n")
   val rp = str_to_path_arr(".claude/rules/bats.md")
   val @(fz_rp, bv_rp) = $A.freeze<byte>(rp)
   val _ = write_file_from_builder(bv_rp, 524288, rb)
@@ -615,14 +616,14 @@ in
     val pwd_exec = str_to_path_arr("/bin/pwd")
     val @(fz_pwd, bv_pwd) = $A.freeze<byte>(pwd_exec)
     val pwd_argv = $B.create()
-    val () = bput(pwd_argv, "pwd") val () = $B.put_byte(pwd_argv, 0)
+    val () = $B.bput(pwd_argv, "pwd") val () = $B.put_byte(pwd_argv, 0)
     (* TODO: run_cmd sends stdout to /dev/null, need stdout capture *)
     val _ = run_cmd(bv_pwd, 524288, pwd_argv, 1)
     val () = $A.drop<byte>(fz_pwd, bv_pwd)
     val () = $A.free<byte>($A.thaw<byte>(fz_pwd))
     (* Write placeholder CWD *)
     val cwdb = $B.create()
-    val () = bput(cwdb, ".")
+    val () = $B.bput(cwdb, ".")
     val cwdp = str_to_path_arr("/tmp/_bpoc_cwd.txt")
     val @(fz_cwdp, bv_cwdp) = $A.freeze<byte>(cwdp)
     val _ = write_file_from_builder(bv_cwdp, 524288, cwdb)
@@ -653,7 +654,7 @@ in
     if fuel2 <= 0 then last
     else if pos >= len then last
     else let
-      val b = src_byte(bv, pos, 4096)
+      val b = $S.borrow_byte(bv, pos, 4096)
     in
       if b = 47 then find_last_slash(bv, pos + 1, len, pos, fuel2 - 1)
       else find_last_slash(bv, pos + 1, len, last, fuel2 - 1)
@@ -664,16 +665,16 @@ in
   val name_len = cwd_len - name_start
   (* mkdir *)
   val cmd1 = $B.create()
-  val () = (if kind = 0 then bput(cmd1, "src/bin")
-    else bput(cmd1, "src"))
+  val () = (if kind = 0 then $B.bput(cmd1, "src/bin")
+    else $B.bput(cmd1, "src"))
   val _ = run_mkdir(cmd1)
   (* Write bats.toml *)
   val toml = $B.create()
-  val () = bput(toml, "[package]\nname = \"")
+  val () = $B.bput(toml, "[package]\nname = \"")
   val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, toml,
     $AR.checked_nat(name_len + 1))
-  val () = (if kind = 0 then bput(toml, "\"\nkind = \"bin\"\n\n[dependencies]\n")
-    else bput(toml, "\"\nkind = \"lib\"\n\n[dependencies]\n"))
+  val () = (if kind = 0 then $B.bput(toml, "\"\nkind = \"bin\"\n\n[dependencies]\n")
+    else $B.bput(toml, "\"\nkind = \"lib\"\n\n[dependencies]\n"))
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
   val rc = write_file_from_builder(bv_tp, 524288, toml)
@@ -683,16 +684,16 @@ in
   val src = $B.create()
   val src_path = $B.create()
   val () = (if kind = 0 then let
-    val () = bput(src, "implement ")
-    val () = bput(src, "main0 () = println! (\"hello, world!\")\n")
-    val () = bput(src_path, "src/bin/")
+    val () = $B.bput(src, "implement ")
+    val () = $B.bput(src, "main0 () = println! (\"hello, world!\")\n")
+    val () = $B.bput(src_path, "src/bin/")
     val () = copy_to_builder(bv_cwd, name_start, cwd_len, 4096, src_path,
       $AR.checked_nat(name_len + 1))
-  in bput(src_path, ".bats") end
+  in $B.bput(src_path, ".bats") end
   else let
-    val () = bput(src, "#pub fun hello(): void\n\n")
-    val () = bput(src, "implement hello () = println! (\"hello from library\")\n")
-  in bput(src_path, "src/lib.bats") end)
+    val () = $B.bput(src, "#pub fun hello(): void\n\n")
+    val () = $B.bput(src, "implement hello () = println! (\"hello from library\")\n")
+  in $B.bput(src_path, "src/lib.bats") end)
   val () = $B.put_byte(src_path, 0)
   val @(src_pa, _) = $B.to_arr(src_path)
   val @(fz_sp, bv_sp) = $A.freeze<byte>(src_pa)
@@ -703,7 +704,7 @@ in
   val () = $A.free<byte>($A.thaw<byte>(fz_cwd))
   (* Write .gitignore *)
   val gi = $B.create()
-  val () = bput(gi, "build/\ndist/\nbats_modules/\ndocs/\n")
+  val () = $B.bput(gi, "build/\ndist/\nbats_modules/\ndocs/\n")
   val gp = str_to_path_arr(".gitignore")
   val @(fz_gp, bv_gp) = $A.freeze<byte>(gp)
   val rc3 = write_file_from_builder(bv_gp, 524288, gi)
@@ -783,9 +784,9 @@ in
       val () = copy_to_builder(bv_tb2, 0, tlen, 4096, out_b, $AR.checked_nat(tlen + 1))
       val () = $A.drop<byte>(fz_tb2, bv_tb2)
       val () = $A.free<byte>($A.thaw<byte>(fz_tb2))
-      val () = bput(out_b, "\"")
+      val () = $B.bput(out_b, "\"")
       val () = copy_to_builder(bv, pkg_start, pkg_start + pkg_len, max, out_b, $AR.checked_nat(pkg_len + 1))
-      val () = bput(out_b, "\" = \"\"\n")
+      val () = $B.bput(out_b, "\" = \"\"\n")
       val tp3 = str_to_path_arr("bats.toml")
       val @(fz_tp3, bv_tp3) = $A.freeze<byte>(tp3)
       val rc = write_file_from_builder(bv_tp3, 524288, out_b)
@@ -828,20 +829,20 @@ in
       val sed_exec = str_to_path_arr("/usr/bin/sed")
       val @(fz_se, bv_se) = $A.freeze<byte>(sed_exec)
       val sed_argv = $B.create()
-      val () = bput(sed_argv, "sed") val () = $B.put_byte(sed_argv, 0)
-      val () = bput(sed_argv, "-i") val () = $B.put_byte(sed_argv, 0)
+      val () = $B.bput(sed_argv, "sed") val () = $B.put_byte(sed_argv, 0)
+      val () = $B.bput(sed_argv, "-i") val () = $B.put_byte(sed_argv, 0)
       (* Build pattern: /^"<pkg>"/d *)
       val pat_b = $B.create()
-      val () = bput(pat_b, "/^\"")
+      val () = $B.bput(pat_b, "/^\"")
       val () = copy_to_builder(bv, pkg_start, pkg_start + pkg_len, max, pat_b, $AR.checked_nat(pkg_len + 1))
-      val () = bput(pat_b, "\"/d")
+      val () = $B.bput(pat_b, "\"/d")
       val @(pat_a, pat_len) = $B.to_arr(pat_b)
       val @(fz_pat, bv_pat) = $A.freeze<byte>(pat_a)
       val () = copy_to_builder(bv_pat, 0, pat_len, 524288, sed_argv, $AR.checked_nat(pat_len + 1))
       val () = $B.put_byte(sed_argv, 0)
       val () = $A.drop<byte>(fz_pat, bv_pat)
       val () = $A.free<byte>($A.thaw<byte>(fz_pat))
-      val () = bput(sed_argv, "bats.toml") val () = $B.put_byte(sed_argv, 0)
+      val () = $B.bput(sed_argv, "bats.toml") val () = $B.put_byte(sed_argv, 0)
       val rc = run_cmd(bv_se, 524288, sed_argv, 4)
       val () = $A.drop<byte>(fz_se, bv_se)
       val () = $A.free<byte>($A.thaw<byte>(fz_se))
@@ -1011,7 +1012,7 @@ in
           if fuel <= 0 then ()
           else if pos >= len then ()
           else let
-            val b = src_byte(bv, pos, 4096)
+            val b = $S.borrow_byte(bv, pos, 4096)
           in
             if $AR.eq_int_int(b, 10) then let
               val () = $B.put_byte(cmd, 32) (* space *)
@@ -1093,8 +1094,8 @@ in
                   in @(bbn, brl2) end
                 | ~$R.err(_) => let val bbn = $A.alloc<byte>(256) in @(bbn, 0) end): [lbbn:agz] @($A.arr(byte, lbbn, 256), int)
               val cmd = $B.create()
-              val () = (if release > 0 then bput(cmd, "./dist/release/")
-                else bput(cmd, "./dist/debug/"))
+              val () = (if release > 0 then $B.bput(cmd, "./dist/release/")
+                else $B.bput(cmd, "./dist/debug/"))
             in
               if bn_len > 0 then let
                 val @(fz_bn, bv_bn) = $A.freeze<byte>(bin_name)
