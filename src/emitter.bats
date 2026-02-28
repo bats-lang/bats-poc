@@ -664,7 +664,6 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
         end
         else find_impl_main0(bv, len, max, pos + 1, fuel - 1)
       end
-    end
   val main0_pos = find_impl_main0(bv_dt, dats_tmp_len, 524288,
     0, $AR.checked_nat(dats_tmp_len + 1))
   val has_main0 = main0_pos >= 0
