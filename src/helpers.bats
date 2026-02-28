@@ -89,23 +89,6 @@ implement get_self_path() = !g_self_path
    String builder helpers
    ============================================================ *)
 
-#pub fun bput_loop {sn:nat}{i:nat | i <= sn}{fuel:nat}  (b: !$B.builder, s: string sn, slen: int sn, i: int i, fuel: int fuel): void
-
-implement bput_loop(b, s, slen, i, fuel) =
-  if fuel <= 0 then ()
-  else if i >= slen then ()
-  else let
-    val c = char2int0(string_get_at(s, i))
-    val () = $B.put_byte(b, c)
-  in bput_loop(b, s, slen, i + 1, fuel - 1) end
-
-#pub fn bput {sn:nat} (b: !$B.builder, s: string sn): void
-
-implement bput(b, s) = let
-  val slen_sz = string1_length(s)
-  val slen = g1u2i(slen_sz)
-in bput_loop(b, s, slen, 0, $AR.checked_nat(slen + 1)) end
-
 #pub fun print_arr {l:agz}{n:pos}{fuel:nat}  (buf: !$A.arr(byte, l, n), i: int, len: int, max: int n,
    fuel: int fuel): void
 
@@ -116,17 +99,6 @@ implement print_arr(buf, i, len, max, fuel) =
     val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(i, max)))
     val () = print_char(int2char0(b))
   in print_arr(buf, i + 1, len, max, fuel - 1) end
-
-#pub fun find_null {l:agz}{n:pos}{fuel:nat}  (buf: !$A.arr(byte, l, n), pos: int, max: int n,
-   fuel: int fuel): int
-
-implement find_null(buf, pos, max, fuel) =
-  if fuel <= 0 then pos
-  else if pos < 0 then pos
-  else if pos >= max then pos
-  else
-    if $AR.eq_int_int(byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, max))), 0) then pos
-    else find_null(buf, pos + 1, max, fuel - 1)
 
 #pub fn is_dot_or_dotdot {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
@@ -143,94 +115,58 @@ implement is_dot_or_dotdot(ent, len, max) =
    Filename matchers
    ============================================================ *)
 
-#pub fun bytes_match {l:agz}{n:pos}{sn:nat}{pi:nat | pi <= sn}{fuel:nat}  (ent: !$A.arr(byte, l, n), p: int, max: int n,
-   pat: string sn, pi: int pi, plen: int sn, fuel: int fuel): bool
-
-implement bytes_match(ent, p, max, pat, pi, plen, fuel) =
-  if fuel <= 0 then pi >= plen
-  else if pi >= plen then true
-  else
-    if $AR.eq_int_int(byte2int0($A.get<byte>(ent, $AR.checked_idx(p + pi, max))),
-         char2int0(string_get_at(pat, pi))) then
-      bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
-    else false
-
-#pub fn has_suffix {l:agz}{n:pos}{sn:nat}
-  (ent: !$A.arr(byte, l, n), len: int, max: int n,
-   suf: string sn, slen: int sn): bool
-
-implement has_suffix(ent, len, max, suf, slen) =
-  if len < slen then false
-  else bytes_match(ent, len - slen, max, suf, 0, slen,
-    $AR.checked_nat(slen + 1))
-
-#pub fn name_eq {l:agz}{n:pos}{sn:nat}
-  (ent: !$A.arr(byte, l, n), len: int, max: int n,
-   s: string sn, slen: int sn): bool
-
-implement name_eq(ent, len, max, s, slen) =
-  if len <> slen then false
-  else bytes_match(ent, 0, max, s, 0, slen, $AR.checked_nat(slen + 1))
-
 #pub fn has_bats_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
 
 implement has_bats_ext(ent, len, max) =
-  has_suffix(ent, len, max, ".bats", 5)
+  $S.has_suffix(ent, len, max, ".bats", 5)
 
 #pub fn has_dats_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
 
 implement has_dats_ext(ent, len, max) =
-  has_suffix(ent, len, max, ".dats", 5)
+  $S.has_suffix(ent, len, max, ".dats", 5)
 
 #pub fn has_dats_c_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
 
 implement has_dats_c_ext(ent, len, max) =
-  has_suffix(ent, len, max, "_dats.c", 7)
+  $S.has_suffix(ent, len, max, "_dats.c", 7)
 
 #pub fn has_dats_o_ext {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
 
 implement has_dats_o_ext(ent, len, max) =
-  has_suffix(ent, len, max, "_dats.o", 7)
+  $S.has_suffix(ent, len, max, "_dats.o", 7)
 
 #pub fn is_lib_bats {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
 
 implement is_lib_bats(ent, len, max) =
-  name_eq(ent, len, max, "lib.bats", 8)
+  $S.name_eq(ent, len, max, "lib.bats", 8)
 
 #pub fn is_lib_dats {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
 
 implement is_lib_dats(ent, len, max) =
-  name_eq(ent, len, max, "lib.dats", 8)
+  $S.name_eq(ent, len, max, "lib.dats", 8)
 
 #pub fn is_lib_dats_c {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
 
 implement is_lib_dats_c(ent, len, max) =
-  name_eq(ent, len, max, "lib_dats.c", 10)
+  $S.name_eq(ent, len, max, "lib_dats.c", 10)
 
 #pub fn is_lib_dats_o {l:agz}{n:pos}
   (ent: !$A.arr(byte, l, n), len: int, max: int n): bool
 
 implement is_lib_dats_o(ent, len, max) =
-  name_eq(ent, len, max, "lib_dats.o", 10)
+  $S.name_eq(ent, len, max, "lib_dats.o", 10)
 
 (* ============================================================
    Byte-level helpers
    ============================================================ *)
 
-#pub fn src_byte {l:agz}{n:pos}
-  (src: !$A.borrow(byte, l, n), pos: int, max: int n): int
-
-implement src_byte(src, pos, max) =
-  if pos < 0 then 0
-  else if pos >= max then 0
-  else byte2int0($A.read<byte>(src, $AR.checked_idx(pos, max)))
 
 #pub fun print_borrow {l:agz}{n:pos}{fuel:nat}  (buf: !$A.borrow(byte, l, n), i: int, len: int, max: int n,
    fuel: int fuel): void
@@ -239,7 +175,7 @@ implement print_borrow(buf, i, len, max, fuel) =
   if fuel <= 0 then ()
   else if i >= len then ()
   else let
-    val b = src_byte(buf, i, max)
+    val b = $S.borrow_byte(buf, i, max)
     val () = print_char(int2char0(b))
   in print_borrow(buf, i + 1, len, max, fuel - 1) end
 
@@ -254,7 +190,7 @@ implement copy_to_builder(src, start, len, max, dst, fuel) =
   if fuel <= 0 then ()
   else if start >= len then ()
   else let
-    val b = src_byte(src, start, max)
+    val b = $S.borrow_byte(src, start, max)
     val () = $B.put_byte(dst, b)
   in copy_to_builder(src, start + 1, len, max, dst, fuel - 1) end
 
@@ -264,24 +200,12 @@ implement copy_to_builder(src, start, len, max, dst, fuel) =
 implement find_basename_start(bv, pos, max, last, fuel) =
   if fuel <= 0 then last + 1
   else let
-    val b = src_byte(bv, pos, max)
+    val b = $S.borrow_byte(bv, pos, max)
   in
     if $AR.eq_int_int(b, 0) then last + 1
     else if $AR.eq_int_int(b, 47) then
       find_basename_start(bv, pos + 1, max, pos, fuel - 1)
     else find_basename_start(bv, pos + 1, max, last, fuel - 1)
-  end
-
-#pub fun find_null_bv {l:agz}{n:pos}{fuel:nat}  (bv: !$A.borrow(byte, l, n), pos: int, max: int n,
-   fuel: int fuel): int
-
-implement find_null_bv(bv, pos, max, fuel) =
-  if fuel <= 0 then pos
-  else let
-    val b = src_byte(bv, pos, max)
-  in
-    if $AR.eq_int_int(b, 0) then pos
-    else find_null_bv(bv, pos + 1, max, fuel - 1)
   end
 
 #pub fun wbw_loop {l:agz}{fuel:nat}  (bw: !$F.buf_writer, bv: !$A.borrow(byte, l, 524288),
@@ -291,7 +215,7 @@ implement wbw_loop(bw, bv, i, lim, fuel) =
   if fuel <= 0 then ()
   else if i >= lim then ()
   else let
-    val b = src_byte(bv, i, 524288)
+    val b = $S.borrow_byte(bv, i, 524288)
     val wr = $F.buf_write_byte(bw, b)
     val () = $R.discard<int><int>(wr)
   in wbw_loop(bw, bv, i + 1, lim, fuel - 1) end
@@ -397,9 +321,9 @@ implement run_mkdir(path_b) = let
   val exec = str_to_path_arr("/bin/mkdir")
   val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
   val argv = $B.create()
-  val () = bput(argv, "mkdir")
+  val () = $B.bput(argv, "mkdir")
   val () = $B.put_byte(argv, 0)
-  val () = bput(argv, "-p")
+  val () = $B.bput(argv, "-p")
   val () = $B.put_byte(argv, 0)
   val @(pa, pl) = $B.to_arr(path_b)
   val @(fz_p, bv_p) = $A.freeze<byte>(pa)
@@ -419,7 +343,7 @@ implement run_cmd (exec_bv, exec_len, argv_b, argc) = let
   val @(argv_arr, _) = $B.to_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   val envp_b = $B.create()
-  val () = bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
+  val () = $B.bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
   val () = $B.put_byte(envp_b, 0)
   val @(envp_arr, _) = $B.to_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
@@ -500,35 +424,6 @@ implement timestamp_to_calver(ts) = let
   val y2 = (if m <= 2 then $AR.add_int_int(y, 1) else y): int
 in @(y2, m, d, secs_of_day) end
 
-(* Write an integer as decimal into a builder *)
-#pub fn bput_int(b: !$B.builder, v: int): void
-
-implement bput_int(b, v) = let
-  val digits = $A.alloc<byte>(16)
-  fun fill {ld:agz}{fuel:nat} .<fuel>.
-    (digits: !$A.arr(byte, ld, 16), v: int, pos: int, fuel: int fuel): int =
-    if fuel <= 0 then pos
-    else if v < 10 then let
-      val () = $A.set<byte>(digits, $AR.checked_idx(pos, 16), int2byte0(48 + v))
-    in pos + 1 end
-    else let
-      val () = $A.set<byte>(digits, $AR.checked_idx(pos, 16), int2byte0(48 + $AR.mod_int_int(v, 10)))
-    in fill(digits, $AR.div_int_int(v, 10), pos + 1, fuel - 1) end
-  val is_neg = v < 0
-  val abs_v = (if is_neg then 0 - v else v): int
-  val ndigits = fill(digits, abs_v, 0, 15)
-  val () = (if is_neg then $B.put_byte(b, 45) else ())
-  fun emit {ld:agz}{fuel:nat} .<fuel>.
-    (digits: !$A.arr(byte, ld, 16), b: !$B.builder, pos: int, fuel: int fuel): void =
-    if fuel <= 0 then ()
-    else if pos < 0 then ()
-    else let
-      val () = $B.put_byte(b, byte2int0($A.get<byte>(digits, $AR.checked_idx(pos, 16))))
-    in emit(digits, b, pos - 1, fuel - 1) end
-  val () = emit(digits, b, ndigits - 1, 16)
-  val () = $A.free<byte>(digits)
-in end
-
 (* Run a command and capture stdout into outbuf. Returns @(exit_code, stdout_len). *)
 #pub fn run_cmd_capture {le:agz}{lo:agz}
   (exec_bv: !$A.borrow(byte, le, 524288), exec_len: int,
@@ -539,7 +434,7 @@ implement run_cmd_capture (exec_bv, exec_len, argv_b, argc, outbuf) = let
   val @(argv_arr, _) = $B.to_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   val envp_b = $B.create()
-  val () = bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
+  val () = $B.bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
   val () = $B.put_byte(envp_b, 0)
   val @(envp_arr, _) = $B.to_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
@@ -583,31 +478,31 @@ implement run_patsopt(ph, phlen, out_bv, out_len, in_bv, in_len) = let
   val exec_b = $B.create()
   val () = copy_to_builder(ph, 0, phlen, 512, exec_b,
     $AR.checked_nat(phlen + 1))
-  val () = bput(exec_b, "/bin/patsopt")
+  val () = $B.bput(exec_b, "/bin/patsopt")
   val @(exec_arr, exec_len) = $B.to_arr(exec_b)
   val @(fz_exec, bv_exec) = $A.freeze<byte>(exec_arr)
   val argv_b = $B.create()
-  val () = bput(argv_b, "patsopt")
+  val () = $B.bput(argv_b, "patsopt")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "-IATS")
+  val () = $B.bput(argv_b, "-IATS")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "build")
+  val () = $B.bput(argv_b, "build")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "-IATS")
+  val () = $B.bput(argv_b, "-IATS")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "build/src")
+  val () = $B.bput(argv_b, "build/src")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "-IATS")
+  val () = $B.bput(argv_b, "-IATS")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "build/bats_modules")
+  val () = $B.bput(argv_b, "build/bats_modules")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "-o")
+  val () = $B.bput(argv_b, "-o")
   val () = $B.put_byte(argv_b, 0)
   val out_clen = out_len - 1
   val () = copy_to_builder(out_bv, 0, out_clen, 524288, argv_b,
     $AR.checked_nat(out_len + 1))
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "-d")
+  val () = $B.bput(argv_b, "-d")
   val () = $B.put_byte(argv_b, 0)
   val in_clen = in_len - 1
   val () = copy_to_builder(in_bv, 0, in_clen, 524288, argv_b,
@@ -616,7 +511,7 @@ implement run_patsopt(ph, phlen, out_bv, out_len, in_bv, in_len) = let
   val @(argv_arr, _) = $B.to_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   val envp_b = $B.create()
-  val () = bput(envp_b, "PATSHOME=")
+  val () = $B.bput(envp_b, "PATSHOME=")
   val () = copy_to_builder(ph, 0, phlen, 512, envp_b,
     $AR.checked_nat(phlen + 1))
   val () = $B.put_byte(envp_b, 0)
@@ -692,11 +587,11 @@ implement run_cc(ph, phlen, out_bv, out_len, in_bv, in_len, rel) = let
   val () = $A.write_byte(exec_arr, 10, 99)
   val @(fz_exec, bv_exec) = $A.freeze<byte>(exec_arr)
   val argv_b = $B.create()
-  val () = bput(argv_b, "cc")
+  val () = $B.bput(argv_b, "cc")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "-c")
+  val () = $B.bput(argv_b, "-c")
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "-o")
+  val () = $B.bput(argv_b, "-o")
   val () = $B.put_byte(argv_b, 0)
   val cc_out_clen = out_len - 1
   val () = copy_to_builder(out_bv, 0, cc_out_clen, 524288, argv_b,
@@ -707,28 +602,28 @@ implement run_cc(ph, phlen, out_bv, out_len, in_bv, in_len, rel) = let
     $AR.checked_nat(in_len + 1))
   val () = $B.put_byte(argv_b, 0)
   val argc = (if rel > 0 then let
-    val () = bput(argv_b, "-O2")
+    val () = $B.bput(argv_b, "-O2")
     val () = $B.put_byte(argv_b, 0)
   in 8 end
   else let
-    val () = bput(argv_b, "-g")
+    val () = $B.bput(argv_b, "-g")
     val () = $B.put_byte(argv_b, 0)
-    val () = bput(argv_b, "-O0")
+    val () = $B.bput(argv_b, "-O0")
     val () = $B.put_byte(argv_b, 0)
   in 9 end): int
-  val () = bput(argv_b, "-I")
+  val () = $B.bput(argv_b, "-I")
   val () = copy_to_builder(ph, 0, phlen, 512, argv_b,
     $AR.checked_nat(phlen + 1))
   val () = $B.put_byte(argv_b, 0)
-  val () = bput(argv_b, "-I")
+  val () = $B.bput(argv_b, "-I")
   val () = copy_to_builder(ph, 0, phlen, 512, argv_b,
     $AR.checked_nat(phlen + 1))
-  val () = bput(argv_b, "/ccomp/runtime")
+  val () = $B.bput(argv_b, "/ccomp/runtime")
   val () = $B.put_byte(argv_b, 0)
   val @(argv_arr, _) = $B.to_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   val envp_b = $B.create()
-  val () = bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
+  val () = $B.bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
   val () = $B.put_byte(envp_b, 0)
   val @(envp_arr, _) = $B.to_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
@@ -809,7 +704,7 @@ end
 
 implement str_to_path_arr(s) = let
   val b = $B.create()
-  val () = bput(b, s)
+  val () = $B.bput(b, s)
   val () = $B.put_byte(b, 0)
   val @(arr, _) = $B.to_arr(b)
 in arr end
@@ -959,37 +854,15 @@ implement count_argc_loop(buf, pos, len, max, count, fuel) =
 implement count_argc(buf, len) =
   count_argc_loop(buf, 0, len, 4096, 0, $AR.checked_nat(len + 1))
 
-#pub fun fill_exact {l:agz}{n:pos}{sn:nat}{i:nat | i <= sn}{fuel:nat}  (arr: !$A.arr(byte, l, n), s: string sn, n: int n, slen: int sn,
-   i: int i, fuel: int fuel): void
-
-implement fill_exact(arr, s, n, slen, i, fuel) =
-  if fuel <= 0 then ()
-  else if i >= slen then ()
-  else if i >= n then ()
-  else let
-    val c = char2int0(string_get_at(s, i))
-    val () = $A.set<byte>(arr, $AR.checked_idx(i, n), int2byte0(c))
-  in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
-
-#pub fn str_to_borrow {sn:pos}
-  (s: string sn): [l:agz][n:pos] @($A.arr(byte, l, n), int n)
-
-implement str_to_borrow(s) = let
-  val slen_sz = string1_length(s)
-  val slen = g1u2i(slen_sz)
-  val n = $AR.checked_arr_size(slen)
-  val arr = $A.alloc<byte>(n)
-  val () = fill_exact(arr, s, n, slen, 0, $AR.checked_nat(slen + 1))
-in @(arr, n) end
 
 #pub fn ap_flag {sn:pos}{sh:pos}
   (p: $AP.parser, name: string sn, sc: int, help: string sh
   ): @($AP.parser, $AP.arg($AP.bool_val))
 
 implement ap_flag(p, name, sc, help) = let
-  val @(na, nl) = str_to_borrow(name)
+  val @(na, nl) = $S.str_to_borrow(name)
   val @(fzn, bvn) = $A.freeze<byte>(na)
-  val @(ha, hl) = str_to_borrow(help)
+  val @(ha, hl) = $S.str_to_borrow(help)
   val @(fzh, bvh) = $A.freeze<byte>(ha)
   val @(p2, h) = $AP.add_flag(p, bvn, nl, sc, bvh, hl)
   val () = $A.drop<byte>(fzn, bvn)
@@ -1003,9 +876,9 @@ in @(p2, h) end
   ): @($AP.parser, $AP.arg($AP.string_val))
 
 implement ap_string_opt(p, name, sc, help) = let
-  val @(na, nl) = str_to_borrow(name)
+  val @(na, nl) = $S.str_to_borrow(name)
   val @(fzn, bvn) = $A.freeze<byte>(na)
-  val @(ha, hl) = str_to_borrow(help)
+  val @(ha, hl) = $S.str_to_borrow(help)
   val @(fzh, bvh) = $A.freeze<byte>(ha)
   val @(p2, h) = $AP.add_string(p, bvn, nl, sc, bvh, hl, false)
   val () = $A.drop<byte>(fzn, bvn)
@@ -1019,9 +892,9 @@ in @(p2, h) end
   ): @($AP.parser, $AP.arg($AP.string_val))
 
 implement ap_string_pos(p, name, help) = let
-  val @(na, nl) = str_to_borrow(name)
+  val @(na, nl) = $S.str_to_borrow(name)
   val @(fzn, bvn) = $A.freeze<byte>(na)
-  val @(ha, hl) = str_to_borrow(help)
+  val @(ha, hl) = $S.str_to_borrow(help)
   val @(fzh, bvh) = $A.freeze<byte>(ha)
   val @(p2, h) = $AP.add_string(p, bvn, nl, 0, bvh, hl, true)
   val () = $A.drop<byte>(fzn, bvn)
