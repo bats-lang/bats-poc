@@ -97,10 +97,12 @@ implement bput_loop(b, s, slen, i, fuel) =
   else let
     val ii = g1ofg0(i)
   in
-    if $AR.lt1_int_int(ii, slen) then let
-      val c = char2int0(string_get_at(s, ii))
-      val () = $B.put_byte(b, c)
-    in bput_loop(b, s, slen, i + 1, fuel - 1) end
+    if ii >= 0 then
+      if $AR.lt1_int_int(ii, slen) then let
+        val c = char2int0(string_get_at(s, ii))
+        val () = $B.put_byte(b, c)
+      in bput_loop(b, s, slen, i + 1, fuel - 1) end
+      else ()
     else ()
   end
 
@@ -977,10 +979,12 @@ implement fill_exact(arr, s, n, slen, i, fuel) =
   else let
     val ii = g1ofg0(i)
   in
-    if $AR.lt1_int_int(ii, slen) then let
-      val c = char2int0(string_get_at(s, ii))
-      val () = $A.set<byte>(arr, $AR.checked_idx(i, n), int2byte0(c))
-    in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
+    if ii >= 0 then
+      if $AR.lt1_int_int(ii, slen) then let
+        val c = char2int0(string_get_at(s, ii))
+        val () = $A.set<byte>(arr, $AR.checked_idx(i, n), int2byte0(c))
+      in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
+      else ()
     else ()
   end
 
