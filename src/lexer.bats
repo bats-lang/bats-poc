@@ -274,8 +274,17 @@ fun _has_metric {l:agz}{n:pos}{fuel:nat} .<fuel>.
     if $AR.eq_int_int(b, 46) then
       if $AR.eq_int_int(src_byte(src, pos + 1, max), 60) then true
       else _has_metric(src, pos + 1, max, fuel - 1)
-    (* Found "=" — end of signature, no metric *)
-    else if $AR.eq_int_int(b, 61) then false
+    (* Found standalone "=" — end of signature, no metric *)
+    (* Skip <= >= == != by checking previous byte *)
+    else if $AR.eq_int_int(b, 61) then let
+      val prev = (if pos > 0 then src_byte(src, pos - 1, max) else 32): int
+    in
+      if $AR.eq_int_int(prev, 60) then _has_metric(src, pos + 1, max, fuel - 1)
+      else if $AR.eq_int_int(prev, 62) then _has_metric(src, pos + 1, max, fuel - 1)
+      else if $AR.eq_int_int(prev, 61) then _has_metric(src, pos + 1, max, fuel - 1)
+      else if $AR.eq_int_int(prev, 33) then _has_metric(src, pos + 1, max, fuel - 1)
+      else false
+    end
     (* Found newline followed by non-whitespace — end of declaration *)
     else if $AR.eq_int_int(b, 10) then let
       val nb = src_byte(src, pos + 1, max)
