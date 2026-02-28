@@ -366,13 +366,26 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                     sats, dats, build_target, is_unsafe, errors + 1, fuel - 1) end
 
-    (* kind=5: unsafe_construct outside $UNSAFE block — error *)
-    else if $AR.eq_int_int(kind, 5) then let
-      val () = println! ("error: unsafe construct at byte ", ss, " outside $UNSAFE block")
-      val () = emit_blanks(src, ss, se, src_max, dats)
-      val () = emit_blanks(src, ss, se, src_max, sats)
-    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, is_unsafe, errors + 1, fuel - 1) end
+    (* kind=5: unsafe_construct outside $UNSAFE block *)
+    else if $AR.eq_int_int(kind, 5) then
+      if $AR.gt_int_int(is_unsafe, 0) then let
+        (* unsafe package: emit as-is *)
+        val fuel2 = $AR.checked_nat(se - ss + 1)
+        val () = (if $AR.eq_int_int(dest, 0) || $AR.eq_int_int(dest, 2) then
+                    emit_range(src, ss, se, src_max, dats, fuel2)
+                  else ())
+        val () = (if $AR.eq_int_int(dest, 1) || $AR.eq_int_int(dest, 2) then
+                    emit_range(src, ss, se, src_max, sats, fuel2)
+                  else ())
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
+      else let
+        (* safe package: error *)
+        val () = println! ("error: unsafe construct at byte ", ss, " outside $UNSAFE block")
+        val () = emit_blanks(src, ss, se, src_max, dats)
+        val () = emit_blanks(src, ss, se, src_max, sats)
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors + 1, fuel - 1) end
 
     (* kind=6: extcode_block - emit as-is to dats *)
     else if $AR.eq_int_int(kind, 6) then let
@@ -410,14 +423,24 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                   sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
-    (* kind=9: restricted_keyword — same as kind 5, error *)
-    else if $AR.eq_int_int(kind, 9) then let
-      val () = println! ("error: unsafe construct at byte ", ss, " outside $UNSAFE block")
-      val () = emit_blanks(src, ss, se, src_max, dats)
-      val () = emit_blanks(src, ss, se, src_max, sats)
-      val errors = errors + 1
-    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
+    (* kind=9: restricted_keyword — same as kind 5 *)
+    else if $AR.eq_int_int(kind, 9) then
+      if $AR.gt_int_int(is_unsafe, 0) then let
+        val fuel2 = $AR.checked_nat(se - ss + 1)
+        val () = (if $AR.eq_int_int(dest, 0) || $AR.eq_int_int(dest, 2) then
+                    emit_range(src, ss, se, src_max, dats, fuel2)
+                  else ())
+        val () = (if $AR.eq_int_int(dest, 1) || $AR.eq_int_int(dest, 2) then
+                    emit_range(src, ss, se, src_max, sats, fuel2)
+                  else ())
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
+      else let
+        val () = println! ("error: unsafe construct at byte ", ss, " outside $UNSAFE block")
+        val () = emit_blanks(src, ss, se, src_max, dats)
+        val () = emit_blanks(src, ss, se, src_max, sats)
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors + 1, fuel - 1) end
 
     (* kind=10: unittest_run - emit contents in test mode, blank otherwise *)
     else if $AR.eq_int_int(kind, 10) then let
