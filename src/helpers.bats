@@ -89,22 +89,15 @@ implement get_self_path() = !g_self_path
    String builder helpers
    ============================================================ *)
 
-#pub fun bput_loop {sn:nat}{fuel:nat}  (b: !$B.builder, s: string sn, slen: int sn, i: int, fuel: int fuel): void
+#pub fun bput_loop {sn:nat}{i:nat | i <= sn}{fuel:nat}  (b: !$B.builder, s: string sn, slen: int sn, i: int i, fuel: int fuel): void
 
 implement bput_loop(b, s, slen, i, fuel) =
   if fuel <= 0 then ()
   else if i >= slen then ()
   else let
-    val ii = g1ofg0(i)
-  in
-    if ii >= 0 then
-      if $AR.lt1_int_int(ii, slen) then let
-        val c = char2int0(string_get_at(s, ii))
-        val () = $B.put_byte(b, c)
-      in bput_loop(b, s, slen, i + 1, fuel - 1) end
-      else ()
-    else ()
-  end
+    val c = char2int0(string_get_at(s, i))
+    val () = $B.put_byte(b, c)
+  in bput_loop(b, s, slen, i + 1, fuel - 1) end
 
 #pub fn bput {sn:nat} (b: !$B.builder, s: string sn): void
 
@@ -150,24 +143,17 @@ implement is_dot_or_dotdot(ent, len, max) =
    Filename matchers
    ============================================================ *)
 
-#pub fun bytes_match {l:agz}{n:pos}{sn:nat}{fuel:nat}  (ent: !$A.arr(byte, l, n), p: int, max: int n,
-   pat: string sn, pi: int, plen: int sn, fuel: int fuel): bool
+#pub fun bytes_match {l:agz}{n:pos}{sn:nat}{pi:nat | pi <= sn}{fuel:nat}  (ent: !$A.arr(byte, l, n), p: int, max: int n,
+   pat: string sn, pi: int pi, plen: int sn, fuel: int fuel): bool
 
 implement bytes_match(ent, p, max, pat, pi, plen, fuel) =
   if fuel <= 0 then pi >= plen
   else if pi >= plen then true
-  else let
-    val pii = g1ofg0(pi)
-  in
-    if pii >= 0 then
-      if $AR.lt1_int_int(pii, plen) then
-        if $AR.eq_int_int(byte2int0($A.get<byte>(ent, $AR.checked_idx(p + pi, max))),
-             char2int0(string_get_at(pat, pii))) then
-          bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
-        else false
-      else false
+  else
+    if $AR.eq_int_int(byte2int0($A.get<byte>(ent, $AR.checked_idx(p + pi, max))),
+         char2int0(string_get_at(pat, pi))) then
+      bytes_match(ent, p, max, pat, pi + 1, plen, fuel - 1)
     else false
-  end
 
 #pub fn has_suffix {l:agz}{n:pos}{sn:nat}
   (ent: !$A.arr(byte, l, n), len: int, max: int n,
@@ -371,23 +357,16 @@ implement arr_range_to_builder(src, i, lim, dst, fuel) =
     val () = $B.put_byte(dst, b)
   in arr_range_to_builder(src, i + 1, lim, dst, fuel - 1) end
 
-#pub fun str_fill_loop {lb:agz}{sn:nat}{fuel:nat}  (b: !$A.arr(byte, lb, 4096), s: string sn, slen: int sn, i: int, fuel: int fuel): void
+#pub fun str_fill_loop {lb:agz}{sn:nat}{i:nat | i <= sn}{fuel:nat}  (b: !$A.arr(byte, lb, 4096), s: string sn, slen: int sn, i: int i, fuel: int fuel): void
 
 implement str_fill_loop(b, s, slen, i, fuel) =
   if fuel <= 0 then ()
   else if i >= slen then ()
   else if i >= 4096 then ()
   else let
-    val ii = g1ofg0(i)
-  in
-    if ii >= 0 then
-      if $AR.lt1_int_int(ii, slen) then let
-        val c = char2int0(string_get_at(s, ii))
-        val () = $A.set<byte>(b, $AR.checked_idx(i, 4096), int2byte0(c))
-      in str_fill_loop(b, s, slen, i + 1, fuel - 1) end
-      else ()
-    else ()
-  end
+    val c = char2int0(string_get_at(s, i))
+    val () = $A.set<byte>(b, $AR.checked_idx(i, 4096), int2byte0(c))
+  in str_fill_loop(b, s, slen, i + 1, fuel - 1) end
 
 #pub fn str_to_arr4096 {sn:nat} (s: string sn): [ls:agz] $A.arr(byte, ls, 4096)
 
@@ -980,24 +959,17 @@ implement count_argc_loop(buf, pos, len, max, count, fuel) =
 implement count_argc(buf, len) =
   count_argc_loop(buf, 0, len, 4096, 0, $AR.checked_nat(len + 1))
 
-#pub fun fill_exact {l:agz}{n:pos}{sn:nat}{fuel:nat}  (arr: !$A.arr(byte, l, n), s: string sn, n: int n, slen: int sn,
-   i: int, fuel: int fuel): void
+#pub fun fill_exact {l:agz}{n:pos}{sn:nat}{i:nat | i <= sn}{fuel:nat}  (arr: !$A.arr(byte, l, n), s: string sn, n: int n, slen: int sn,
+   i: int i, fuel: int fuel): void
 
 implement fill_exact(arr, s, n, slen, i, fuel) =
   if fuel <= 0 then ()
   else if i >= slen then ()
   else if i >= n then ()
   else let
-    val ii = g1ofg0(i)
-  in
-    if ii >= 0 then
-      if $AR.lt1_int_int(ii, slen) then let
-        val c = char2int0(string_get_at(s, ii))
-        val () = $A.set<byte>(arr, $AR.checked_idx(i, n), int2byte0(c))
-      in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
-      else ()
-    else ()
-  end
+    val c = char2int0(string_get_at(s, i))
+    val () = $A.set<byte>(arr, $AR.checked_idx(i, n), int2byte0(c))
+  in fill_exact(arr, s, n, slen, i + 1, fuel - 1) end
 
 #pub fn str_to_borrow {sn:pos}
   (s: string sn): [l:agz][n:pos] @($A.arr(byte, l, n), int n)
