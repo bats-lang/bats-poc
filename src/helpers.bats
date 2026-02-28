@@ -378,10 +378,16 @@ implement str_fill_loop(b, s, slen, i, fuel) =
   else if i >= slen then ()
   else if i >= 4096 then ()
   else let
-    val idx = $AR.checked_idx(i, slen)
-    val c = char2int0(string_get_at(s, idx))
-    val () = $A.set<byte>(b, $AR.checked_idx(i, 4096), int2byte0(c))
-  in str_fill_loop(b, s, slen, i + 1, fuel - 1) end
+    val ii = g1ofg0(i)
+  in
+    if ii >= 0 then
+      if $AR.lt1_int_int(ii, slen) then let
+        val c = char2int0(string_get_at(s, ii))
+        val () = $A.set<byte>(b, $AR.checked_idx(i, 4096), int2byte0(c))
+      in str_fill_loop(b, s, slen, i + 1, fuel - 1) end
+      else ()
+    else ()
+  end
 
 #pub fn str_to_arr4096 {sn:nat} (s: string sn): [ls:agz] $A.arr(byte, ls, 4096)
 
