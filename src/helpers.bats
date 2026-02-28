@@ -520,6 +520,103 @@ in
   | ~$R.err(_) => ~1
 end
 
+(* Parse a decimal integer from a byte buffer *)
+#pub fn parse_decimal {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), len: int, max: int n): int
+
+implement parse_decimal (buf, len, max) = let
+  fun loop {l:agz}{n:pos}{fuel:nat} .<fuel>.
+    (buf: !$A.arr(byte, l, n), max: int n, pos: int, len: int,
+     acc: int, fuel: int fuel): int =
+    if fuel <= 0 then acc
+    else if pos >= len then acc
+    else let
+      val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, max)))
+    in
+      if b >= 48 then
+        if b <= 57 then loop(buf, max, pos + 1, len, acc * 10 + (b - 48), fuel - 1)
+        else acc
+      else acc
+    end
+in loop(buf, max, 0, len, 0, $AR.checked_nat(len)) end
+
+(* Convert unix timestamp to calendar version: @(year, month, day, secs_of_day) *)
+(* Hinnant's civil_from_days algorithm *)
+#pub fn timestamp_to_calver(ts: int): @(int, int, int, int)
+
+implement timestamp_to_calver(ts) = let
+  val day_secs = 86400
+  val days = ts / day_secs
+  val secs_of_day = ts - days * day_secs
+  val z = days + 719468
+  val era = (if z >= 0 then z else z - 146096) / 146097
+  val doe = z - era * 146097
+  val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+  val y = yoe + era * 400
+  val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+  val mp = (5 * doy + 2) / 153
+  val d = doy - (153 * mp + 2) / 5 + 1
+  val m = (if mp < 10 then mp + 3 else mp - 9): int
+  val y2 = (if m <= 2 then y + 1 else y): int
+in @(y2, m, d, secs_of_day) end
+
+(* Write an integer as decimal into a builder *)
+#pub fn bput_int(b: !$B.builder, v: int): void
+
+implement bput_int(b, v) =
+  if v < 0 then let
+    val () = $B.put_byte(b, 45)
+  in bput_int(b, 0 - v) end
+  else if v < 10 then $B.put_byte(b, 48 + v)
+  else let
+    val () = bput_int(b, v / 10)
+  in $B.put_byte(b, 48 + v mod 10) end
+
+(* Run a command and capture stdout into outbuf. Returns @(exit_code, stdout_len). *)
+#pub fn run_cmd_capture {le:agz}{lo:agz}
+  (exec_bv: !$A.borrow(byte, le, 524288), exec_len: int,
+   argv_b: $B.builder, argc: int,
+   outbuf: !$A.arr(byte, lo, 4096)): @(int, int)
+
+implement run_cmd_capture (exec_bv, exec_len, argv_b, argc, outbuf) = let
+  val @(argv_arr, _) = $B.to_arr(argv_b)
+  val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
+  val envp_b = $B.create()
+  val () = bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
+  val () = $B.put_byte(envp_b, 0)
+  val @(envp_arr, _) = $B.to_arr(envp_b)
+  val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
+  val sr = $P.spawn(exec_bv, 524288, bv_a, argc, bv_e, 1,
+    $P.dev_null(), $P.pipe_new(), $P.pipe_new())
+  val () = $A.drop<byte>(fz_a, bv_a)
+  val () = $A.free<byte>($A.thaw<byte>(fz_a))
+  val () = $A.drop<byte>(fz_e, bv_e)
+  val () = $A.free<byte>($A.thaw<byte>(fz_e))
+in
+  case+ sr of
+  | ~$R.ok(sp) => let
+      val+ ~$P.spawn_pipes_mk(child, sin_p, sout_p, serr_p) = sp
+      val () = $P.pipe_end_close(sin_p)
+      val+ ~$P.pipe_fd(out_fd) = sout_p
+      val out_r = $F.file_read(out_fd, outbuf, 4096)
+      val olen = (case+ out_r of
+        | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val ocr = $F.file_close(out_fd)
+      val () = $R.discard<int><int>(ocr)
+      val+ ~$P.pipe_fd(err_fd) = serr_p
+      val eb = $A.alloc<byte>(4096)
+      val err_r = $F.file_read(err_fd, eb, 4096)
+      val () = (case+ err_r of | ~$R.ok(_) => () | ~$R.err(_) => ())
+      val ecr = $F.file_close(err_fd)
+      val () = $R.discard<int><int>(ecr)
+      val () = $A.free<byte>(eb)
+      val wr = $P.child_wait(child)
+      val ec = (case+ wr of
+        | ~$R.ok(n) => n | ~$R.err(_) => ~1): int
+    in @(ec, olen) end
+  | ~$R.err(_) => @(~1, 0)
+end
+
 #pub fn run_patsopt {lph:agz}{lo:agz}{li:agz}
   (ph: !$A.borrow(byte, lph, 512), phlen: int,
    out_bv: !$A.borrow(byte, lo, 524288), out_len: int,

@@ -318,55 +318,51 @@ in
           | ~$R.some(nlen) =>
             if is_lib then
               if rplen > 0 then let
-                (* Get version: from git log or date *)
+                (* Get version from git commit timestamp *)
+                val git_exec = str_to_path_arr("/usr/bin/git")
+                val @(fz_ge, bv_ge) = $A.freeze<byte>(git_exec)
+                (* Get commit timestamp *)
+                val ts_argv = $B.create()
+                val () = bput(ts_argv, "git") val () = $B.put_byte(ts_argv, 0)
+                val () = bput(ts_argv, "log") val () = $B.put_byte(ts_argv, 0)
+                val () = bput(ts_argv, "-1") val () = $B.put_byte(ts_argv, 0)
+                val () = bput(ts_argv, "--format=%ct") val () = $B.put_byte(ts_argv, 0)
+                val ts_out = $A.alloc<byte>(4096)
+                val @(ts_rc, ts_len) = run_cmd_capture(bv_ge, 524288, ts_argv, 4, ts_out)
+                val ts = parse_decimal(ts_out, ts_len, 4096)
+                val () = $A.free<byte>(ts_out)
+                val @(yr, mo, dy, secs) = timestamp_to_calver(ts)
+                (* Check if on main branch *)
+                val br_argv = $B.create()
+                val () = bput(br_argv, "git") val () = $B.put_byte(br_argv, 0)
+                val () = bput(br_argv, "rev-parse") val () = $B.put_byte(br_argv, 0)
+                val () = bput(br_argv, "--abbrev-ref") val () = $B.put_byte(br_argv, 0)
+                val () = bput(br_argv, "HEAD") val () = $B.put_byte(br_argv, 0)
+                val br_out = $A.alloc<byte>(4096)
+                val @(br_rc, br_len) = run_cmd_capture(bv_ge, 524288, br_argv, 4, br_out)
+                (* Check if branch is "main" (109,97,105,110) *)
+                val is_main = (if br_len >= 4 then
+                  $AR.eq_int_int(byte2int0($A.get<byte>(br_out, 0)), 109) &&
+                  $AR.eq_int_int(byte2int0($A.get<byte>(br_out, 1)), 97) &&
+                  $AR.eq_int_int(byte2int0($A.get<byte>(br_out, 2)), 105) &&
+                  $AR.eq_int_int(byte2int0($A.get<byte>(br_out, 3)), 110)
+                else false): bool
+                val () = $A.free<byte>(br_out)
+                val () = $A.drop<byte>(fz_ge, bv_ge)
+                val () = $A.free<byte>($A.thaw<byte>(fz_ge))
+                (* Build version string *)
+                val vb_b = $B.create()
+                val () = bput_int(vb_b, yr)
+                val () = $B.put_byte(vb_b, 46) (* . *)
+                val () = bput_int(vb_b, mo)
+                val () = $B.put_byte(vb_b, 46)
+                val () = bput_int(vb_b, dy)
+                val () = $B.put_byte(vb_b, 46)
+                val () = bput_int(vb_b, secs)
+                val () = (if ~is_main then bput(vb_b, "dev1") else ())
                 val @(verbuf, verlen) = (let
-                  (* Get version from git or date — spawn git directly *)
-                  val git_exec = str_to_path_arr("/usr/bin/git")
-                  val @(fz_ge, bv_ge) = $A.freeze<byte>(git_exec)
-                  val git_argv = $B.create()
-                  val () = bput(git_argv, "git") val () = $B.put_byte(git_argv, 0)
-                  val () = bput(git_argv, "log") val () = $B.put_byte(git_argv, 0)
-                  val () = bput(git_argv, "-1") val () = $B.put_byte(git_argv, 0)
-                  val () = bput(git_argv, "--format=%cd") val () = $B.put_byte(git_argv, 0)
-                  val () = bput(git_argv, "--date=format:%Y.%-m.%-d") val () = $B.put_byte(git_argv, 0)
-                  val git_rc = run_cmd(bv_ge, 524288, git_argv, 5)
-                  val () = $A.drop<byte>(fz_ge, bv_ge)
-                  val () = $A.free<byte>($A.thaw<byte>(fz_ge))
-                  (* If git failed, use date *)
-                  val () = (if git_rc <> 0 then let
-                    val date_exec = str_to_path_arr("/usr/bin/date")
-                    val @(fz_de, bv_de) = $A.freeze<byte>(date_exec)
-                    val date_argv = $B.create()
-                    val () = bput(date_argv, "date") val () = $B.put_byte(date_argv, 0)
-                    val () = bput(date_argv, "+%Y.%-m.%-d") val () = $B.put_byte(date_argv, 0)
-                    val _ = run_cmd(bv_de, 524288, date_argv, 2)
-                    val () = $A.drop<byte>(fz_de, bv_de)
-                    val () = $A.free<byte>($A.thaw<byte>(fz_de))
-                  in end else ())
-                  (* Note: git/date output goes to stdout which is /dev/null in run_cmd.
-                     TODO: capture stdout to get version string. For now write placeholder. *)
-                  val vb = $B.create()
-                  val () = bput(vb, "0.0.0")
-                  val vp2 = str_to_path_arr("/tmp/_bpoc_ver.txt")
-                  val @(fz_vp2, bv_vp2) = $A.freeze<byte>(vp2)
-                  val _ = write_file_from_builder(bv_vp2, 524288, vb)
-                  val () = $A.drop<byte>(fz_vp2, bv_vp2)
-                  val () = $A.free<byte>($A.thaw<byte>(fz_vp2))
-                  val vp = str_to_path_arr("/tmp/_bpoc_ver.txt")
-                  val @(fz_vp, bv_vp) = $A.freeze<byte>(vp)
-                  val vf = $F.file_open(bv_vp, 524288, 0, 0)
-                  val () = $A.drop<byte>(fz_vp, bv_vp)
-                  val () = $A.free<byte>($A.thaw<byte>(fz_vp))
-                in case+ vf of
-                  | ~$R.ok(vfd) => let
-                      val vb = $A.alloc<byte>(64)
-                      val vr = $F.file_read(vfd, vb, 64)
-                      val vl = (case+ vr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
-                      val vcr = $F.file_close(vfd)
-                      val () = $R.discard<int><int>(vcr)
-                    in @(vb, vl) end
-                  | ~$R.err(_) => let val vb = $A.alloc<byte>(64) in @(vb, 0) end
-                end): [lvb:agz] @($A.arr(byte, lvb, 64), int)
+                  val @(va, vl) = $B.to_arr(vb_b)
+                in @(va, vl) end): [lvb:agz] @($A.arr(byte, lvb, 524288), int)
                 val @(fz_vb, bv_vb) = $A.freeze<byte>(verbuf)
                 (* Build output zip path: repo/pkg/prefix_ver.bats *)
                 val zip_path = $B.create()
@@ -388,7 +384,7 @@ in
                 val () = copy_to_builder(bv_px, 0, pfx_len, 524288, zip_path,
                   $AR.checked_nat(pfx_len + 1))
                 val () = bput(zip_path, "_")
-                val () = copy_to_builder(bv_vb, 0, verlen, 64, zip_path,
+                val () = copy_to_builder(bv_vb, 0, verlen, 524288, zip_path,
                   $AR.checked_nat(verlen + 1))
                 val () = bput(zip_path, ".bats")
                 val () = $B.put_byte(zip_path, 0)
