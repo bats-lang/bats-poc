@@ -8,6 +8,32 @@
 
 staload "helpers.sats"
 
+(* Compute line number from byte offset by counting newlines *)
+fn _byte_to_line {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): int = let
+  fun count {l2:agz}{n2:pos}{fuel:nat} .<fuel>.
+    (src: !$A.borrow(byte, l2, n2), max: int n2,
+     i: int, limit: int, line: int, fuel: int fuel): int =
+    if fuel <= 0 then line
+    else if i >= limit then line
+    else if $AR.eq_int_int(byte2int0($A.read<byte>(src, $AR.checked_idx(i, max))), 10)
+    then count(src, max, i + 1, limit, line + 1, fuel - 1)
+    else count(src, max, i + 1, limit, line, fuel - 1)
+in count(src, max, 0, pos, 1, $AR.checked_nat(pos)) end
+
+(* Compute column from byte offset by finding last newline before pos *)
+fn _byte_to_col {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): int = let
+  fun scan {l2:agz}{n2:pos}{fuel:nat} .<fuel>.
+    (src: !$A.borrow(byte, l2, n2), max: int n2,
+     i: int, fuel: int fuel): int =
+    if fuel <= 0 then pos + 1
+    else if i < 0 then pos + 1
+    else if $AR.eq_int_int(byte2int0($A.read<byte>(src, $AR.checked_idx(i, max))), 10)
+    then pos - i
+    else scan(src, max, i - 1, fuel - 1)
+in scan(src, max, pos - 1, $AR.checked_nat(pos)) end
+
 (* ============================================================
    Emitter: read span records
    ============================================================ *)
@@ -360,7 +386,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                     sats, dats, build_target, is_unsafe, errors, fuel - 1) end
       else let
-        val () = println! ("error: $UNSAFE block at byte ", ss, " not allowed in safe package")
+        val () = println! ("error: $UNSAFE block at line ", _byte_to_line(src, ss, src_max), " column ", _byte_to_col(src, ss, src_max), " not allowed in safe package")
         val () = emit_blanks(src, ss, se, src_max, dats)
         val () = emit_blanks(src, ss, se, src_max, sats)
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
@@ -381,7 +407,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
                     sats, dats, build_target, is_unsafe, errors, fuel - 1) end
       else let
         (* safe package: error *)
-        val () = println! ("error: unsafe construct at byte ", ss, " outside $UNSAFE block")
+        val () = println! ("error: unsafe construct at line ", _byte_to_line(src, ss, src_max), " column ", _byte_to_col(src, ss, src_max), " outside $UNSAFE block")
         val () = emit_blanks(src, ss, se, src_max, dats)
         val () = emit_blanks(src, ss, se, src_max, sats)
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
@@ -436,7 +462,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                     sats, dats, build_target, is_unsafe, errors, fuel - 1) end
       else let
-        val () = println! ("error: unsafe construct at byte ", ss, " outside $UNSAFE block")
+        val () = println! ("error: unsafe construct at line ", _byte_to_line(src, ss, src_max), " column ", _byte_to_col(src, ss, src_max), " outside $UNSAFE block")
         val () = emit_blanks(src, ss, se, src_max, dats)
         val () = emit_blanks(src, ss, se, src_max, sats)
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
