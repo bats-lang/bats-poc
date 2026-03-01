@@ -36,9 +36,9 @@ Never ask permission to keep going. Keep going until the success criterion is me
 
 bats uses `--only <value>` (repeatable) instead of the old Rust bats' `--release` flag and `--only native|wasm`. Values: `debug`, `release`, `native`, `wasm`. Multiple `--only` flags narrow the build matrix. Default (no `--only`): build all. Example: `--only debug --only native` builds only debug native. This is the only allowed divergence. All other flags and behaviors must match the old Rust bats exactly.
 
-## Safety Enforcement Status
+## Safety Enforcement
 
-Unsafe constructs (`castfn`, `$extfcall`, `$extval`, `$extype`, `$extkind`, `praxi`, `extern`, `assume`, `fun` without termination metric) are detected by the lexer (span kind 5) but NOT YET ENFORCED by the emitter. They should be blanked out (rejected) when they appear outside `$UNSAFE begin...end` blocks. This is the compiler's main safety job and is currently missing.
+Unsafe constructs (`castfn`, `$extfcall`, `$extval`, `$extype`, `$extkind`, `praxi`, `extern`, `assume`, `fun` without termination metric, `#pub prfun`/`prfn` without `primplement`) are detected by the lexer (span kind 5) and **enforced** by the emitter. They are rejected outside `$UNSAFE begin...end` blocks in ALL packages — both safe and unsafe. `$UNSAFE begin...end` blocks themselves are rejected in `unsafe = false` packages.
 
 ## Problem Resolution
 
