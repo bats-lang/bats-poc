@@ -253,6 +253,22 @@ fn looking_at_extkind {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 7, max), 100) &&
   is_kw_boundary(src, pos + 8, max)
 
+(* "mac#" = 109,97,99,35 — C function binding *)
+fn looking_at_mac_hash {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 109) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 99) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 35)
+
+(* "ext#" = 101,120,116,35 — WASM export binding *)
+fn looking_at_ext_hash {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 35)
+
 (* "fun" = 102,117,110 — only unsafe WITHOUT termination metric *)
 fn looking_at_fun {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
@@ -701,7 +717,7 @@ in
   in
     if looking_at_begin(src, p0, max) then let
       val contents_start = p0 + 5
-      val end_pos = find_end_kw(src, contents_start, src_len, max, 0, $AR.checked_nat(src_len))
+      val end_pos = find_end_kw(src, contents_start, src_len, max, 1, $AR.checked_nat(src_len))
       val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
       val () = put_span(spans, 4, 0, start, ep, contents_start, end_pos, 0, 0)
     in @(ep, count + 1, true) end
@@ -725,7 +741,7 @@ in
   in
     if looking_at_begin(src, p1, max) then let
       val contents_start = p1 + 5
-      val end_pos = find_end_kw(src, contents_start, src_len, max, 0, $AR.checked_nat(src_len))
+      val end_pos = find_end_kw(src, contents_start, src_len, max, 1, $AR.checked_nat(src_len))
       val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
       val () = put_span(spans, 10, 0, start, ep, contents_start, end_pos, 0, 0)
     in @(ep, count + 1, true) end
@@ -752,7 +768,7 @@ in
   if looking_at_begin(src, p1, max) then let
     (* Block form: find matching end, store content range *)
     val contents_start = p1 + 5
-    val end_pos = find_end_kw(src, contents_start, src_len, max, 0, $AR.checked_nat(src_len))
+    val end_pos = find_end_kw(src, contents_start, src_len, max, 1, $AR.checked_nat(src_len))
     val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
     (* kind=11: target_block. aux1=target(0=native,1=wasm), aux2/aux3=content range *)
     val () = put_span(spans, 11, 0, start, ep, target, contents_start, end_pos, 0)
