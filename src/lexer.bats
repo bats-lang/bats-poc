@@ -692,7 +692,7 @@ fun find_end_kw {l:agz}{n:pos}{fuel:nat} .<fuel>.
   if fuel <= 0 then src_len
   else if pos >= src_len then src_len
   else if looking_at_end(src, pos, max) then
-    (if depth <= 0 then pos
+    (if depth <= 1 then pos
      else find_end_kw(src, pos + 3, src_len, max, depth - 1, fuel - 1))
   else if looking_at_begin(src, pos, max) then
     find_end_kw(src, pos + 5, src_len, max, depth + 1, fuel - 1)
