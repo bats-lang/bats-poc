@@ -370,9 +370,15 @@ in
                 val () = $B.bput(zip_path, "/")
                 (* Build prefix: replace '/' with '_' in name *)
                 val pfx = $B.create()
-                val () = copy_to_builder(bv_nb, 0, nlen, 256, pfx,
-                  $AR.checked_nat(nlen + 1))
-                (* TODO: replace '/' with '_' in prefix -- skip for now *)
+                fun copy_replace_slash {l:agz}{fuel:nat} .<fuel>.
+                  (bv: !$A.borrow(byte, l, 256), i: int, len: int,
+                   b: !$B.builder, fuel: int fuel): void =
+                  if fuel <= 0 then () else if i >= len then ()
+                  else let
+                    val byte_val = byte2int0($A.read<byte>(bv, $AR.checked_idx(i, 256)))
+                    val () = $B.put_byte(b, (if $AR.eq_int_int(byte_val, 47) then 95 else byte_val): int)
+                  in copy_replace_slash(bv, i + 1, len, b, fuel - 1) end
+                val () = copy_replace_slash(bv_nb, 0, nlen, pfx, $AR.checked_nat(nlen + 1))
                 val @(pfx_arr, pfx_len) = $B.to_arr(pfx)
                 val @(fz_px, bv_px) = $A.freeze<byte>(pfx_arr)
                 val () = copy_to_builder(bv_px, 0, pfx_len, 524288, zip_path,
