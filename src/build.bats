@@ -1020,9 +1020,9 @@ in case+ r of
   | ~$R.err(_) => 0
 end
 
-#pub fn do_build(release: int): void
+#pub fn do_build(release: int, build_target: int): void
 
-implement do_build(release) = let
+implement do_build(release, build_target) = let
   val is_unsafe = read_unsafe_flag()
   (* Step 1: mkdir build directories *)
   val mb1 = $B.create()
@@ -1330,7 +1330,7 @@ in
                                     val () = $B.put_byte(sd2, 0)
                                     val @(sda2, _) = $B.to_arr(sd2)
                                     val @(fz_sd2, bv_sd2) = $A.freeze<byte>(sda2)
-                                    val pr2 = preprocess_one(bv_sp2, bv_ss2, bv_sd2, 0, 1)
+                                    val pr2 = preprocess_one(bv_sp2, bv_ss2, bv_sd2, build_target, 1)
                                     val () = (if pr2 <> 0 then let
                                       val () = print! ("warning: preprocess failed for dep ")
                                       val () = print_borrow(ns_bv, 0, ns_len, 256, $AR.checked_nat(ns_len + 1))
@@ -1423,7 +1423,7 @@ in
                                                     val () = $B.put_byte(sd_ns, 0)
                                                     val @(sda_ns, _) = $B.to_arr(sd_ns)
                                                     val @(fz_sdn, bv_sdn) = $A.freeze<byte>(sda_ns)
-                                                    val pr_ns = preprocess_one(bv_spn, bv_ssn, bv_sdn, 0, 1)
+                                                    val pr_ns = preprocess_one(bv_spn, bv_ssn, bv_sdn, build_target, 1)
                                                     val () = (if pr_ns <> 0 then ()
                                                     else if ~is_quiet() then let
                                                       val () = print! ("  preprocessed dep extra: ")
@@ -1498,7 +1498,7 @@ in
                     val () = $B.put_byte(sd, 0)
                     val @(sda, _) = $B.to_arr(sd)
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
-                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, 0, 1)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, build_target, 1)
                     val () = (if pr <> 0 then let
                       val () = print! ("warning: preprocess failed for dep ")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
@@ -1578,7 +1578,7 @@ in
                                     val () = $B.put_byte(sd_ex, 0)
                                     val @(sda_ex, _) = $B.to_arr(sd_ex)
                                     val @(fz_sda, bv_sda) = $A.freeze<byte>(sda_ex)
-                                    val pr_ex = preprocess_one(bv_spa, bv_ssa, bv_sda, 0, 1)
+                                    val pr_ex = preprocess_one(bv_spa, bv_ssa, bv_sda, build_target, 1)
                                     val () = (if pr_ex <> 0 then let
                                       val () = print! ("warning: preprocess failed for extra file in dep ")
                                       val () = print_borrow(dep_bv, 0, dep_len, 256,
@@ -1681,7 +1681,7 @@ in
                     val () = $B.put_byte(sd_sm, 0)
                     val @(sda_sm, _) = $B.to_arr(sd_sm)
                     val @(fz_sda_sm, bv_sda_sm) = $A.freeze<byte>(sda_sm)
-                    val pr_sm = preprocess_one(bv_spa_sm, bv_ssa_sm, bv_sda_sm, 0, is_unsafe)
+                    val pr_sm = preprocess_one(bv_spa_sm, bv_ssa_sm, bv_sda_sm, build_target, is_unsafe)
                     val () = (if pr_sm <> 0 then let
                       val () = print! ("warning: preprocess failed for src/")
                       val () = print_borrow(bv_esm, 0, elen_sm, 256,
@@ -1768,7 +1768,7 @@ in
                     val () = $B.put_byte(sd, 0)
                     val @(sda, _) = $B.to_arr(sd)
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
-                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, 0, is_unsafe)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, build_target, is_unsafe)
                     val () = (if pr <> 0 then let
                       val () = print! ("error: preprocess failed for ")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))

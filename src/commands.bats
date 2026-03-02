@@ -26,7 +26,7 @@ staload "emitter.sats"
 implement do_test() = let
   (* Enable test mode so emit includes unittest blocks *)
   val () = set_test_mode(true)
-  val () = do_build(0)
+  val () = do_build(0, 0)
   val () = set_test_mode(false)
   (* Scan source for test function names in $UNITTEST.run blocks *)
   (* Use C helper to scan the source file *)
@@ -1044,7 +1044,7 @@ end
 #pub fn do_run(release: int): void
 
 implement do_run(release) = let
-  val () = do_build(release)
+  val () = do_build(release, 0)
   (* Read bats.toml to find the package name *)
   val tp = str_to_path_arr("bats.toml")
   val @(fz_tp, bv_tp) = $A.freeze<byte>(tp)
