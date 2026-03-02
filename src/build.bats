@@ -1856,6 +1856,60 @@ in
                                                   val () = $B.bput(eb2, "/")
                                                   val () = copy_to_builder(bv_sde, 0, sel, 256, eb2, $AR.checked_nat(sel+1))
                                                   val () = $B.bput(eb2, "/src/lib.dats\"\n")
+                                                  (* Also dynload extra .dats shared modules *)
+                                                  val dnsd = $B.create()
+                                                  val () = $B.bput(dnsd, "build/bats_modules/")
+                                                  val () = copy_to_builder(ns5, 0, ns5len, 256, dnsd, $AR.checked_nat(ns5len+1))
+                                                  val () = $B.bput(dnsd, "/")
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, dnsd, $AR.checked_nat(sel+1))
+                                                  val () = $B.bput(dnsd, "/src")
+                                                  val () = $B.put_byte(dnsd, 0)
+                                                  val @(dnsda, _) = $B.to_arr(dnsd)
+                                                  val @(fz_dnsd, bv_dnsd) = $A.freeze<byte>(dnsda)
+                                                  val dns_dir = $F.dir_open(bv_dnsd, 524288)
+                                                  val () = $A.drop<byte>(fz_dnsd, bv_dnsd)
+                                                  val () = $A.free<byte>($A.thaw<byte>(fz_dnsd))
+                                                  val () = (case+ dns_dir of
+                                                    | ~$R.ok(d_dn) => let
+                                                        fun dynload_ns_extra {lsub6:agz}{fuel_de2:nat} .<fuel_de2>.
+                                                          (d_dn: !$F.dir, eb3: !$B.builder,
+                                                           ns6: !$A.borrow(byte, lns5, 256), ns6len: int,
+                                                           sub6: !$A.borrow(byte, lsub6, 256), sub6len: int,
+                                                           fuel_de2: int fuel_de2): void =
+                                                          if fuel_de2 <= 0 then ()
+                                                          else let
+                                                            val de6 = $A.alloc<byte>(256)
+                                                            val nr6 = $F.dir_next(d_dn, de6, 256)
+                                                            val dl6 = $R.option_unwrap_or<int>(nr6, ~1)
+                                                          in if dl6 < 0 then $A.free<byte>(de6)
+                                                            else let
+                                                              val is_d6 = has_dats_ext(de6, dl6, 256)
+                                                            in if ~is_d6 then let val () = $A.free<byte>(de6)
+                                                              in dynload_ns_extra(d_dn, eb3, ns6, ns6len, sub6, sub6len, fuel_de2-1) end
+                                                            else let
+                                                              val is_l6 = is_lib_dats(de6, dl6, 256)
+                                                            in if is_l6 then let val () = $A.free<byte>(de6)
+                                                              in dynload_ns_extra(d_dn, eb3, ns6, ns6len, sub6, sub6len, fuel_de2-1) end
+                                                            else let
+                                                              val @(fz_de6, bv_de6) = $A.freeze<byte>(de6)
+                                                              val () = $B.bput(eb3, "dynload \"./bats_modules/")
+                                                              val () = copy_to_builder(ns6, 0, ns6len, 256, eb3, $AR.checked_nat(ns6len+1))
+                                                              val () = $B.bput(eb3, "/")
+                                                              val () = copy_to_builder(sub6, 0, sub6len, 256, eb3, $AR.checked_nat(sub6len+1))
+                                                              val () = $B.bput(eb3, "/src/")
+                                                              val () = copy_to_builder(bv_de6, 0, dl6, 256, eb3, $AR.checked_nat(dl6+1))
+                                                              val () = $B.bput(eb3, "\"\n")
+                                                              val () = $A.drop<byte>(fz_de6, bv_de6)
+                                                              val () = $A.free<byte>($A.thaw<byte>(fz_de6))
+                                                            in dynload_ns_extra(d_dn, eb3, ns6, ns6len, sub6, sub6len, fuel_de2-1) end
+                                                            end
+                                                            end
+                                                          end
+                                                      in
+                                                        dynload_ns_extra(d_dn, eb2, ns5, ns5len, bv_sde, sel, 200);
+                                                        (let val dcr_de2 = $F.dir_close(d_dn) val () = $R.discard<int><int>(dcr_de2) in end)
+                                                      end
+                                                    | ~$R.err(_) => ())
                                                   val () = $A.drop<byte>(fz_sde, bv_sde)
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_sde))
                                                 in dynload_ns(nsdd, eb2, ns5, ns5len, fuel_dn-1) end
