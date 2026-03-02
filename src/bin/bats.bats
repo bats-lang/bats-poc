@@ -285,13 +285,14 @@ in
                 val has_wasm = ((only_mask / 8) mod 2)
               in
                 if only_mask = 0 then let
-                  val () = do_build(0)
-                in do_build(1) end
+                  val () = do_build(0, 0)
+                in do_build(1, 0) end
                 else let
-                  val () = (if has_debug > 0 then do_build(0) else ())
-                  val () = (if has_release > 0 then do_build(1) else ())
+                  val bt = (if has_wasm > 0 then 1 else 0): int
+                  val () = (if has_debug > 0 then do_build(0, bt) else ())
+                  val () = (if has_release > 0 then do_build(1, bt) else ())
                   val () = (if has_debug = 0 then
-                    if has_release = 0 then do_build(0)
+                    if has_release = 0 then do_build(0, bt)
                     else ()
                   else ())
                   val () = (if has_wasm > 0 then
@@ -302,7 +303,7 @@ in
                 in
                   if has_debug = 0 then
                     if has_release = 0 then
-                      if has_wasm = 0 then do_build(0)
+                      if has_wasm = 0 then do_build(0, 0)
                       else ()
                     else ()
                   else ()
