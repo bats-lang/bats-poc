@@ -2965,6 +2965,59 @@ in
                                                   val () = $B.bput(lb2, "/")
                                                   val () = copy_to_builder(bv_sde, 0, sel, 256, lb2, $AR.checked_nat(sel+1))
                                                   val () = $B.bput(lb2, "/src/lib_dats.o")
+                                                  (* Also link extra _dats.o files from shared modules *)
+                                                  val lnsd = $B.create()
+                                                  val () = $B.bput(lnsd, "build/bats_modules/")
+                                                  val () = copy_to_builder(ns4, 0, ns4len, 256, lnsd, $AR.checked_nat(ns4len+1))
+                                                  val () = $B.bput(lnsd, "/")
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, lnsd, $AR.checked_nat(sel+1))
+                                                  val () = $B.bput(lnsd, "/src")
+                                                  val () = $B.put_byte(lnsd, 0)
+                                                  val @(lnsda, _) = $B.to_arr(lnsd)
+                                                  val @(fz_lnsd, bv_lnsd) = $A.freeze<byte>(lnsda)
+                                                  val lns_dir = $F.dir_open(bv_lnsd, 524288)
+                                                  val () = $A.drop<byte>(fz_lnsd, bv_lnsd)
+                                                  val () = $A.free<byte>($A.thaw<byte>(fz_lnsd))
+                                                  val () = (case+ lns_dir of
+                                                    | ~$R.ok(d_ln2) => let
+                                                        fun link_ns_extra {lsub5:agz}{fuel_le:nat} .<fuel_le>.
+                                                          (d_ln2: !$F.dir, lb3: !$B.builder,
+                                                           ns5: !$A.borrow(byte, lns4, 256), ns5len: int,
+                                                           sub5: !$A.borrow(byte, lsub5, 256), sub5len: int,
+                                                           fuel_le: int fuel_le): void =
+                                                          if fuel_le <= 0 then ()
+                                                          else let
+                                                            val le = $A.alloc<byte>(256)
+                                                            val lnr = $F.dir_next(d_ln2, le, 256)
+                                                            val lel = $R.option_unwrap_or<int>(lnr, ~1)
+                                                          in if lel < 0 then $A.free<byte>(le)
+                                                            else let
+                                                              val is_o = $S.has_suffix(le, lel, 256, "_dats.o", 7)
+                                                            in if ~is_o then let val () = $A.free<byte>(le)
+                                                              in link_ns_extra(d_ln2, lb3, ns5, ns5len, sub5, sub5len, fuel_le-1) end
+                                                            else let
+                                                              val is_l = $S.has_suffix(le, lel, 256, "lib_dats.o", 10)
+                                                            in if is_l then let val () = $A.free<byte>(le)
+                                                              in link_ns_extra(d_ln2, lb3, ns5, ns5len, sub5, sub5len, fuel_le-1) end
+                                                              else let
+                                                                val @(fz_le, bv_le) = $A.freeze<byte>(le)
+                                                                val () = $B.bput(lb3, " build/bats_modules/")
+                                                                val () = copy_to_builder(ns5, 0, ns5len, 256, lb3, $AR.checked_nat(ns5len+1))
+                                                                val () = $B.bput(lb3, "/")
+                                                                val () = copy_to_builder(sub5, 0, sub5len, 256, lb3, $AR.checked_nat(sub5len+1))
+                                                                val () = $B.bput(lb3, "/src/")
+                                                                val () = copy_to_builder(bv_le, 0, lel, 256, lb3, $AR.checked_nat(lel+1))
+                                                                val () = $A.drop<byte>(fz_le, bv_le)
+                                                                val () = $A.free<byte>($A.thaw<byte>(fz_le))
+                                                              in link_ns_extra(d_ln2, lb3, ns5, ns5len, sub5, sub5len, fuel_le-1) end
+                                                            end
+                                                            end
+                                                          end
+                                                      in
+                                                        link_ns_extra(d_ln2, lb2, ns4, ns4len, bv_sde, sel, 200);
+                                                        (let val dcr_le = $F.dir_close(d_ln2) val () = $R.discard<int><int>(dcr_le) in end)
+                                                      end
+                                                    | ~$R.err(_) => ())
                                                   val () = $A.drop<byte>(fz_sde, bv_sde)
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_sde))
                                                 in link_ns(nsld, lb2, ns4, ns4len, fuel_ln-1) end
