@@ -683,11 +683,158 @@ in rc end
 
 #pub fn do_build_wasm(release: int): void
 
-implement do_build_wasm(release) =
-  (* TODO: WASM build needs reimplementation without run_sh.
-     Each _dats.c file needs to be found via dir iteration and compiled
-     with clang --target=wasm32, then linked with wasm-ld. *)
-  println! ("error: WASM build not yet implemented without shell")
+fn run_wasm_cc {li:agz}{lo:agz}
+  (in_bv: !$A.borrow(byte, li, 524288), in_len: int,
+   out_bv: !$A.borrow(byte, lo, 524288), out_len: int): int = let
+  val exec = str_to_path_arr("/usr/bin/clang")
+  val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
+  val argv = $B.create()
+  val () = $B.bput(argv, "clang") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "--target=wasm32") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-O2") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-nostdlib") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-ffreestanding") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-fvisibility=default") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-D_ATS_CCOMP_HEADER_NONE_") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-D_ATS_CCOMP_EXCEPTION_NONE_") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-D_ATS_CCOMP_PRELUDE_NONE_") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-D_ATS_CCOMP_RUNTIME_NONE_") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-include") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "build/_bats_wasm_runtime.h") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-I") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "build/_bats_wasm_stubs") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-c") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-o") val () = $B.put_byte(argv, 0)
+  val oc = out_len - 1
+  val () = copy_to_builder(out_bv, 0, oc, 524288, argv, $AR.checked_nat(out_len + 1))
+  val () = $B.put_byte(argv, 0)
+  val ic = in_len - 1
+  val () = copy_to_builder(in_bv, 0, ic, 524288, argv, $AR.checked_nat(in_len + 1))
+  val () = $B.put_byte(argv, 0)
+  val rc = run_cmd(bv_exec, 524288, argv, 18)
+  val () = $A.drop<byte>(fz_exec, bv_exec)
+  val () = $A.free<byte>($A.thaw<byte>(fz_exec))
+in rc end
+
+fn wasm_cc_file {l:agz}
+  (path: !$A.borrow(byte, l, 524288), path_len: int): int = let
+  (* path is like "build/.../_dats.c", replace .c with .o for output *)
+  val ob = $B.create()
+  val pl = path_len - 1
+  val () = copy_to_builder(path, 0, pl - 1, 524288, ob, $AR.checked_nat(pl))
+  val () = $B.bput(ob, "o")
+  val () = $B.put_byte(ob, 0)
+  val @(oa, ol) = $B.to_arr(ob)
+  val @(fz_o, bv_o) = $A.freeze<byte>(oa)
+  val rc = run_wasm_cc(path, path_len, bv_o, ol)
+  val () = $A.drop<byte>(fz_o, bv_o)
+  val () = $A.free<byte>($A.thaw<byte>(fz_o))
+in rc end
+
+implement do_build_wasm(release) = let
+  val _ = write_wasm_runtime_h()
+  val _ = write_wasm_runtime_c()
+  val _ = write_wasm_stubs()
+  val rtrc = compile_wasm_runtime()
+  val () = (if rtrc <> 0 then println! ("error: WASM runtime compile failed") else ())
+  (* Compile all _dats.c files found during the native patsopt pass *)
+  (* We rely on the native build having already run patsopt to generate C files *)
+  val db = $B.create()
+  val () = $B.bput(db, "build")
+  val () = $B.put_byte(db, 0)
+  val @(dba, _) = $B.to_arr(db)
+  val @(fz_db, bv_db) = $A.freeze<byte>(dba)
+  val () = println! ("  compiling WASM...")
+  (* Compile entry *)
+  val eb = $B.create()
+  val () = $B.bput(eb, "build/_bats_entry_")
+  (* Find the entry file by scanning build/ for _bats_entry_*_dats.c *)
+  val dr = $F.dir_open(bv_db, 524288)
+  val () = $A.drop<byte>(fz_db, bv_db)
+  val () = $A.free<byte>($A.thaw<byte>(fz_db))
+  val link_b = $B.create()
+  val () = $B.bput(link_b, "wasm-ld") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--no-entry") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--allow-undefined") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--lto-O2") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "-z") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "stack-size=1048576") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--initial-memory=16777216") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--max-memory=268435456") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=mainats_0_void") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=malloc") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=bats_on_event") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=bats_timer_fire") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=bats_idb_fire") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=bats_idb_fire_get") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=bats_measure_set") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=bats_on_fetch_complete") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=bats_on_file_open") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--export=bats_on_decompress_complete") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "-o") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "dist/wasm/app.wasm") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "build/_bats_wasm_runtime.o") val () = $B.put_byte(link_b, 0)
+  val link_count = 22
+  val () = (let val @(ea, _) = $B.to_arr(eb) val () = $A.free<byte>(ea) in end)
+  val () = (case+ dr of
+    | ~$R.ok(d) => let
+        fun scan_build {fuel2:nat} .<fuel2>.
+          (d: !$F.dir, lb: !$B.builder, lc: int, fuel2: int fuel2): int =
+          if fuel2 <= 0 then lc
+          else let
+            val e = $A.alloc<byte>(256)
+            val nr = $F.dir_next(d, e, 256)
+            val el = $R.option_unwrap_or<int>(nr, ~1)
+          in
+            if el < 0 then let val () = $A.free<byte>(e) in lc end
+            else let
+              val has_c = $S.has_suffix(e, el, 256, "_dats.c", 7)
+            in
+              if has_c then let
+                val pb = $B.create()
+                val () = $B.bput(pb, "build/")
+                val @(fz_e, bv_e) = $A.freeze<byte>(e)
+                val () = copy_to_builder(bv_e, 0, el, 256, pb, $AR.checked_nat(el + 1))
+                val () = $B.put_byte(pb, 0)
+                val @(pa, pl) = $B.to_arr(pb)
+                val @(fz_p, bv_p) = $A.freeze<byte>(pa)
+                val rc = wasm_cc_file(bv_p, pl)
+                val () = (if rc <> 0 then let
+                  val () = print! ("error: wasm cc failed for ")
+                  val () = print_borrow(bv_e, 0, el, 256, $AR.checked_nat(el + 1))
+                in print_newline() end else let
+                  (* Add .o to link list *)
+                  val () = copy_to_builder(bv_p, 0, pl - 2, 524288, lb, $AR.checked_nat(pl))
+                  val () = $B.bput(lb, "o")
+                  val () = $B.put_byte(lb, 0)
+                in end)
+                val () = $A.drop<byte>(fz_p, bv_p)
+                val () = $A.free<byte>($A.thaw<byte>(fz_p))
+                val () = $A.drop<byte>(fz_e, bv_e)
+                val () = $A.free<byte>($A.thaw<byte>(fz_e))
+              in scan_build(d, lb, lc + 1, fuel2 - 1) end
+              else let
+                val () = $A.free<byte>(e)
+              in scan_build(d, lb, lc, fuel2 - 1) end
+            end
+          end
+        val nfiles = scan_build(d, link_b, 0, 500)
+        val dcr = $F.dir_close(d)
+        val () = $R.discard<int><int>(dcr)
+      in end
+    | ~$R.err(_) => ())
+  (* TODO: also scan subdirectories for dep and src .o files *)
+  (* For now, just link what we found in build/ *)
+  val () = println! ("  linking WASM...")
+  val _ = run_mkdir(str_to_path_builder("dist"))
+  val _ = run_mkdir(str_to_path_builder("dist/wasm"))
+  val exec_ld = str_to_path_arr("/usr/bin/wasm-ld")
+  val @(fz_ld, bv_ld) = $A.freeze<byte>(exec_ld)
+  val lrc = run_cmd(bv_ld, 524288, link_b, link_count + 10)
+  val () = $A.drop<byte>(fz_ld, bv_ld)
+  val () = $A.free<byte>($A.thaw<byte>(fz_ld))
+  val () = (if lrc <> 0 then println! ("error: wasm-ld failed") else println! ("  built: dist/wasm/app.wasm"))
+in end
 
 #pub fn read_unsafe_flag(): int
 
