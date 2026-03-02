@@ -1066,6 +1066,105 @@ in
                                     val () = $A.free<byte>($A.thaw<byte>(fz_ss2))
                                     val () = $A.drop<byte>(fz_sd2, bv_sd2)
                                     val () = $A.free<byte>($A.thaw<byte>(fz_sd2))
+                                    (* Scan extra .bats shared modules for this namespaced dep *)
+                                    val nsd_src = $B.create()
+                                    val () = $B.bput(nsd_src, "bats_modules/")
+                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, nsd_src, $AR.checked_nat(ns_len + 1))
+                                    val () = $B.bput(nsd_src, "/")
+                                    val () = copy_to_builder(bv_se, 0, sel, 256, nsd_src, $AR.checked_nat(sel + 1))
+                                    val () = $B.bput(nsd_src, "/src")
+                                    val () = $B.put_byte(nsd_src, 0)
+                                    val @(nsd_sa, _) = $B.to_arr(nsd_src)
+                                    val @(fz_nsd, bv_nsd) = $A.freeze<byte>(nsd_sa)
+                                    val nsd_dir = $F.dir_open(bv_nsd, 524288)
+                                    val () = $A.drop<byte>(fz_nsd, bv_nsd)
+                                    val () = $A.free<byte>($A.thaw<byte>(fz_nsd))
+                                    val () = (case+ nsd_dir of
+                                      | ~$R.ok(d_ns_ex) => let
+                                          fun scan_ns_extra
+                                            {ld2:agz}{ld3:agz}{fuel_ns:nat} .<fuel_ns>.
+                                            (d_ns_ex: !$F.dir,
+                                             ns_bv2: !$A.borrow(byte, ld2, 256),
+                                             ns_len2: int,
+                                             se_bv2: !$A.borrow(byte, ld3, 256),
+                                             se_len2: int,
+                                             fuel_ns: int fuel_ns): void =
+                                            if fuel_ns <= 0 then ()
+                                            else let
+                                              val ent_ns = $A.alloc<byte>(256)
+                                              val nr_ns = $F.dir_next(d_ns_ex, ent_ns, 256)
+                                              val elen_ns = $R.option_unwrap_or<int>(nr_ns, ~1)
+                                            in
+                                              if elen_ns < 0 then $A.free<byte>(ent_ns)
+                                              else let
+                                                val is_bats_ns = has_bats_ext(ent_ns, elen_ns, 256)
+                                                val is_lib_ns = is_lib_bats(ent_ns, elen_ns, 256)
+                                              in
+                                                if is_bats_ns then
+                                                  if is_lib_ns then let
+                                                    val () = $A.free<byte>(ent_ns)
+                                                  in scan_ns_extra(d_ns_ex, ns_bv2, ns_len2, se_bv2, se_len2, fuel_ns - 1) end
+                                                  else let
+                                                    val stem_ns = elen_ns - 5
+                                                    val @(fz_ens, bv_ens) = $A.freeze<byte>(ent_ns)
+                                                    val sp_ns = $B.create()
+                                                    val () = $B.bput(sp_ns, "bats_modules/")
+                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, sp_ns, $AR.checked_nat(ns_len2 + 1))
+                                                    val () = $B.bput(sp_ns, "/")
+                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, sp_ns, $AR.checked_nat(se_len2 + 1))
+                                                    val () = $B.bput(sp_ns, "/src/")
+                                                    val () = copy_to_builder(bv_ens, 0, elen_ns, 256, sp_ns, $AR.checked_nat(elen_ns + 1))
+                                                    val () = $B.put_byte(sp_ns, 0)
+                                                    val @(spa_ns, _) = $B.to_arr(sp_ns)
+                                                    val @(fz_spn, bv_spn) = $A.freeze<byte>(spa_ns)
+                                                    val ss_ns = $B.create()
+                                                    val () = $B.bput(ss_ns, "build/bats_modules/")
+                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, ss_ns, $AR.checked_nat(ns_len2 + 1))
+                                                    val () = $B.bput(ss_ns, "/")
+                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, ss_ns, $AR.checked_nat(se_len2 + 1))
+                                                    val () = $B.bput(ss_ns, "/src/")
+                                                    val () = copy_to_builder(bv_ens, 0, stem_ns, 256, ss_ns, $AR.checked_nat(stem_ns + 1))
+                                                    val () = $B.bput(ss_ns, ".sats")
+                                                    val () = $B.put_byte(ss_ns, 0)
+                                                    val @(ssa_ns, _) = $B.to_arr(ss_ns)
+                                                    val @(fz_ssn, bv_ssn) = $A.freeze<byte>(ssa_ns)
+                                                    val sd_ns = $B.create()
+                                                    val () = $B.bput(sd_ns, "build/bats_modules/")
+                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, sd_ns, $AR.checked_nat(ns_len2 + 1))
+                                                    val () = $B.bput(sd_ns, "/")
+                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, sd_ns, $AR.checked_nat(se_len2 + 1))
+                                                    val () = $B.bput(sd_ns, "/src/")
+                                                    val () = copy_to_builder(bv_ens, 0, stem_ns, 256, sd_ns, $AR.checked_nat(stem_ns + 1))
+                                                    val () = $B.bput(sd_ns, ".dats")
+                                                    val () = $B.put_byte(sd_ns, 0)
+                                                    val @(sda_ns, _) = $B.to_arr(sd_ns)
+                                                    val @(fz_sdn, bv_sdn) = $A.freeze<byte>(sda_ns)
+                                                    val pr_ns = preprocess_one(bv_spn, bv_ssn, bv_sdn, 0, 1)
+                                                    val () = (if pr_ns <> 0 then ()
+                                                    else if ~is_quiet() then let
+                                                      val () = print! ("  preprocessed dep extra: ")
+                                                      val () = print_borrow(bv_ens, 0, elen_ns, 256, $AR.checked_nat(elen_ns + 1))
+                                                    in print_newline() end
+                                                    else ())
+                                                    val () = $A.drop<byte>(fz_spn, bv_spn)
+                                                    val () = $A.free<byte>($A.thaw<byte>(fz_spn))
+                                                    val () = $A.drop<byte>(fz_ssn, bv_ssn)
+                                                    val () = $A.free<byte>($A.thaw<byte>(fz_ssn))
+                                                    val () = $A.drop<byte>(fz_sdn, bv_sdn)
+                                                    val () = $A.free<byte>($A.thaw<byte>(fz_sdn))
+                                                    val () = $A.drop<byte>(fz_ens, bv_ens)
+                                                    val () = $A.free<byte>($A.thaw<byte>(fz_ens))
+                                                  in scan_ns_extra(d_ns_ex, ns_bv2, ns_len2, se_bv2, se_len2, fuel_ns - 1) end
+                                                else let
+                                                  val () = $A.free<byte>(ent_ns)
+                                                in scan_ns_extra(d_ns_ex, ns_bv2, ns_len2, se_bv2, se_len2, fuel_ns - 1) end
+                                              end
+                                            end
+                                        in
+                                          scan_ns_extra(d_ns_ex, ns_bv, ns_len, bv_se, sel, 100);
+                                          (let val dcr = $F.dir_close(d_ns_ex) val () = $R.discard<int><int>(dcr) in end)
+                                        end
+                                      | ~$R.err(_) => ())
                                     val () = $A.drop<byte>(fz_se, bv_se)
                                     val () = $A.free<byte>($A.thaw<byte>(fz_se))
                                   in scan_ns(nsd2, ph2, ns_bv, ns_len, fuel2 - 1) end
