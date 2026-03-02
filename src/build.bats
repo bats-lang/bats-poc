@@ -80,6 +80,139 @@ in
 end end
 
 (* ============================================================
+   Helpers: run patsopt/cc on all extra .dats/.c files in a dir
+   ============================================================ *)
+
+(* Run patsopt on all non-lib .dats files in a build src dir.
+   dir_bv: null-terminated path like "build/bats_modules/foo/src" *)
+fn patsopt_dir_extra
+  {ld:agz}{lph:agz}
+  (dir_bv: !$A.borrow(byte, ld, 524288), dir_len: int,
+   ph: !$A.borrow(byte, lph, 512), phlen: int): void = let
+  val dr = $F.dir_open(dir_bv, 524288)
+in case+ dr of
+  | ~$R.ok(d) => let
+      fun loop {fuel:nat} .<fuel>.
+        (d: !$F.dir,
+         dir_bv: !$A.borrow(byte, ld, 524288), dir_len: int,
+         ph: !$A.borrow(byte, lph, 512), phlen: int,
+         fuel: int fuel): void =
+        if fuel <= 0 then ()
+        else let
+          val e = $A.alloc<byte>(256)
+          val nr = $F.dir_next(d, e, 256)
+          val el = $R.option_unwrap_or<int>(nr, ~1)
+        in if el < 0 then $A.free<byte>(e)
+          else let
+            val is_d = has_dats_ext(e, el, 256)
+            val is_l = is_lib_dats(e, el, 256)
+          in if is_d then
+            if is_l then let val () = $A.free<byte>(e)
+            in loop(d, dir_bv, dir_len, ph, phlen, fuel - 1) end
+            else let
+              val stem = el - 5
+              val @(fz_e, bv_e) = $A.freeze<byte>(e)
+              val dl = dir_len - 1
+              val ob = $B.create()
+              val () = copy_to_builder(dir_bv, 0, dl, 524288, ob, $AR.checked_nat(dl + 1))
+              val () = $B.bput(ob, "/")
+              val () = copy_to_builder(bv_e, 0, stem, 256, ob, $AR.checked_nat(stem + 1))
+              val () = $B.bput(ob, "_dats.c")
+              val () = $B.put_byte(ob, 0)
+              val @(oa, ol) = $B.to_arr(ob)
+              val @(fz_o, bv_o) = $A.freeze<byte>(oa)
+              val ib = $B.create()
+              val () = copy_to_builder(dir_bv, 0, dl, 524288, ib, $AR.checked_nat(dl + 1))
+              val () = $B.bput(ib, "/")
+              val () = copy_to_builder(bv_e, 0, el, 256, ib, $AR.checked_nat(el + 1))
+              val () = $B.put_byte(ib, 0)
+              val @(ia, il) = $B.to_arr(ib)
+              val @(fz_i, bv_i) = $A.freeze<byte>(ia)
+              val _ = run_patsopt(ph, phlen, bv_o, ol, bv_i, il)
+              val () = $A.drop<byte>(fz_o, bv_o)
+              val () = $A.free<byte>($A.thaw<byte>(fz_o))
+              val () = $A.drop<byte>(fz_i, bv_i)
+              val () = $A.free<byte>($A.thaw<byte>(fz_i))
+              val () = $A.drop<byte>(fz_e, bv_e)
+              val () = $A.free<byte>($A.thaw<byte>(fz_e))
+            in loop(d, dir_bv, dir_len, ph, phlen, fuel - 1) end
+          else let val () = $A.free<byte>(e)
+          in loop(d, dir_bv, dir_len, ph, phlen, fuel - 1) end
+          end
+        end
+      val () = loop(d, dir_bv, dir_len, ph, phlen, 200)
+      val dcr = $F.dir_close(d)
+      val () = $R.discard<int><int>(dcr)
+    in end
+  | ~$R.err(_) => ()
+end
+
+(* Run cc on all non-lib _dats.c files in a build src dir. *)
+fn cc_dir_extra
+  {ld:agz}{lph:agz}
+  (dir_bv: !$A.borrow(byte, ld, 524288), dir_len: int,
+   ph: !$A.borrow(byte, lph, 512), phlen: int,
+   rel: int): void = let
+  val dr = $F.dir_open(dir_bv, 524288)
+in case+ dr of
+  | ~$R.ok(d) => let
+      fun loop {fuel:nat} .<fuel>.
+        (d: !$F.dir,
+         dir_bv: !$A.borrow(byte, ld, 524288), dir_len: int,
+         ph: !$A.borrow(byte, lph, 512), phlen: int,
+         rel: int, fuel: int fuel): void =
+        if fuel <= 0 then ()
+        else let
+          val e = $A.alloc<byte>(256)
+          val nr = $F.dir_next(d, e, 256)
+          val el = $R.option_unwrap_or<int>(nr, ~1)
+        in if el < 0 then $A.free<byte>(e)
+          else let
+            val is_c = $S.has_suffix(e, el, 256, "_dats.c", 7)
+          in if ~is_c then let val () = $A.free<byte>(e)
+            in loop(d, dir_bv, dir_len, ph, phlen, rel, fuel - 1) end
+          else let
+            val is_l = $S.has_suffix(e, el, 256, "lib_dats.c", 10)
+          in if is_l then let val () = $A.free<byte>(e)
+            in loop(d, dir_bv, dir_len, ph, phlen, rel, fuel - 1) end
+            else let
+              val stem = el - 2
+              val @(fz_e, bv_e) = $A.freeze<byte>(e)
+              val dl = dir_len - 1
+              val ob = $B.create()
+              val () = copy_to_builder(dir_bv, 0, dl, 524288, ob, $AR.checked_nat(dl + 1))
+              val () = $B.bput(ob, "/")
+              val () = copy_to_builder(bv_e, 0, stem, 256, ob, $AR.checked_nat(stem + 1))
+              val () = $B.bput(ob, ".o")
+              val () = $B.put_byte(ob, 0)
+              val @(oa, ol) = $B.to_arr(ob)
+              val @(fz_o, bv_o) = $A.freeze<byte>(oa)
+              val ib = $B.create()
+              val () = copy_to_builder(dir_bv, 0, dl, 524288, ib, $AR.checked_nat(dl + 1))
+              val () = $B.bput(ib, "/")
+              val () = copy_to_builder(bv_e, 0, el, 256, ib, $AR.checked_nat(el + 1))
+              val () = $B.put_byte(ib, 0)
+              val @(ia, il) = $B.to_arr(ib)
+              val @(fz_i, bv_i) = $A.freeze<byte>(ia)
+              val _ = run_cc(ph, phlen, bv_o, ol, bv_i, il, rel)
+              val () = $A.drop<byte>(fz_o, bv_o)
+              val () = $A.free<byte>($A.thaw<byte>(fz_o))
+              val () = $A.drop<byte>(fz_i, bv_i)
+              val () = $A.free<byte>($A.thaw<byte>(fz_i))
+              val () = $A.drop<byte>(fz_e, bv_e)
+              val () = $A.free<byte>($A.thaw<byte>(fz_e))
+            in loop(d, dir_bv, dir_len, ph, phlen, rel, fuel - 1) end
+            end
+          end
+        end
+      val () = loop(d, dir_bv, dir_len, ph, phlen, rel, 200)
+      val dcr = $F.dir_close(d)
+      val () = $R.discard<int><int>(dcr)
+    in end
+  | ~$R.err(_) => ()
+end
+
+(* ============================================================
    clean: remove build/ and dist/ directories
    ============================================================ *)
 #pub fn do_clean(): void
@@ -1316,86 +1449,6 @@ in
                                           (let val dcr = $F.dir_close(d_ns_ex) val () = $R.discard<int><int>(dcr) in end)
                                         end
                                       | ~$R.err(_) => ())
-                                    (* Append staload for shared modules to dep lib.dats *)
-                                    val dats_path = $B.create()
-                                    val () = $B.bput(dats_path, "build/bats_modules/")
-                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, dats_path, $AR.checked_nat(ns_len + 1))
-                                    val () = $B.bput(dats_path, "/")
-                                    val () = copy_to_builder(bv_se, 0, sel, 256, dats_path, $AR.checked_nat(sel + 1))
-                                    val () = $B.bput(dats_path, "/src")
-                                    val () = $B.put_byte(dats_path, 0)
-                                    val @(dp_a, _) = $B.to_arr(dats_path)
-                                    val @(fz_dp, bv_dp) = $A.freeze<byte>(dp_a)
-                                    val sd_dir = $F.dir_open(bv_dp, 524288)
-                                    val () = $A.drop<byte>(fz_dp, bv_dp)
-                                    val () = $A.free<byte>($A.thaw<byte>(fz_dp))
-                                    val staload_b = $B.create()
-                                    val () = (case+ sd_dir of
-                                      | ~$R.ok(sd_d) => let
-                                          fun find_shared_dats {fuel_sd:nat} .<fuel_sd>.
-                                            (sd_d: !$F.dir, sb: !$B.builder, fuel_sd: int fuel_sd): void =
-                                            if fuel_sd <= 0 then ()
-                                            else let
-                                              val se2 = $A.alloc<byte>(256)
-                                              val snr = $F.dir_next(sd_d, se2, 256)
-                                              val sl2 = $R.option_unwrap_or<int>(snr, ~1)
-                                            in
-                                              if sl2 < 0 then $A.free<byte>(se2)
-                                              else let
-                                                val is_d = has_dats_ext(se2, sl2, 256)
-                                                val is_l = is_lib_dats(se2, sl2, 256)
-                                              in
-                                                if is_d then
-                                                  if is_l then let
-                                                    val () = $A.free<byte>(se2)
-                                                  in find_shared_dats(sd_d, sb, fuel_sd - 1) end
-                                                  else let
-                                                    val @(fz_se2, bv_se2) = $A.freeze<byte>(se2)
-                                                    val () = $B.bput(sb, "staload \"src/")
-                                                    val () = copy_to_builder(bv_se2, 0, sl2, 256, sb, $AR.checked_nat(sl2 + 1))
-                                                    val () = $B.bput(sb, "\"\n")
-                                                    val () = $A.drop<byte>(fz_se2, bv_se2)
-                                                    val () = $A.free<byte>($A.thaw<byte>(fz_se2))
-                                                  in find_shared_dats(sd_d, sb, fuel_sd - 1) end
-                                                else let
-                                                  val () = $A.free<byte>(se2)
-                                                in find_shared_dats(sd_d, sb, fuel_sd - 1) end
-                                              end
-                                            end
-                                        in
-                                          find_shared_dats(sd_d, staload_b, 100);
-                                          (let val dcr2 = $F.dir_close(sd_d) val () = $R.discard<int><int>(dcr2) in end)
-                                        end
-                                      | ~$R.err(_) => ())
-                                    (* Write staload lines to dep lib.dats *)
-                                    val @(sl_a, sl_len) = $B.to_arr(staload_b)
-                                    val () = (if sl_len > 0 then let
-                                      val lib_dats = $B.create()
-                                      val () = $B.bput(lib_dats, "build/bats_modules/")
-                                      val () = copy_to_builder(ns_bv, 0, ns_len, 256, lib_dats, $AR.checked_nat(ns_len + 1))
-                                      val () = $B.bput(lib_dats, "/")
-                                      val () = copy_to_builder(bv_se, 0, sel, 256, lib_dats, $AR.checked_nat(sel + 1))
-                                      val () = $B.bput(lib_dats, "/src/lib.dats")
-                                      val () = $B.put_byte(lib_dats, 0)
-                                      val @(ld_a, ld_len) = $B.to_arr(lib_dats)
-                                      val @(fz_ld, bv_ld) = $A.freeze<byte>(ld_a)
-                                      (* Open lib.dats for append (flags: O_WRONLY|O_APPEND = 1025) *)
-                                      val fr = $F.file_open(bv_ld, 524288, 1025, 420)
-                                      val () = (case+ fr of
-                                        | ~$R.ok(fd) => let
-                                            val @(fz_sl, bv_sl) = $A.freeze<byte>(sl_a)
-                                            val wr = $F.file_write(fd, bv_sl, 524288)
-                                            val () = $R.discard<int><int>(wr)
-                                            val cr = $F.file_close(fd)
-                                            val () = $R.discard<int><int>(cr)
-                                            val () = $A.drop<byte>(fz_sl, bv_sl)
-                                            val () = $A.free<byte>($A.thaw<byte>(fz_sl))
-                                          in end
-                                        | ~$R.err(_) => $A.free<byte>(sl_a))
-                                      val () = $A.drop<byte>(fz_ld, bv_ld)
-                                      val () = $A.free<byte>($A.thaw<byte>(fz_ld))
-                                    in end
-                                    else $A.free<byte>(sl_a))
                                     val () = $A.drop<byte>(fz_se, bv_se)
                                     val () = $A.free<byte>($A.thaw<byte>(fz_se))
                                   in scan_ns(nsd2, ph2, ns_bv, ns_len, fuel2 - 1) end
@@ -2058,6 +2111,19 @@ in
                                                     val () = print_borrow(bv_sde, 0, sel, 256, $AR.checked_nat(sel+1))
                                                   in print_newline() end
                                                   else ())
+                                                  (* patsopt extra .dats in this sub-package *)
+                                                  val peb = $B.create()
+                                                  val () = $B.bput(peb, "build/bats_modules/")
+                                                  val () = copy_to_builder(ns_name, 0, ns_len, 256, peb, $AR.checked_nat(ns_len+1))
+                                                  val () = $B.bput(peb, "/")
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, peb, $AR.checked_nat(sel+1))
+                                                  val () = $B.bput(peb, "/src")
+                                                  val () = $B.put_byte(peb, 0)
+                                                  val @(pea, pel) = $B.to_arr(peb)
+                                                  val @(fz_pe, bv_pe) = $A.freeze<byte>(pea)
+                                                  val () = patsopt_dir_extra(bv_pe, pel, ph2, ph2len)
+                                                  val () = $A.drop<byte>(fz_pe, bv_pe)
+                                                  val () = $A.free<byte>($A.thaw<byte>(fz_pe))
                                                   val () = $A.drop<byte>(fz_sde, bv_sde)
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_sde))
                                                 in patsopt_ns(nsd, ph2, ph2len, ns_name, ns_len, fuel_ns-1) end
@@ -2488,6 +2554,19 @@ in
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_co))
                                                   val () = $A.drop<byte>(fz_ci, bv_ci)
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_ci))
+                                                  (* cc extra _dats.c in this sub-package *)
+                                                  val ceb = $B.create()
+                                                  val () = $B.bput(ceb, "build/bats_modules/")
+                                                  val () = copy_to_builder(ns3, 0, ns3len, 256, ceb, $AR.checked_nat(ns3len+1))
+                                                  val () = $B.bput(ceb, "/")
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, ceb, $AR.checked_nat(sel+1))
+                                                  val () = $B.bput(ceb, "/src")
+                                                  val () = $B.put_byte(ceb, 0)
+                                                  val @(cea, cel) = $B.to_arr(ceb)
+                                                  val @(fz_ce, bv_ce) = $A.freeze<byte>(cea)
+                                                  val () = cc_dir_extra(bv_ce, cel, ph3, ph3len, rr3)
+                                                  val () = $A.drop<byte>(fz_ce, bv_ce)
+                                                  val () = $A.free<byte>($A.thaw<byte>(fz_ce))
                                                   val () = $A.drop<byte>(fz_sde, bv_sde)
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_sde))
                                                 in clang_ns(nscd, ph3, ph3len, ns3, ns3len, rr3, fuel_cn-1) end

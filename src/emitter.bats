@@ -84,7 +84,8 @@ fn span_aux4 {l:agz}{n:pos}
    Emitter: copy source range to builder, count newlines
    ============================================================ *)
 
-(* Copy bytes from source borrow to builder *)
+(* Copy bytes from source borrow to builder.
+   Transforms .bats" → .sats" in staload paths. *)
 fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
    max: int ns, out: !$B.builder, fuel: int fuel): void =
@@ -92,7 +93,15 @@ fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   else if start >= end_pos then ()
   else let
     val b = $S.borrow_byte(src, start, max)
-    val () = $B.put_byte(out, b)
+    (* Check for .bats" pattern: 46,98,97,116,115,34 → replace b(98) with s(115) *)
+    val b_out = (if $AR.eq_int_int(b, 98) &&
+      $AR.eq_int_int($S.borrow_byte(src, start - 1, max), 46) &&
+      $AR.eq_int_int($S.borrow_byte(src, start + 1, max), 97) &&
+      $AR.eq_int_int($S.borrow_byte(src, start + 2, max), 116) &&
+      $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 115) &&
+      $AR.eq_int_int($S.borrow_byte(src, start + 4, max), 34)
+    then 115 else b): int
+    val () = $B.put_byte(out, b_out)
   in emit_range(src, start + 1, end_pos, max, out, fuel - 1) end
 
 (* Count newlines in source range, emit that many newlines *)
