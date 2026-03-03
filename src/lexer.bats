@@ -632,7 +632,25 @@ fun lex_pub_lines {l:agz}{n:pos}{fuel:nat} .<fuel>.
     val eol = skip_to_eol(src, pos, src_len, max, $AR.checked_nat(src_len))
   in
     if eol >= src_len then eol
-    else if is_blank_line(src, eol, src_len, max, 256) then eol
+    else if is_blank_line(src, eol, src_len, max, 256) then let
+      (* Peek past blank lines: if next non-blank starts with 'and', continue *)
+      fun skip_blanks {fb:nat} .<fb>.
+        (s: !$A.borrow(byte, l, n), p: int, sl: int, m: int n, fb: int fb): int =
+        if fb <= 0 then p
+        else if p >= sl then p
+        else if is_blank_line(s, p, sl, m, 256) then
+          skip_blanks(s, skip_to_eol(s, p, sl, m, $AR.checked_nat(sl)), sl, m, fb - 1)
+        else p
+      val next = skip_blanks(src, eol, src_len, max, 64)
+    in
+      if next < src_len &&
+         $AR.eq_int_int($S.borrow_byte(src, next, max), 97) &&
+         $AR.eq_int_int($S.borrow_byte(src, next + 1, max), 110) &&
+         $AR.eq_int_int($S.borrow_byte(src, next + 2, max), 100) &&
+         is_kw_boundary(src, next + 3, max)
+      then lex_pub_lines(src, eol, src_len, max, fuel - 1)
+      else eol
+    end
     else if looking_at_pub(src, eol, max) then eol
     else if looking_at_use(src, eol, max) then eol
     else if looking_at_target(src, eol, max) then eol
