@@ -131,6 +131,97 @@ fn emit_blanks {ls:agz}{ns:pos}
   val () = emit_newlines(out, nl_count, $AR.checked_nat(nl_count + 1))
 in end
 
+(* Find matching end keyword for $UNSAFE begin, tracking begin/let/local/end nesting *)
+fun find_matching_end {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), pos: int, src_len: int, max: int ns,
+   depth: int, fuel: int fuel): int =
+  if fuel <= 0 then src_len
+  else if pos >= src_len then src_len
+  else let
+    val b0 = $S.borrow_byte(src, pos, max)
+    val b1 = $S.borrow_byte(src, pos + 1, max)
+    val b2 = $S.borrow_byte(src, pos + 2, max)
+  in
+    (* Check for end: 101,110,100 + boundary *)
+    if $AR.eq_int_int(b0, 101) && $AR.eq_int_int(b1, 110) && $AR.eq_int_int(b2, 100) then
+      (if depth <= 1 then pos
+       else find_matching_end(src, pos + 3, src_len, max, depth - 1, fuel - 1))
+    (* Check for begin: 98,101,103,105,110 *)
+    else if $AR.eq_int_int(b0, 98) && $AR.eq_int_int(b1, 101) &&
+            $AR.eq_int_int(b2, 103) &&
+            $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 105) &&
+            $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 110) then
+      find_matching_end(src, pos + 5, src_len, max, depth + 1, fuel - 1)
+    (* Check for let: 108,101,116 *)
+    else if $AR.eq_int_int(b0, 108) && $AR.eq_int_int(b1, 101) && $AR.eq_int_int(b2, 116) then
+      find_matching_end(src, pos + 3, src_len, max, depth + 1, fuel - 1)
+    else find_matching_end(src, pos + 1, src_len, max, depth, fuel - 1)
+  end
+
+(* Emit range processing $UNSAFE begin...end blocks inside #target content.
+   Scans byte by byte. When $UNSAFE begin is found, blanks it, emits inner
+   content recursively, blanks end. Other content emitted as-is. *)
+fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
+   max: int ns, out: !$B.builder, fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if start >= end_pos then ()
+  else let
+    val b = $S.borrow_byte(src, start, max)
+  in
+    if $AR.eq_int_int(b, 36) &&
+       $AR.eq_int_int($S.borrow_byte(src, start + 1, max), 85) &&
+       $AR.eq_int_int($S.borrow_byte(src, start + 2, max), 78) &&
+       $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 83) &&
+       $AR.eq_int_int($S.borrow_byte(src, start + 4, max), 65) &&
+       $AR.eq_int_int($S.borrow_byte(src, start + 5, max), 70) &&
+       $AR.eq_int_int($S.borrow_byte(src, start + 6, max), 69) then let
+      val after = start + 7
+      val next = $S.borrow_byte(src, after, max)
+    in
+      if $AR.eq_int_int(next, 46) then let
+        val () = $B.put_byte(out, b)
+      in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
+      else let
+        (* Skip whitespace after $UNSAFE *)
+        val p0 = (let fun skip {ls2:agz}{ns2:pos}{f:nat} .<f>.
+          (s: !$A.borrow(byte, ls2, ns2), m: int ns2, p: int, lim: int, f: int f): int =
+          if f <= 0 then p else if p >= lim then p
+          else let val c = $S.borrow_byte(s, p, m) in
+            if $AR.eq_int_int(c, 32) || $AR.eq_int_int(c, 10) || $AR.eq_int_int(c, 13) || $AR.eq_int_int(c, 9)
+            then skip(s, m, p + 1, lim, f - 1) else p end
+        in skip(src, max, after, end_pos, 256) end): int
+      in
+        (* Check for begin: 98,101,103,105,110 *)
+        if $AR.eq_int_int($S.borrow_byte(src, p0, max), 98) &&
+           $AR.eq_int_int($S.borrow_byte(src, p0 + 1, max), 101) &&
+           $AR.eq_int_int($S.borrow_byte(src, p0 + 2, max), 103) &&
+           $AR.eq_int_int($S.borrow_byte(src, p0 + 3, max), 105) &&
+           $AR.eq_int_int($S.borrow_byte(src, p0 + 4, max), 110) then let
+          val cs2 = p0 + 5
+          val end2 = find_matching_end(src, cs2, end_pos, max, 1, $AR.checked_nat(end_pos + 1))
+          val ep2 = (if end2 < end_pos then end2 + 3 else end2): int
+          val () = emit_blanks(src, start, cs2, max, out)
+          val () = emit_range_process_unsafe(src, cs2, end2, max, out, fuel - 1)
+          val () = emit_blanks(src, end2, ep2, max, out)
+        in emit_range_process_unsafe(src, ep2, end_pos, max, out, fuel - 1) end
+        else let
+          val () = $B.put_byte(out, b)
+        in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
+      end
+    end
+    else let
+      val b_out = (if $AR.eq_int_int(b, 98) &&
+        $AR.eq_int_int($S.borrow_byte(src, start - 1, max), 46) &&
+        $AR.eq_int_int($S.borrow_byte(src, start + 1, max), 97) &&
+        $AR.eq_int_int($S.borrow_byte(src, start + 2, max), 116) &&
+        $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 115) &&
+        $AR.eq_int_int($S.borrow_byte(src, start + 4, max), 34)
+      then 115 else b): int
+      val () = $B.put_byte(out, b_out)
+    in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
+  end
+
 (* ============================================================
    Emitter: name mangling (__BATS__<mangled_pkg>_<member>)
    ============================================================ *)
@@ -482,7 +573,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
         val () = emit_blanks(src, ss, cs, src_max, dats)
         val () = emit_blanks(src, ss, cs, src_max, sats)
         val fuel2 = $AR.checked_nat(ce - cs + 1)
-        val () = emit_range(src, cs, ce, src_max, dats, fuel2)
+        val () = emit_range_process_unsafe(src, cs, ce, src_max, dats, fuel2)
         val () = emit_blanks(src, cs, ce, src_max, sats)
         val () = emit_blanks(src, ce, se, src_max, dats)
         val () = emit_blanks(src, ce, se, src_max, sats)
