@@ -766,13 +766,18 @@ fn lex_target_decl {l:agz}{n:pos}
   val p1 = skip_ws(src, ident_end, max, 256)
 in
   if looking_at_begin(src, p1, max) then let
-    (* Block form: find matching end, store content range *)
+    (* Block form: emit begin marker, lex content recursively, emit end marker *)
     val contents_start = p1 + 5
     val end_pos = find_end_kw(src, contents_start, src_len, max, 1, $AR.checked_nat(src_len))
     val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
-    (* kind=11: target_block. aux1=target(0=native,1=wasm), aux2/aux3=content range *)
-    val () = put_span(spans, 11, 0, start, ep, target, contents_start, end_pos, 0)
-  in @(ep, count + 1) end
+    (* kind=11: target begin. aux1=target. Covers "#target X begin" *)
+    val () = put_span(spans, 11, 0, start, contents_start, target, 0, 0, 0)
+    (* Recursively lex content with src_len=end_pos so lex_main stops there *)
+    val @(_, inner_count) = lex_main(src, end_pos, max, spans, contents_start, count + 1,
+      $AR.checked_nat(end_pos + 1))
+    (* kind=12: target end. aux1=target. Covers "end" *)
+    val () = put_span(spans, 12, 0, end_pos, ep, target, 0, 0, 0)
+  in @(ep, inner_count + 1) end
   else let
     (* Line form: just the directive *)
     val ep = skip_to_eol(src, ident_end, src_len, max, $AR.checked_nat(src_len))
