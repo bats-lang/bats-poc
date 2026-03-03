@@ -141,19 +141,32 @@ fun find_matching_end {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
     val b0 = $S.borrow_byte(src, pos, max)
     val b1 = $S.borrow_byte(src, pos + 1, max)
     val b2 = $S.borrow_byte(src, pos + 2, max)
+    val b3 = $S.borrow_byte(src, pos + 3, max)
+    val bp = $S.borrow_byte(src, pos - 1, max)
+    (* Keyword boundary: byte is NOT a-z, A-Z, 0-9, or _ *)
+    val after_boundary = ~($AR.gte_int_int(b3, 97) && $AR.lte_int_int(b3, 122)) &&
+                         ~($AR.gte_int_int(b3, 65) && $AR.lte_int_int(b3, 90)) &&
+                         ~($AR.gte_int_int(b3, 48) && $AR.lte_int_int(b3, 57)) &&
+                         ~$AR.eq_int_int(b3, 95)
+    val before_boundary = ~($AR.gte_int_int(bp, 97) && $AR.lte_int_int(bp, 122)) &&
+                          ~($AR.gte_int_int(bp, 65) && $AR.lte_int_int(bp, 90)) &&
+                          ~($AR.gte_int_int(bp, 48) && $AR.lte_int_int(bp, 57)) &&
+                          ~$AR.eq_int_int(bp, 95)
   in
-    (* Check for end: 101,110,100 + boundary *)
-    if $AR.eq_int_int(b0, 101) && $AR.eq_int_int(b1, 110) && $AR.eq_int_int(b2, 100) then
+    (* Check for end: e(101) n(110) d(100) with word boundaries *)
+    if $AR.eq_int_int(b0, 101) && $AR.eq_int_int(b1, 110) && $AR.eq_int_int(b2, 100)
+       && after_boundary && before_boundary then
       (if depth <= 1 then pos
        else find_matching_end(src, pos + 3, src_len, max, depth - 1, fuel - 1))
-    (* Check for begin: 98,101,103,105,110 *)
+    (* Check for begin: b(98) e(101) g(103) i(105) n(110) with before boundary *)
     else if $AR.eq_int_int(b0, 98) && $AR.eq_int_int(b1, 101) &&
-            $AR.eq_int_int(b2, 103) &&
-            $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 105) &&
-            $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 110) then
+            $AR.eq_int_int(b2, 103) && $AR.eq_int_int(b3, 105) &&
+            $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 110)
+            && before_boundary then
       find_matching_end(src, pos + 5, src_len, max, depth + 1, fuel - 1)
-    (* Check for let: 108,101,116 *)
-    else if $AR.eq_int_int(b0, 108) && $AR.eq_int_int(b1, 101) && $AR.eq_int_int(b2, 116) then
+    (* Check for let: l(108) e(101) t(116) with word boundaries *)
+    else if $AR.eq_int_int(b0, 108) && $AR.eq_int_int(b1, 101) && $AR.eq_int_int(b2, 116)
+            && after_boundary && before_boundary then
       find_matching_end(src, pos + 3, src_len, max, depth + 1, fuel - 1)
     else find_matching_end(src, pos + 1, src_len, max, depth, fuel - 1)
   end
