@@ -987,6 +987,17 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       val ep = pos + 6
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
+    (* staload lines go to both .sats and .dats as a single span *)
+    else if $AR.eq_int_int(b0, 115) &&
+       $AR.eq_int_int(b1, 116) &&
+       $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 97) &&
+       $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 108) &&
+       $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 111) &&
+       $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 97) &&
+       $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 100) then let
+      val ep = skip_to_eol(src, pos + 7, src_len, max, $AR.checked_nat(src_len))
+      val () = put_span(spans, 0, 2, pos, ep, 0, 0, 0, 0)
+    in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     (* Default: passthrough *)
     else let
       val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
