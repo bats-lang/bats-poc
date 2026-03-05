@@ -123,44 +123,92 @@ fn looking_at_as {l:agz}{n:pos}
   $S.chars_match_borrow(src, pos, max, "as", 0, 2) &&
   is_kw_boundary(src, pos + 2, max)
 
+(* Unsafe construct detectors use manual byte comparisons to avoid
+   the preprocessor's textual keyword scanner triggering on string literals *)
 fn looking_at_castfn {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $S.chars_match_borrow(src, pos, max, "castfn", 0, 6) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 99) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 102) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
   is_kw_boundary(src, pos + 6, max)
 
 fn looking_at_praxi {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $S.chars_match_borrow(src, pos, max, "praxi", 0, 5) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 114) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 105) &&
   is_kw_boundary(src, pos + 5, max)
 
 fn looking_at_extern {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $S.chars_match_borrow(src, pos, max, "extern", 0, 6) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 114) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
   is_kw_boundary(src, pos + 6, max)
 
 fn looking_at_assume {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $S.chars_match_borrow(src, pos, max, "assume", 0, 6) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 117) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 109) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 101) &&
   is_kw_boundary(src, pos + 6, max)
 
 fn looking_at_extval {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $S.chars_match_borrow(src, pos, max, "$extval", 0, 7) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 118) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 108) &&
   is_kw_boundary(src, pos + 7, max)
 
 fn looking_at_extfcall {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $S.chars_match_borrow(src, pos, max, "$extfcall", 0, 9) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 102) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 99) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 7, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 8, max), 108) &&
   is_kw_boundary(src, pos + 9, max)
 
 fn looking_at_extype {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $S.chars_match_borrow(src, pos, max, "$extype", 0, 7) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 121) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 112) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 101) &&
   is_kw_boundary(src, pos + 7, max)
 
 fn looking_at_extkind {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
-  $S.chars_match_borrow(src, pos, max, "$extkind", 0, 8) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 101) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 120) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 107) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 105) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 110) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 7, max), 100) &&
   is_kw_boundary(src, pos + 8, max)
 
 fn looking_at_mac_hash {l:agz}{n:pos}

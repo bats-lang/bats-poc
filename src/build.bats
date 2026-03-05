@@ -1196,10 +1196,15 @@ in case+ r of
       val bl = (case+ rr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
       val cr = $F.file_close(fd)
       val () = $R.discard<int><int>(cr)
+      val @(fz_buf, bv_buf) = $A.freeze<byte>(buf)
+      (* Check for '#' then "target wasm binary" — split to avoid lexer
+         interpreting #target inside the string *)
       val ok = (if bl >= 19 then
-        $S.chars_match(buf, 0, 32, "#target wasm binary", 0, 19)
+        $AR.eq_int_int($S.borrow_byte(bv_buf, 0, 32), 35) &&
+        $S.chars_match_borrow(bv_buf, 1, 32, "target wasm binary", 0, 18)
       else false): bool
-      val () = $A.free<byte>(buf)
+      val () = $A.drop<byte>(fz_buf, bv_buf)
+      val () = $A.free<byte>($A.thaw<byte>(fz_buf))
     in (if ok then 1 else 0) end
   | ~$R.err(_) => 0
 end
@@ -1922,7 +1927,10 @@ in
                   if dd then let
                     val () = $A.free<byte>(ent)
                   in scan_bins(d, ph, phlen, rel, fuel - 1) end
-                  else if bb then let
+                  else if ~bb then let
+                    val () = $A.free<byte>(ent)
+                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
+                  else let
                     val @(fz_e, bv_e) = $A.freeze<byte>(ent)
                     val stem_len = elen - 5
                     val sp = $B.create()
@@ -3432,8 +3440,8 @@ in
                     val lr = run_cmd(bv_cce, 524288, link_argv, link_argc)
                     val () = $A.drop<byte>(fz_cce, bv_cce)
                     val () = $A.free<byte>($A.thaw<byte>(fz_cce))
-                    in lr end
-                    end): int
+                    in lr end): int
+                    in rl end): int
 
                     val () = $A.drop<byte>(fz_sp, bv_sp)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sp))
@@ -3454,10 +3462,8 @@ in
                     val () = $A.drop<byte>(fz_e, bv_e)
                     val () = $A.free<byte>($A.thaw<byte>(fz_e))
                   in scan_bins(d, ph, phlen, rel, fuel - 1) end
-                  else let
-                    val () = $A.free<byte>(ent)
-                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
                 end
+              end
               end
             val () = scan_bins(d2, bv_patshome, phlen, release, 100)
             val dcr2 = $F.dir_close(d2)
