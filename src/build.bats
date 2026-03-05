@@ -842,6 +842,7 @@ fn run_wasm_cc {li:agz}{lo:agz}
   val () = $B.bput(argv, "-I") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "build/_bats_wasm_stubs") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-Wno-implicit-function-declaration") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-Wno-int-conversion") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-c") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-o") val () = $B.put_byte(argv, 0)
   val oc = out_len - 1
@@ -850,7 +851,7 @@ fn run_wasm_cc {li:agz}{lo:agz}
   val ic = in_len - 1
   val () = copy_to_builder(in_bv, 0, ic, 524288, argv, $AR.checked_nat(in_len + 1))
   val () = $B.put_byte(argv, 0)
-  val rc = run_cmd(bv_exec, 524288, argv, 19)
+  val rc = run_cmd(bv_exec, 524288, argv, 20)
   val () = $A.drop<byte>(fz_exec, bv_exec)
   val () = $A.free<byte>($A.thaw<byte>(fz_exec))
 in rc end
