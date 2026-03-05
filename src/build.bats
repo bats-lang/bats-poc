@@ -933,9 +933,9 @@ implement do_build_wasm(release) = let
   val () = $B.bput(link_b, "-o") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "dist/wasm/app.wasm") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "build/_bats_wasm_runtime.o") val () = $B.put_byte(link_b, 0)
-  val link_count = 31
+  val link_count0 = 31
   val () = (let val @(ea, _) = $B.to_arr(eb) val () = $A.free<byte>(ea) in end)
-  val () = (case+ dr of
+  val link_count1 = (case+ dr of
     | ~$R.ok(d) => let
         fun scan_build {fuel2:nat} .<fuel2>.
           (d: !$F.dir, lb: !$B.builder, lc: int, fuel2: int fuel2): int =
@@ -980,8 +980,8 @@ implement do_build_wasm(release) = let
         val nfiles = scan_build(d, link_b, 0, 500)
         val dcr = $F.dir_close(d)
         val () = $R.discard<int><int>(dcr)
-      in end
-    | ~$R.err(_) => ())
+      in link_count0 + nfiles end
+    | ~$R.err(_) => link_count0): int
   (* Compile dep _dats.c files with wasm cc and add .o to link *)
   val bm = $B.create()
   val () = $B.bput(bm, "build/bats_modules")
@@ -991,20 +991,20 @@ implement do_build_wasm(release) = let
   val bm_dr = $F.dir_open(bv_bm, 524288)
   val () = $A.drop<byte>(fz_bm, bv_bm)
   val () = $A.free<byte>($A.thaw<byte>(fz_bm))
-  val () = (case+ bm_dr of
+  val link_count2 = (case+ bm_dr of
     | ~$R.ok(bm_d) => let
         fun add_dep_objs {fuel3:nat} .<fuel3>.
-          (bm_d: !$F.dir, lb: !$B.builder, fuel3: int fuel3): void =
-          if fuel3 <= 0 then ()
+          (bm_d: !$F.dir, lb: !$B.builder, lc: int, fuel3: int fuel3): int =
+          if fuel3 <= 0 then lc
           else let
             val e = $A.alloc<byte>(256)
             val nr = $F.dir_next(bm_d, e, 256)
             val el = $R.option_unwrap_or<int>(nr, ~1)
-          in if el < 0 then $A.free<byte>(e)
+          in if el < 0 then let val () = $A.free<byte>(e) in lc end
             else let
               val dd = is_dot_or_dotdot(e, el, 256)
             in if dd then let val () = $A.free<byte>(e)
-              in add_dep_objs(bm_d, lb, fuel3 - 1) end
+              in add_dep_objs(bm_d, lb, lc, fuel3 - 1) end
             else let
               val @(fz_e, bv_e) = $A.freeze<byte>(e)
               (* Open build/bats_modules/<dep>/src/ and compile _dats.c files *)
@@ -1016,22 +1016,22 @@ implement do_build_wasm(release) = let
               val @(spa, _) = $B.to_arr(sp)
               val @(fz_sp, bv_sp) = $A.freeze<byte>(spa)
               val sd = $F.dir_open(bv_sp, 524288)
-              val () = (case+ sd of
+              val lc2 = (case+ sd of
                 | ~$R.ok(sd_d) => let
                     fun compile_dep_c {le2:agz}{fuel4:nat} .<fuel4>.
                       (sd_d: !$F.dir, lb2: !$B.builder,
                        bv_e2: !$A.borrow(byte, le2, 256), el2: int,
-                       fuel4: int fuel4): void =
-                      if fuel4 <= 0 then ()
+                       lc: int, fuel4: int fuel4): int =
+                      if fuel4 <= 0 then lc
                       else let
                         val oe = $A.alloc<byte>(256)
                         val onr = $F.dir_next(sd_d, oe, 256)
                         val oel = $R.option_unwrap_or<int>(onr, ~1)
-                      in if oel < 0 then $A.free<byte>(oe)
+                      in if oel < 0 then let val () = $A.free<byte>(oe) in lc end
                         else let
                           val is_c = $S.has_suffix(oe, oel, 256, "_dats.c", 7)
                         in if ~is_c then let val () = $A.free<byte>(oe)
-                          in compile_dep_c(sd_d, lb2, bv_e2, el2, fuel4 - 1) end
+                          in compile_dep_c(sd_d, lb2, bv_e2, el2, lc, fuel4 - 1) end
                         else let
                           val @(fz_oe, bv_oe) = $A.freeze<byte>(oe)
                           val pb = $B.create()
@@ -1043,23 +1043,23 @@ implement do_build_wasm(release) = let
                           val @(pa, pl) = $B.to_arr(pb)
                           val @(fz_p, bv_p) = $A.freeze<byte>(pa)
                           val rc = wasm_cc_file(bv_p, pl)
-                          val () = (if rc = 0 then let
+                          val lc3 = (if rc = 0 then let
                             (* Add .o path: replace trailing .c with .o *)
                             val () = copy_to_builder(bv_p, 0, pl - 2, 524288, lb2, $AR.checked_nat(pl))
                             val () = $B.bput(lb2, "o")
                             val () = $B.put_byte(lb2, 0)
-                          in end else ())
+                          in lc + 1 end else lc): int
                           val () = $A.drop<byte>(fz_p, bv_p)
                           val () = $A.free<byte>($A.thaw<byte>(fz_p))
                           val () = $A.drop<byte>(fz_oe, bv_oe)
                           val () = $A.free<byte>($A.thaw<byte>(fz_oe))
-                        in compile_dep_c(sd_d, lb2, bv_e2, el2, fuel4 - 1) end
+                        in compile_dep_c(sd_d, lb2, bv_e2, el2, lc3, fuel4 - 1) end
                         end
                       end
-                  in
-                    compile_dep_c(sd_d, lb, bv_e, el, 200);
-                    (let val dcr2 = $F.dir_close(sd_d) val () = $R.discard<int><int>(dcr2) in end)
-                  end
+                    val dc = compile_dep_c(sd_d, lb, bv_e, el, lc, 200)
+                    val dcr2 = $F.dir_close(sd_d)
+                    val () = $R.discard<int><int>(dcr2)
+                  in dc end
                 | ~$R.err(_) => let
                     (* Maybe it's a namespace dir — scan sub-packages *)
                     val nsp = $B.create()
@@ -1076,16 +1076,16 @@ implement do_build_wasm(release) = let
                         fun compile_ns_c {lns:agz}{fuel5:nat} .<fuel5>.
                           (nsd_d: !$F.dir, lb3: !$B.builder,
                            ns_bv: !$A.borrow(byte, lns, 256), ns_len: int,
-                           fuel5: int fuel5): void =
-                          if fuel5 <= 0 then ()
+                           lc: int, fuel5: int fuel5): int =
+                          if fuel5 <= 0 then lc
                           else let
                             val se = $A.alloc<byte>(256)
                             val snr = $F.dir_next(nsd_d, se, 256)
                             val sl = $R.option_unwrap_or<int>(snr, ~1)
-                          in if sl < 0 then $A.free<byte>(se)
+                          in if sl < 0 then let val () = $A.free<byte>(se) in lc end
                             else let val sdd = is_dot_or_dotdot(se, sl, 256) in
                               if sdd then let val () = $A.free<byte>(se)
-                              in compile_ns_c(nsd_d, lb3, ns_bv, ns_len, fuel5 - 1) end
+                              in compile_ns_c(nsd_d, lb3, ns_bv, ns_len, lc, fuel5 - 1) end
                               else let
                                 val @(fz_se, bv_se) = $A.freeze<byte>(se)
                                 val sp2 = $B.create()
@@ -1098,23 +1098,23 @@ implement do_build_wasm(release) = let
                                 val @(sp2a, _) = $B.to_arr(sp2)
                                 val @(fz_sp2, bv_sp2) = $A.freeze<byte>(sp2a)
                                 val sd2 = $F.dir_open(bv_sp2, 524288)
-                                val () = (case+ sd2 of
+                                val lc4 = (case+ sd2 of
                                   | ~$R.ok(sd2_d) => let
                                       fun compile_ns_sub_c {le3:agz}{fuel6:nat} .<fuel6>.
                                         (sd2_d: !$F.dir, lb4: !$B.builder,
                                          ns2: !$A.borrow(byte, lns, 256), nl2: int,
                                          sub2: !$A.borrow(byte, le3, 256), sl2: int,
-                                         fuel6: int fuel6): void =
-                                        if fuel6 <= 0 then ()
+                                         lc: int, fuel6: int fuel6): int =
+                                        if fuel6 <= 0 then lc
                                         else let
                                           val oe2 = $A.alloc<byte>(256)
                                           val onr2 = $F.dir_next(sd2_d, oe2, 256)
                                           val oel2 = $R.option_unwrap_or<int>(onr2, ~1)
-                                        in if oel2 < 0 then $A.free<byte>(oe2)
+                                        in if oel2 < 0 then let val () = $A.free<byte>(oe2) in lc end
                                           else let
                                             val is_c2 = $S.has_suffix(oe2, oel2, 256, "_dats.c", 7)
                                           in if ~is_c2 then let val () = $A.free<byte>(oe2)
-                                            in compile_ns_sub_c(sd2_d, lb4, ns2, nl2, sub2, sl2, fuel6 - 1) end
+                                            in compile_ns_sub_c(sd2_d, lb4, ns2, nl2, sub2, sl2, lc, fuel6 - 1) end
                                           else let
                                             val @(fz_oe2, bv_oe2) = $A.freeze<byte>(oe2)
                                             val pb2 = $B.create()
@@ -1128,68 +1128,68 @@ implement do_build_wasm(release) = let
                                             val @(pa2, pl2) = $B.to_arr(pb2)
                                             val @(fz_p2, bv_p2) = $A.freeze<byte>(pa2)
                                             val rc2 = wasm_cc_file(bv_p2, pl2)
-                                            val () = (if rc2 = 0 then let
+                                            val lc5 = (if rc2 = 0 then let
                                               val () = copy_to_builder(bv_p2, 0, pl2 - 2, 524288, lb4, $AR.checked_nat(pl2))
                                               val () = $B.bput(lb4, "o")
                                               val () = $B.put_byte(lb4, 0)
-                                            in end else ())
+                                            in lc + 1 end else lc): int
                                             val () = $A.drop<byte>(fz_p2, bv_p2)
                                             val () = $A.free<byte>($A.thaw<byte>(fz_p2))
                                             val () = $A.drop<byte>(fz_oe2, bv_oe2)
                                             val () = $A.free<byte>($A.thaw<byte>(fz_oe2))
-                                          in compile_ns_sub_c(sd2_d, lb4, ns2, nl2, sub2, sl2, fuel6 - 1) end
+                                          in compile_ns_sub_c(sd2_d, lb4, ns2, nl2, sub2, sl2, lc5, fuel6 - 1) end
                                           end
                                         end
-                                    in
-                                      compile_ns_sub_c(sd2_d, lb3, ns_bv, ns_len, bv_se, sl, 200);
-                                      (let val dcr4 = $F.dir_close(sd2_d) val () = $R.discard<int><int>(dcr4) in end)
-                                    end
-                                  | ~$R.err(_) => ())
+                                      val sc = compile_ns_sub_c(sd2_d, lb3, ns_bv, ns_len, bv_se, sl, lc, 200)
+                                      val dcr4 = $F.dir_close(sd2_d)
+                                      val () = $R.discard<int><int>(dcr4)
+                                    in sc end
+                                  | ~$R.err(_) => lc): int
                                 val () = $A.drop<byte>(fz_sp2, bv_sp2)
                                 val () = $A.free<byte>($A.thaw<byte>(fz_sp2))
                                 val () = $A.drop<byte>(fz_se, bv_se)
                                 val () = $A.free<byte>($A.thaw<byte>(fz_se))
-                              in compile_ns_c(nsd_d, lb3, ns_bv, ns_len, fuel5 - 1) end
+                              in compile_ns_c(nsd_d, lb3, ns_bv, ns_len, lc4, fuel5 - 1) end
                             end
                           end
-                      in
-                        compile_ns_c(nsd_d, lb, bv_e, el, 100);
-                        (let val dcr5 = $F.dir_close(nsd_d) val () = $R.discard<int><int>(dcr5) in end)
-                      end
-                    | ~$R.err(_) => ())
-                  end)
+                        val nc = compile_ns_c(nsd_d, lb, bv_e, el, lc, 100)
+                        val dcr5 = $F.dir_close(nsd_d)
+                        val () = $R.discard<int><int>(dcr5)
+                      in nc end
+                    | ~$R.err(_) => lc): int
+                  end): int
               val () = $A.drop<byte>(fz_sp, bv_sp)
               val () = $A.free<byte>($A.thaw<byte>(fz_sp))
               val () = $A.drop<byte>(fz_e, bv_e)
               val () = $A.free<byte>($A.thaw<byte>(fz_e))
-            in add_dep_objs(bm_d, lb, fuel3 - 1) end
+            in add_dep_objs(bm_d, lb, lc2, fuel3 - 1) end
             end
           end
-      in
-        add_dep_objs(bm_d, link_b, 500);
-        (let val dcr3 = $F.dir_close(bm_d) val () = $R.discard<int><int>(dcr3) in end)
-      end
-    | ~$R.err(_) => ())
+        val dep_count = add_dep_objs(bm_d, link_b, link_count1, 500)
+        val dcr3 = $F.dir_close(bm_d)
+        val () = $R.discard<int><int>(dcr3)
+      in dep_count end
+    | ~$R.err(_) => link_count1): int
   (* Compile src module _dats.c files with wasm cc *)
   val src_dp = str_to_path_arr("build/src")
   val @(fz_sdp, bv_sdp) = $A.freeze<byte>(src_dp)
   val src_dr = $F.dir_open(bv_sdp, 524288)
   val () = $A.drop<byte>(fz_sdp, bv_sdp)
   val () = $A.free<byte>($A.thaw<byte>(fz_sdp))
-  val () = (case+ src_dr of
+  val link_count3 = (case+ src_dr of
     | ~$R.ok(sd) => let
         fun wasm_cc_src {fuel7:nat} .<fuel7>.
-          (sd: !$F.dir, lb: !$B.builder, fuel7: int fuel7): void =
-          if fuel7 <= 0 then ()
+          (sd: !$F.dir, lb: !$B.builder, lc: int, fuel7: int fuel7): int =
+          if fuel7 <= 0 then lc
           else let
             val e = $A.alloc<byte>(256)
             val nr = $F.dir_next(sd, e, 256)
             val el = $R.option_unwrap_or<int>(nr, ~1)
-          in if el < 0 then $A.free<byte>(e)
+          in if el < 0 then let val () = $A.free<byte>(e) in lc end
             else let
               val is_c = $S.has_suffix(e, el, 256, "_dats.c", 7)
             in if ~is_c then let val () = $A.free<byte>(e)
-              in wasm_cc_src(sd, lb, fuel7 - 1) end
+              in wasm_cc_src(sd, lb, lc, fuel7 - 1) end
             else let
               val @(fz_e, bv_e) = $A.freeze<byte>(e)
               val pb = $B.create()
@@ -1199,43 +1199,43 @@ implement do_build_wasm(release) = let
               val @(pa, pl) = $B.to_arr(pb)
               val @(fz_p, bv_p) = $A.freeze<byte>(pa)
               val rc = wasm_cc_file(bv_p, pl)
-              val () = (if rc = 0 then let
+              val lc2 = (if rc = 0 then let
                 val () = copy_to_builder(bv_p, 0, pl - 2, 524288, lb, $AR.checked_nat(pl))
                 val () = $B.bput(lb, "o")
                 val () = $B.put_byte(lb, 0)
-              in end else ())
+              in lc + 1 end else lc): int
               val () = $A.drop<byte>(fz_p, bv_p)
               val () = $A.free<byte>($A.thaw<byte>(fz_p))
               val () = $A.drop<byte>(fz_e, bv_e)
               val () = $A.free<byte>($A.thaw<byte>(fz_e))
-            in wasm_cc_src(sd, lb, fuel7 - 1) end
+            in wasm_cc_src(sd, lb, lc2, fuel7 - 1) end
             end
           end
-        val () = wasm_cc_src(sd, link_b, 200)
+        val sc = wasm_cc_src(sd, link_b, link_count2, 200)
         val dcr6 = $F.dir_close(sd)
         val () = $R.discard<int><int>(dcr6)
-      in end
-    | ~$R.err(_) => ())
+      in sc end
+    | ~$R.err(_) => link_count2): int
   (* Compile src/bin _dats.c files with wasm cc *)
   val bin_dp = str_to_path_arr("build/src/bin")
   val @(fz_bdp, bv_bdp) = $A.freeze<byte>(bin_dp)
   val bin_dr = $F.dir_open(bv_bdp, 524288)
   val () = $A.drop<byte>(fz_bdp, bv_bdp)
   val () = $A.free<byte>($A.thaw<byte>(fz_bdp))
-  val () = (case+ bin_dr of
+  val link_count4 = (case+ bin_dr of
     | ~$R.ok(bd) => let
         fun wasm_cc_bin {fuel8:nat} .<fuel8>.
-          (bd: !$F.dir, lb: !$B.builder, fuel8: int fuel8): void =
-          if fuel8 <= 0 then ()
+          (bd: !$F.dir, lb: !$B.builder, lc: int, fuel8: int fuel8): int =
+          if fuel8 <= 0 then lc
           else let
             val e = $A.alloc<byte>(256)
             val nr = $F.dir_next(bd, e, 256)
             val el = $R.option_unwrap_or<int>(nr, ~1)
-          in if el < 0 then $A.free<byte>(e)
+          in if el < 0 then let val () = $A.free<byte>(e) in lc end
             else let
               val is_c = $S.has_suffix(e, el, 256, "_dats.c", 7)
             in if ~is_c then let val () = $A.free<byte>(e)
-              in wasm_cc_bin(bd, lb, fuel8 - 1) end
+              in wasm_cc_bin(bd, lb, lc, fuel8 - 1) end
             else let
               val @(fz_e, bv_e) = $A.freeze<byte>(e)
               val pb = $B.create()
@@ -1245,23 +1245,23 @@ implement do_build_wasm(release) = let
               val @(pa, pl) = $B.to_arr(pb)
               val @(fz_p, bv_p) = $A.freeze<byte>(pa)
               val rc = wasm_cc_file(bv_p, pl)
-              val () = (if rc = 0 then let
+              val lc2 = (if rc = 0 then let
                 val () = copy_to_builder(bv_p, 0, pl - 2, 524288, lb, $AR.checked_nat(pl))
                 val () = $B.bput(lb, "o")
                 val () = $B.put_byte(lb, 0)
-              in end else ())
+              in lc + 1 end else lc): int
               val () = $A.drop<byte>(fz_p, bv_p)
               val () = $A.free<byte>($A.thaw<byte>(fz_p))
               val () = $A.drop<byte>(fz_e, bv_e)
               val () = $A.free<byte>($A.thaw<byte>(fz_e))
-            in wasm_cc_bin(bd, lb, fuel8 - 1) end
+            in wasm_cc_bin(bd, lb, lc2, fuel8 - 1) end
             end
           end
-        val () = wasm_cc_bin(bd, link_b, 200)
+        val bc = wasm_cc_bin(bd, link_b, link_count3, 200)
         val dcr7 = $F.dir_close(bd)
         val () = $R.discard<int><int>(dcr7)
-      in end
-    | ~$R.err(_) => ())
+      in bc end
+    | ~$R.err(_) => link_count3): int
   val () = println! ("  linking WASM...")
   val mb1 = $B.create()
   val () = $B.bput(mb1, "dist")
@@ -1271,7 +1271,7 @@ implement do_build_wasm(release) = let
   val _ = run_mkdir(mb2)
   val exec_ld = str_to_path_arr("/usr/bin/wasm-ld")
   val @(fz_ld, bv_ld) = $A.freeze<byte>(exec_ld)
-  val lrc = run_cmd(bv_ld, 524288, link_b, link_count + 10)
+  val lrc = run_cmd(bv_ld, 524288, link_b, link_count4)
   val () = $A.drop<byte>(fz_ld, bv_ld)
   val () = $A.free<byte>($A.thaw<byte>(fz_ld))
   val () = (if lrc <> 0 then println! ("error: wasm-ld failed") else println! ("  built: dist/wasm/app.wasm"))
