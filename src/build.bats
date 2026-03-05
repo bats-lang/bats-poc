@@ -956,8 +956,171 @@ implement do_build_wasm(release) = let
         val () = $R.discard<int><int>(dcr)
       in end
     | ~$R.err(_) => ())
-  (* TODO: also scan subdirectories for dep and src .o files *)
-  (* For now, just link what we found in build/ *)
+  (* Also add dep .o files from bats_modules/ *)
+  val bm = $B.create()
+  val () = $B.bput(bm, "build/bats_modules")
+  val () = $B.put_byte(bm, 0)
+  val @(bma, _) = $B.to_arr(bm)
+  val @(fz_bm, bv_bm) = $A.freeze<byte>(bma)
+  val bm_dr = $F.dir_open(bv_bm, 524288)
+  val () = $A.drop<byte>(fz_bm, bv_bm)
+  val () = $A.free<byte>($A.thaw<byte>(fz_bm))
+  val () = (case+ bm_dr of
+    | ~$R.ok(bm_d) => let
+        fun add_dep_objs {fuel3:nat} .<fuel3>.
+          (bm_d: !$F.dir, lb: !$B.builder, fuel3: int fuel3): void =
+          if fuel3 <= 0 then ()
+          else let
+            val e = $A.alloc<byte>(256)
+            val nr = $F.dir_next(bm_d, e, 256)
+            val el = $R.option_unwrap_or<int>(nr, ~1)
+          in if el < 0 then $A.free<byte>(e)
+            else let
+              val dd = is_dot_or_dotdot(e, el, 256)
+            in if dd then let val () = $A.free<byte>(e)
+              in add_dep_objs(bm_d, lb, fuel3 - 1) end
+            else let
+              val @(fz_e, bv_e) = $A.freeze<byte>(e)
+              (* Open build/bats_modules/<dep>/src/ and add .o files *)
+              val sp = $B.create()
+              val () = $B.bput(sp, "build/bats_modules/")
+              val () = copy_to_builder(bv_e, 0, el, 256, sp, $AR.checked_nat(el + 1))
+              val () = $B.bput(sp, "/src")
+              val () = $B.put_byte(sp, 0)
+              val @(spa, _) = $B.to_arr(sp)
+              val @(fz_sp, bv_sp) = $A.freeze<byte>(spa)
+              val sd = $F.dir_open(bv_sp, 524288)
+              val () = (case+ sd of
+                | ~$R.ok(sd_d) => let
+                    fun add_o {le2:agz}{fuel4:nat} .<fuel4>.
+                      (sd_d: !$F.dir, lb2: !$B.builder,
+                       bv_e2: !$A.borrow(byte, le2, 256), el2: int,
+                       fuel4: int fuel4): void =
+                      if fuel4 <= 0 then ()
+                      else let
+                        val oe = $A.alloc<byte>(256)
+                        val onr = $F.dir_next(sd_d, oe, 256)
+                        val oel = $R.option_unwrap_or<int>(onr, ~1)
+                      in if oel < 0 then $A.free<byte>(oe)
+                        else let
+                          val is_o = $S.has_suffix(oe, oel, 256, "_dats.o", 7)
+                        in if ~is_o then let val () = $A.free<byte>(oe)
+                          in add_o(sd_d, lb2, bv_e2, el2, fuel4 - 1) end
+                        else let
+                          val @(fz_oe, bv_oe) = $A.freeze<byte>(oe)
+                          val () = $B.bput(lb2, "build/bats_modules/")
+                          val () = copy_to_builder(bv_e2, 0, el2, 256, lb2, $AR.checked_nat(el2 + 1))
+                          val () = $B.bput(lb2, "/src/")
+                          val () = copy_to_builder(bv_oe, 0, oel, 256, lb2, $AR.checked_nat(oel + 1))
+                          val () = $B.put_byte(lb2, 0)
+                          val () = $A.drop<byte>(fz_oe, bv_oe)
+                          val () = $A.free<byte>($A.thaw<byte>(fz_oe))
+                        in add_o(sd_d, lb2, bv_e2, el2, fuel4 - 1) end
+                        end
+                      end
+                  in
+                    add_o(sd_d, lb, bv_e, el, 200);
+                    (let val dcr2 = $F.dir_close(sd_d) val () = $R.discard<int><int>(dcr2) in end)
+                  end
+                | ~$R.err(_) => let
+                    (* Maybe it's a namespace dir — scan sub-packages *)
+                    val nsp = $B.create()
+                    val () = $B.bput(nsp, "build/bats_modules/")
+                    val () = copy_to_builder(bv_e, 0, el, 256, nsp, $AR.checked_nat(el + 1))
+                    val () = $B.put_byte(nsp, 0)
+                    val @(nspa, _) = $B.to_arr(nsp)
+                    val @(fz_nsp, bv_nsp) = $A.freeze<byte>(nspa)
+                    val nsd = $F.dir_open(bv_nsp, 524288)
+                    val () = $A.drop<byte>(fz_nsp, bv_nsp)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_nsp))
+                  in (case+ nsd of
+                    | ~$R.ok(nsd_d) => let
+                        fun scan_ns_o {lns:agz}{fuel5:nat} .<fuel5>.
+                          (nsd_d: !$F.dir, lb3: !$B.builder,
+                           ns_bv: !$A.borrow(byte, lns, 256), ns_len: int,
+                           fuel5: int fuel5): void =
+                          if fuel5 <= 0 then ()
+                          else let
+                            val se = $A.alloc<byte>(256)
+                            val snr = $F.dir_next(nsd_d, se, 256)
+                            val sl = $R.option_unwrap_or<int>(snr, ~1)
+                          in if sl < 0 then $A.free<byte>(se)
+                            else let val sdd = is_dot_or_dotdot(se, sl, 256) in
+                              if sdd then let val () = $A.free<byte>(se)
+                              in scan_ns_o(nsd_d, lb3, ns_bv, ns_len, fuel5 - 1) end
+                              else let
+                                val @(fz_se, bv_se) = $A.freeze<byte>(se)
+                                val sp2 = $B.create()
+                                val () = $B.bput(sp2, "build/bats_modules/")
+                                val () = copy_to_builder(ns_bv, 0, ns_len, 256, sp2, $AR.checked_nat(ns_len + 1))
+                                val () = $B.bput(sp2, "/")
+                                val () = copy_to_builder(bv_se, 0, sl, 256, sp2, $AR.checked_nat(sl + 1))
+                                val () = $B.bput(sp2, "/src")
+                                val () = $B.put_byte(sp2, 0)
+                                val @(sp2a, _) = $B.to_arr(sp2)
+                                val @(fz_sp2, bv_sp2) = $A.freeze<byte>(sp2a)
+                                val sd2 = $F.dir_open(bv_sp2, 524288)
+                                val () = (case+ sd2 of
+                                  | ~$R.ok(sd2_d) => let
+                                      fun add_ns_o {le3:agz}{fuel6:nat} .<fuel6>.
+                                        (sd2_d: !$F.dir, lb4: !$B.builder,
+                                         ns2: !$A.borrow(byte, lns, 256), nl2: int,
+                                         sub2: !$A.borrow(byte, le3, 256), sl2: int,
+                                         fuel6: int fuel6): void =
+                                        if fuel6 <= 0 then ()
+                                        else let
+                                          val oe2 = $A.alloc<byte>(256)
+                                          val onr2 = $F.dir_next(sd2_d, oe2, 256)
+                                          val oel2 = $R.option_unwrap_or<int>(onr2, ~1)
+                                        in if oel2 < 0 then $A.free<byte>(oe2)
+                                          else let
+                                            val is_o2 = $S.has_suffix(oe2, oel2, 256, "_dats.o", 7)
+                                          in if ~is_o2 then let val () = $A.free<byte>(oe2)
+                                            in add_ns_o(sd2_d, lb4, ns2, nl2, sub2, sl2, fuel6 - 1) end
+                                          else let
+                                            val @(fz_oe2, bv_oe2) = $A.freeze<byte>(oe2)
+                                            val () = $B.bput(lb4, "build/bats_modules/")
+                                            val () = copy_to_builder(ns2, 0, nl2, 256, lb4, $AR.checked_nat(nl2 + 1))
+                                            val () = $B.bput(lb4, "/")
+                                            val () = copy_to_builder(sub2, 0, sl2, 256, lb4, $AR.checked_nat(sl2 + 1))
+                                            val () = $B.bput(lb4, "/src/")
+                                            val () = copy_to_builder(bv_oe2, 0, oel2, 256, lb4, $AR.checked_nat(oel2 + 1))
+                                            val () = $B.put_byte(lb4, 0)
+                                            val () = $A.drop<byte>(fz_oe2, bv_oe2)
+                                            val () = $A.free<byte>($A.thaw<byte>(fz_oe2))
+                                          in add_ns_o(sd2_d, lb4, ns2, nl2, sub2, sl2, fuel6 - 1) end
+                                          end
+                                        end
+                                    in
+                                      add_ns_o(sd2_d, lb3, ns_bv, ns_len, bv_se, sl, 200);
+                                      (let val dcr4 = $F.dir_close(sd2_d) val () = $R.discard<int><int>(dcr4) in end)
+                                    end
+                                  | ~$R.err(_) => ())
+                                val () = $A.drop<byte>(fz_sp2, bv_sp2)
+                                val () = $A.free<byte>($A.thaw<byte>(fz_sp2))
+                                val () = $A.drop<byte>(fz_se, bv_se)
+                                val () = $A.free<byte>($A.thaw<byte>(fz_se))
+                              in scan_ns_o(nsd_d, lb3, ns_bv, ns_len, fuel5 - 1) end
+                            end
+                          end
+                      in
+                        scan_ns_o(nsd_d, lb, bv_e, el, 100);
+                        (let val dcr5 = $F.dir_close(nsd_d) val () = $R.discard<int><int>(dcr5) in end)
+                      end
+                    | ~$R.err(_) => ())
+                  end)
+              val () = $A.drop<byte>(fz_sp, bv_sp)
+              val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+              val () = $A.drop<byte>(fz_e, bv_e)
+              val () = $A.free<byte>($A.thaw<byte>(fz_e))
+            in add_dep_objs(bm_d, lb, fuel3 - 1) end
+            end
+          end
+      in
+        add_dep_objs(bm_d, link_b, 500);
+        (let val dcr3 = $F.dir_close(bm_d) val () = $R.discard<int><int>(dcr3) in end)
+      end
+    | ~$R.err(_) => ())
   val () = println! ("  linking WASM...")
   val mb1 = $B.create()
   val () = $B.bput(mb1, "dist")
@@ -1017,6 +1180,27 @@ in case+ r of
         in result end
       | ~$R.err(_) => 0
     end
+  | ~$R.err(_) => 0
+end
+
+(* Check if a .bats source file starts with "#target wasm binary" *)
+#pub fn check_wasm_binary {l:agz}
+  (path: !$A.borrow(byte, l, 524288)): int
+
+implement check_wasm_binary(path) = let
+  val r = $F.file_open(path, 524288, 0, 0)
+in case+ r of
+  | ~$R.ok(fd) => let
+      val buf = $A.alloc<byte>(32)
+      val rr = $F.file_read(fd, buf, 32)
+      val bl = (case+ rr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+      val cr = $F.file_close(fd)
+      val () = $R.discard<int><int>(cr)
+      val ok = (if bl >= 19 then
+        $S.chars_match(buf, 0, 32, "#target wasm binary", 0, 19)
+      else false): bool
+      val () = $A.free<byte>(buf)
+    in (if ok then 1 else 0) end
   | ~$R.err(_) => 0
 end
 
@@ -1740,9 +1924,7 @@ in
                   in scan_bins(d, ph, phlen, rel, fuel - 1) end
                   else if bb then let
                     val @(fz_e, bv_e) = $A.freeze<byte>(ent)
-                    (* stem = name without .bats extension *)
                     val stem_len = elen - 5
-                    (* source: src/bin/<name>.bats *)
                     val sp = $B.create()
                     val () = $B.bput(sp, "src/bin/")
                     val () = copy_to_builder(bv_e, 0, elen, 256, sp,
@@ -1750,7 +1932,19 @@ in
                     val () = $B.put_byte(sp, 0)
                     val @(sa, _) = $B.to_arr(sp)
                     val @(fz_sp, bv_sp) = $A.freeze<byte>(sa)
-                    (* sats: build/src/bin/<name>.sats *)
+                    val is_wasm_bin = check_wasm_binary(bv_sp)
+                    (* Skip: wasm binary during native pass, or native binary during wasm pass *)
+                    val skip_bin = (if is_wasm_bin > 0 then
+                      $AR.eq_int_int(build_target, 0)
+                    else $AR.eq_int_int(build_target, 1)): bool
+                  in if skip_bin then let
+                    val () = $A.drop<byte>(fz_sp, bv_sp)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_sp))
+                    val () = $A.drop<byte>(fz_e, bv_e)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_e))
+                  in scan_bins(d, ph, phlen, rel, fuel - 1) end
+                  else let
+                    val bin_bt = (if is_wasm_bin > 0 then 1 else 0): int
                     val ss = $B.create()
                     val () = $B.bput(ss, "build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, ss,
@@ -1768,7 +1962,7 @@ in
                     val () = $B.put_byte(sd, 0)
                     val @(sda, _) = $B.to_arr(sd)
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
-                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, build_target, is_unsafe)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, bin_bt, is_unsafe)
                     val () = (if pr <> 0 then let
                       val () = print! ("error: preprocess failed for ")
                       val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
@@ -2858,6 +3052,9 @@ in
                         in end
                       | ~$R.err(_) => ())
 
+                    (* Skip native cc+link for wasm binaries *)
+                    val rl = (if bin_bt > 0 then 0 else let
+
                     (* Compile binary *)
                     val bin_cc_fresh = let
                       val ob = $B.create()
@@ -3232,10 +3429,11 @@ in
                     val @(fz_cce, bv_cce) = $A.freeze<byte>(cc_exec)
                     (* Remove the first "PATH=..." token and "cc" token,
                        start argv from "cc" *)
-                    val rl = run_cmd(bv_cce, 524288, link_argv, link_argc)
+                    val lr = run_cmd(bv_cce, 524288, link_argv, link_argc)
                     val () = $A.drop<byte>(fz_cce, bv_cce)
                     val () = $A.free<byte>($A.thaw<byte>(fz_cce))
-                    in rl end): int
+                    in lr end
+                    end): int
 
                     val () = $A.drop<byte>(fz_sp, bv_sp)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sp))

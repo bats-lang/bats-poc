@@ -286,7 +286,11 @@ in
               in
                 if only_mask = 0 then let
                   val () = do_build(0, 0)
-                in do_build(1, 0) end
+                  val () = do_build(1, 0)
+                  val () = do_build(0, 1)
+                  val () = do_build_wasm(0)
+                  val () = do_build(1, 1)
+                in do_build_wasm(1) end
                 else let
                   val bt = (if has_wasm > 0 then 1 else 0): int
                   val () = (if has_debug > 0 then do_build(0, bt) else ())
