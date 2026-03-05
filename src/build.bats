@@ -697,7 +697,7 @@ implement write_wasm_runtime_h() = let
   val () = $B.bput(b, "#define ATSPMVfunlab(flab) (flab)\n#define ATSPMVcastfn(d2c, hit, arg) ((hit)arg)\n#define ATSPMVtyrep(rep) (rep)\n")
   val () = $B.bput(b, "#define ATStyclo() struct{ void *cfun; }\n#define ATSfunclo_fun(pmv, targs, tres) ((tres(*)targs)(pmv))\n")
   val () = $B.bput(b, "#define ATSfunclo_clo(pmv, targs, tres) ((tres(*)targs)(((ATStyclo()*)pmv)->cfun))\n")
-  val () = $B.bput(b, "#define ATSfuncall(fun, funarg) (fun)funarg\n#define ATSextfcall(fun, funarg) (fun)funarg\n#define ATSextmcall(obj, mtd, funarg) (obj->mtd)funarg\n")
+  val () = $B.bput(b, "#define ATSfuncall(fun, funarg) (fun)funarg\n#define ATSextfcall(fun, funarg) fun funarg\n#define ATSextmcall(obj, mtd, funarg) (obj->mtd)funarg\n")
   val () = $B.bput(b, "#define ATStmpdec(tmp, hit) hit tmp\n#define ATStmpdec_void(tmp)\n#define ATSstatmpdec(tmp, hit) static hit tmp\n#define ATSstatmpdec_void(tmp)\n")
   val () = $B.bput(b, "#define ATSderef(pmv, hit) (*(hit*)pmv)\n#define ATSCKnot(x) ((x)==0)\n#define ATSCKiseqz(x) ((x)==0)\n#define ATSCKisneqz(x) ((x)!=0)\n")
   val () = $B.bput(b, "#define ATSCKptriscons(x) (0 != (void*)(x))\n#define ATSCKptrisnull(x) (0 == (void*)(x))\n")
@@ -841,6 +841,7 @@ fn run_wasm_cc {li:agz}{lo:agz}
   val () = $B.bput(argv, "build/_bats_wasm_runtime.h") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-I") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "build/_bats_wasm_stubs") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-Wno-implicit-function-declaration") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-c") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-o") val () = $B.put_byte(argv, 0)
   val oc = out_len - 1
@@ -849,7 +850,7 @@ fn run_wasm_cc {li:agz}{lo:agz}
   val ic = in_len - 1
   val () = copy_to_builder(in_bv, 0, ic, 524288, argv, $AR.checked_nat(in_len + 1))
   val () = $B.put_byte(argv, 0)
-  val rc = run_cmd(bv_exec, 524288, argv, 18)
+  val rc = run_cmd(bv_exec, 524288, argv, 19)
   val () = $A.drop<byte>(fz_exec, bv_exec)
   val () = $A.free<byte>($A.thaw<byte>(fz_exec))
 in rc end
@@ -894,6 +895,7 @@ implement do_build_wasm(release) = let
   val () = $B.bput(link_b, "wasm-ld") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "--no-entry") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "--allow-undefined") val () = $B.put_byte(link_b, 0)
+  val () = $B.bput(link_b, "--allow-multiple-definition") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "--lto-O2") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "-z") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "stack-size=1048576") val () = $B.put_byte(link_b, 0)
@@ -912,7 +914,7 @@ implement do_build_wasm(release) = let
   val () = $B.bput(link_b, "-o") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "dist/wasm/app.wasm") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "build/_bats_wasm_runtime.o") val () = $B.put_byte(link_b, 0)
-  val link_count = 22
+  val link_count = 23
   val () = (let val @(ea, _) = $B.to_arr(eb) val () = $A.free<byte>(ea) in end)
   val () = (case+ dr of
     | ~$R.ok(d) => let
