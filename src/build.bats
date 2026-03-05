@@ -764,6 +764,12 @@ implement write_wasm_runtime_c() = let
   val () = $B.bput(b, "prev=(void**)cur;cur=*(void**)cur;}void *p=ward_bump(n);memset(p,0,n);return p;}\n")
   val () = $B.bput(b, "void free(void *ptr){if(!ptr)return;unsigned int sz=ward_hdr_read(ptr);int b=ward_bucket(sz);if(b>=0&&ward_bsz[b]==sz){*(void**)ptr=ward_fl[b];ward_fl[b]=ptr;}\n")
   val () = $B.bput(b, "else{*(void**)ptr=ward_fl_over;ward_fl_over=ptr;}}\n")
+  val () = $B.bput(b, "/* Bridge runtime -- shared data and exported functions */\n")
+  val () = $B.bput(b, "int _bridge_stash_int[4] = {0};\nint _bridge_measure[6] = {0};\n#define _BRIDGE_MAX_LISTENERS 128\nvoid *_bridge_listener_table[_BRIDGE_MAX_LISTENERS] = {0};\n")
+  val () = $B.bput(b, "void bats_bridge_stash_set_int(int slot, int v) { _bridge_stash_int[slot] = v; }\nint bats_bridge_stash_get_int(int slot) { return _bridge_stash_int[slot]; }\n")
+  val () = $B.bput(b, "void bats_measure_set(int slot, int v) { _bridge_measure[slot] = v; }\nint bats_bridge_measure_get(int slot) { return _bridge_measure[slot]; }\n")
+  val () = $B.bput(b, "void bats_listener_set(int id, void *cb) { if (id >= 0 && id < _BRIDGE_MAX_LISTENERS) _bridge_listener_table[id] = cb; }\n")
+  val () = $B.bput(b, "void *bats_listener_get(int id) { if (id >= 0 && id < _BRIDGE_MAX_LISTENERS) return _bridge_listener_table[id]; return (void*)0; }\n")
   val p = str_to_path_arr("build/_bats_wasm_runtime.c")
   val @(fz_p, bv_p) = $A.freeze<byte>(p)
   val rc = write_file_from_builder(bv_p, 524288, b)
@@ -843,6 +849,7 @@ fn run_wasm_cc {li:agz}{lo:agz}
   val () = $B.bput(argv, "build/_bats_wasm_stubs") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-Wno-implicit-function-declaration") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-Wno-int-conversion") val () = $B.put_byte(argv, 0)
+  val () = $B.bput(argv, "-D_BRIDGE_RUNTIME_DEFINED") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-c") val () = $B.put_byte(argv, 0)
   val () = $B.bput(argv, "-o") val () = $B.put_byte(argv, 0)
   val oc = out_len - 1
@@ -851,7 +858,7 @@ fn run_wasm_cc {li:agz}{lo:agz}
   val ic = in_len - 1
   val () = copy_to_builder(in_bv, 0, ic, 524288, argv, $AR.checked_nat(in_len + 1))
   val () = $B.put_byte(argv, 0)
-  val rc = run_cmd(bv_exec, 524288, argv, 20)
+  val rc = run_cmd(bv_exec, 524288, argv, 21)
   val () = $A.drop<byte>(fz_exec, bv_exec)
   val () = $A.free<byte>($A.thaw<byte>(fz_exec))
 in rc end
@@ -896,7 +903,6 @@ implement do_build_wasm(release) = let
   val () = $B.bput(link_b, "wasm-ld") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "--no-entry") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "--allow-undefined") val () = $B.put_byte(link_b, 0)
-  val () = $B.bput(link_b, "--allow-multiple-definition") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "--lto-O2") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "-z") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "stack-size=1048576") val () = $B.put_byte(link_b, 0)
@@ -915,7 +921,7 @@ implement do_build_wasm(release) = let
   val () = $B.bput(link_b, "-o") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "dist/wasm/app.wasm") val () = $B.put_byte(link_b, 0)
   val () = $B.bput(link_b, "build/_bats_wasm_runtime.o") val () = $B.put_byte(link_b, 0)
-  val link_count = 23
+  val link_count = 22
   val () = (let val @(ea, _) = $B.to_arr(eb) val () = $A.free<byte>(ea) in end)
   val () = (case+ dr of
     | ~$R.ok(d) => let
