@@ -24,33 +24,35 @@ jobs:
           mkdir -p ~/.bats
           ln -sf ~/.ats2/ATS2-Postiats-int-0.4.2 ~/.bats/ats2
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache bootstrap compiler
-        id: cache-bootstrap
+      - name: Cache bats compiler
+        id: cache-bats
         uses: actions/cache@v4
         with:
-          path: ~/bootstrap
-          key: bootstrap-v2-${{ runner.os }}-${{ hashFiles('.github/workflows/check.yml') }}
+          path: ~/bats-bin
+          key: bats-from-c-v2-${{ runner.os }}-${{ hashFiles('.github/workflows/check.yml') }}
 
-      - name: Build bootstrap compiler
-        if: steps.cache-bootstrap.outputs.cache-hit != 'true'
+      - name: Build bats from C
+        if: steps.cache-bats.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git clone https://github.com/bats-lang/bats-old.git ~/bootstrap
-          cd ~/bootstrap
-          cargo build --release
+          RUN_ID=$(gh run list --repo bats-lang/bats --branch main --status success --workflow check --limit 1 --json databaseId --jq '.[0].databaseId')
+          gh run download "$RUN_ID" --repo bats-lang/bats --name bats-c --dir ~/bats-c
+          cd ~/bats-c
+          make PATSHOME=$HOME/.ats2/ATS2-Postiats-int-0.4.2
+          mkdir -p ~/bats-bin
+          cp debug/bats ~/bats-bin/bats
 
       - name: bats check
         run: |
-          export PATH=~/bootstrap/target/release:$PATH
+          export PATH=~/bats-bin:$PATH
           git clone https://github.com/bats-lang/repository-prototype.git ~/repository
           bats lock --repository ~/repository
           bats check --repository ~/repository
 
       - name: bats build
         run: |
-          export PATH=~/bootstrap/target/release:$PATH
+          export PATH=~/bats-bin:$PATH
           bats build --repository ~/repository
 
       - name: bats build --to-c
