@@ -84,9 +84,19 @@ fn span_aux4 {l:agz}{n:pos}
    Emitter: copy source range to builder, count newlines
    ============================================================ *)
 
-(* Copy bytes from source borrow to builder.
-   Transforms .bats" → .sats" in staload paths. *)
+(* Copy bytes from source borrow to builder. *)
 fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
+   max: int ns, out: !$B.builder0, fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if start >= end_pos then ()
+  else let
+    val b = $S.borrow_byte(src, start, max)
+    val () = $B.put_byte_safe(out, b)
+  in emit_range(src, start + 1, end_pos, max, out, fuel - 1) end
+
+(* Copy bytes, transforming .bats" → .sats" for staload paths. *)
+fun emit_range_staload {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
    max: int ns, out: !$B.builder0, fuel: int fuel): void =
   if fuel <= 0 then ()
@@ -102,7 +112,7 @@ fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
       $AR.eq_int_int($S.borrow_byte(src, start + 4, max), 34)
     then 115 else b): int
     val () = $B.put_byte_safe(out, b_out)
-  in emit_range(src, start + 1, end_pos, max, out, fuel - 1) end
+  in emit_range_staload(src, start + 1, end_pos, max, out, fuel - 1) end
 
 (* Count newlines in source range, emit that many newlines *)
 fun emit_blanks_count {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
@@ -599,6 +609,14 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                     sats, dats, build_target, is_unsafe, errors, fuel - 1) end
     end
+
+    (* kind=12: staload_line - emit to both with .bats→.sats rename *)
+    else if $AR.eq_int_int(kind, 12) then let
+      val fuel2 = $AR.checked_nat(se - ss + 1)
+      val () = emit_range_staload(src, ss, se, src_max, dats, fuel2)
+      val () = emit_range_staload(src, ss, se, src_max, sats, fuel2)
+    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
     (* Unknown kind: skip *)
     else
