@@ -101,7 +101,7 @@ fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
       $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 115) &&
       $AR.eq_int_int($S.borrow_byte(src, start + 4, max), 34)
     then 115 else b): int
-    val () = $B.put_byte(out, b_out)
+    val () = $B.put_byte_safe(out, b_out)
   in emit_range(src, start + 1, end_pos, max, out, fuel - 1) end
 
 (* Count newlines in source range, emit that many newlines *)
@@ -120,7 +120,7 @@ fun emit_newlines {fuel:nat} .<fuel>.
   if fuel <= 0 then ()
   else if count <= 0 then ()
   else let
-    val () = $B.put_byte(out, 10)
+    val () = $B.put_byte_safe(out, 10)
   in emit_newlines(out, count - 1, fuel - 1) end
 
 fn emit_blanks {ls:agz}{ns:pos}
@@ -193,7 +193,7 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
       val next = $S.borrow_byte(src, after, max)
     in
       if $AR.eq_int_int(next, 46) then let
-        val () = $B.put_byte(out, b)
+        val () = $B.put_byte_safe(out, b)
       in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
       else let
         (* Skip whitespace after $UNSAFE *)
@@ -219,7 +219,7 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
           val () = emit_blanks(src, end2, ep2, max, out)
         in emit_range_process_unsafe(src, ep2, end_pos, max, out, fuel - 1) end
         else let
-          val () = $B.put_byte(out, b)
+          val () = $B.put_byte_safe(out, b)
         in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
       end
     end
@@ -231,7 +231,7 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
         $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 115) &&
         $AR.eq_int_int($S.borrow_byte(src, start + 4, max), 34)
       then 115 else b): int
-      val () = $B.put_byte(out, b_out)
+      val () = $B.put_byte_safe(out, b_out)
     in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
   end
 
@@ -241,32 +241,32 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
 
 (* Emit __BATS__ prefix: 95,95,66,65,84,83,95,95 *)
 fn emit_bats_prefix(out: !$B.builder0): void = let
-  val () = $B.put_byte(out, 95)   (* _ *)
-  val () = $B.put_byte(out, 95)   (* _ *)
-  val () = $B.put_byte(out, 66)   (* B *)
-  val () = $B.put_byte(out, 65)   (* A *)
-  val () = $B.put_byte(out, 84)   (* T *)
-  val () = $B.put_byte(out, 83)   (* S *)
-  val () = $B.put_byte(out, 95)   (* _ *)
-  val () = $B.put_byte(out, 95)   (* _ *)
+  val () = $B.put_byte_safe(out, 95)   (* _ *)
+  val () = $B.put_byte_safe(out, 95)   (* _ *)
+  val () = $B.put_byte_safe(out, 66)   (* B *)
+  val () = $B.put_byte_safe(out, 65)   (* A *)
+  val () = $B.put_byte_safe(out, 84)   (* T *)
+  val () = $B.put_byte_safe(out, 83)   (* S *)
+  val () = $B.put_byte_safe(out, 95)   (* _ *)
+  val () = $B.put_byte_safe(out, 95)   (* _ *)
 in end
 
 (* Emit hex digit for a nibble *)
 fn emit_hex_nibble(out: !$B.builder0, v: int): void =
-  if v < 10 then $B.put_byte(out, v + 48)  (* '0' + v *)
-  else $B.put_byte(out, v - 10 + 97)  (* 'a' + v-10 *)
+  if v < 10 then $B.put_byte_safe(out, v + 48)  (* '0' + v *)
+  else $B.put_byte_safe(out, v - 10 + 97)  (* 'a' + v-10 *)
 
 (* Mangle a single byte: alnum passes through, / becomes __, else _XX *)
 fn emit_mangled_byte(out: !$B.builder0, b: int): void =
   if (b >= 97 && b <= 122) || (b >= 65 && b <= 90) ||
      (b >= 48 && b <= 57) then
-    $B.put_byte(out, b)
+    $B.put_byte_safe(out, b)
   else if $AR.eq_int_int(b, 47) then let  (* '/' -> __ *)
-    val () = $B.put_byte(out, 95)
-    val () = $B.put_byte(out, 95)
+    val () = $B.put_byte_safe(out, 95)
+    val () = $B.put_byte_safe(out, 95)
   in end
   else let  (* _XX hex *)
-    val () = $B.put_byte(out, 95)
+    val () = $B.put_byte_safe(out, 95)
     val () = emit_hex_nibble(out, b / 16)
     val () = emit_hex_nibble(out, b mod 16)
   in end
@@ -294,10 +294,10 @@ fn emit_qualified {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (* For now, emit $alias.member as-is since we need the use-table
      to look up which package the alias maps to.
      TODO: implement use-table lookup for proper mangling *)
-  val () = $B.put_byte(out, 36)  (* $ *)
+  val () = $B.put_byte_safe(out, 36)  (* $ *)
   val () = emit_range(src, alias_s, alias_e, src_max, out,
     $AR.checked_nat(alias_e - alias_s + 1))
-  val () = $B.put_byte(out, 46)  (* . *)
+  val () = $B.put_byte_safe(out, 46)  (* . *)
   val () = emit_range(src, member_s, member_e, src_max, out,
     $AR.checked_nat(member_e - member_s + 1))
 in end
@@ -309,18 +309,18 @@ in end
 (* Emit: staload "./FILENAME.sats"\n *)
 fn emit_self_staload(out: !$B.builder0, filename_len: int): void = let
   (* "staload " = 115,116,97,108,111,97,100,32 *)
-  val () = $B.put_byte(out, 115)
-  val () = $B.put_byte(out, 116)
-  val () = $B.put_byte(out, 97)
-  val () = $B.put_byte(out, 108)
-  val () = $B.put_byte(out, 111)
-  val () = $B.put_byte(out, 97)
-  val () = $B.put_byte(out, 100)
-  val () = $B.put_byte(out, 32)
+  val () = $B.put_byte_safe(out, 115)
+  val () = $B.put_byte_safe(out, 116)
+  val () = $B.put_byte_safe(out, 97)
+  val () = $B.put_byte_safe(out, 108)
+  val () = $B.put_byte_safe(out, 111)
+  val () = $B.put_byte_safe(out, 97)
+  val () = $B.put_byte_safe(out, 100)
+  val () = $B.put_byte_safe(out, 32)
   (* "./ *)
-  val () = $B.put_byte(out, 34)
-  val () = $B.put_byte(out, 46)
-  val () = $B.put_byte(out, 47)
+  val () = $B.put_byte_safe(out, 34)
+  val () = $B.put_byte_safe(out, 46)
+  val () = $B.put_byte_safe(out, 47)
 in end
 
 (* Emit one staload line for a #use dependency: staload "pkg/src/lib.dats" (no alias) *)
@@ -331,34 +331,34 @@ fn emit_dep_staload {ls:agz}{ns:pos}{lp:agz}{np:pos}
   val pkg_s = span_aux1(spans, span_idx, span_max)
   val pkg_e = span_aux2(spans, span_idx, span_max)
   (* staload " *)
-  val () = $B.put_byte(out, 115)
-  val () = $B.put_byte(out, 116)
-  val () = $B.put_byte(out, 97)
-  val () = $B.put_byte(out, 108)
-  val () = $B.put_byte(out, 111)
-  val () = $B.put_byte(out, 97)
-  val () = $B.put_byte(out, 100)
-  val () = $B.put_byte(out, 32)
-  val () = $B.put_byte(out, 34)
+  val () = $B.put_byte_safe(out, 115)
+  val () = $B.put_byte_safe(out, 116)
+  val () = $B.put_byte_safe(out, 97)
+  val () = $B.put_byte_safe(out, 108)
+  val () = $B.put_byte_safe(out, 111)
+  val () = $B.put_byte_safe(out, 97)
+  val () = $B.put_byte_safe(out, 100)
+  val () = $B.put_byte_safe(out, 32)
+  val () = $B.put_byte_safe(out, 34)
   (* package path *)
   val () = emit_range(src, pkg_s, pkg_e, src_max, out,
     $AR.checked_nat(pkg_e - pkg_s + 1))
   (* /src/lib.dats"\n *)
-  val () = $B.put_byte(out, 47)   (* / *)
-  val () = $B.put_byte(out, 115)  (* s *)
-  val () = $B.put_byte(out, 114)  (* r *)
-  val () = $B.put_byte(out, 99)   (* c *)
-  val () = $B.put_byte(out, 47)   (* / *)
-  val () = $B.put_byte(out, 108)  (* l *)
-  val () = $B.put_byte(out, 105)  (* i *)
-  val () = $B.put_byte(out, 98)   (* b *)
-  val () = $B.put_byte(out, 46)   (* . *)
-  val () = $B.put_byte(out, 100)  (* d *)
-  val () = $B.put_byte(out, 97)   (* a *)
-  val () = $B.put_byte(out, 116)  (* t *)
-  val () = $B.put_byte(out, 115)  (* s *)
-  val () = $B.put_byte(out, 34)   (* " *)
-  val () = $B.put_byte(out, 10)   (* \n *)
+  val () = $B.put_byte_safe(out, 47)   (* / *)
+  val () = $B.put_byte_safe(out, 115)  (* s *)
+  val () = $B.put_byte_safe(out, 114)  (* r *)
+  val () = $B.put_byte_safe(out, 99)   (* c *)
+  val () = $B.put_byte_safe(out, 47)   (* / *)
+  val () = $B.put_byte_safe(out, 108)  (* l *)
+  val () = $B.put_byte_safe(out, 105)  (* i *)
+  val () = $B.put_byte_safe(out, 98)   (* b *)
+  val () = $B.put_byte_safe(out, 46)   (* . *)
+  val () = $B.put_byte_safe(out, 100)  (* d *)
+  val () = $B.put_byte_safe(out, 97)   (* a *)
+  val () = $B.put_byte_safe(out, 116)  (* t *)
+  val () = $B.put_byte_safe(out, 115)  (* s *)
+  val () = $B.put_byte_safe(out, 34)   (* " *)
+  val () = $B.put_byte_safe(out, 10)   (* \n *)
 in end
 
 (* Emit one staload line for .sats: staload ALIAS = "pkg/src/lib.sats" *)
@@ -371,40 +371,40 @@ fn emit_dep_staload_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}
   val alias_s = span_aux3(spans, span_idx, span_max)
   val alias_e = span_aux4(spans, span_idx, span_max)
   (* staload  *)
-  val () = $B.put_byte(out, 115)
-  val () = $B.put_byte(out, 116)
-  val () = $B.put_byte(out, 97)
-  val () = $B.put_byte(out, 108)
-  val () = $B.put_byte(out, 111)
-  val () = $B.put_byte(out, 97)
-  val () = $B.put_byte(out, 100)
-  val () = $B.put_byte(out, 32)
+  val () = $B.put_byte_safe(out, 115)
+  val () = $B.put_byte_safe(out, 116)
+  val () = $B.put_byte_safe(out, 97)
+  val () = $B.put_byte_safe(out, 108)
+  val () = $B.put_byte_safe(out, 111)
+  val () = $B.put_byte_safe(out, 97)
+  val () = $B.put_byte_safe(out, 100)
+  val () = $B.put_byte_safe(out, 32)
   (* ALIAS = " *)
   val () = emit_range(src, alias_s, alias_e, src_max, out,
     $AR.checked_nat(alias_e - alias_s + 1))
-  val () = $B.put_byte(out, 32)   (* space *)
-  val () = $B.put_byte(out, 61)   (* = *)
-  val () = $B.put_byte(out, 32)   (* space *)
-  val () = $B.put_byte(out, 34)   (* " *)
+  val () = $B.put_byte_safe(out, 32)   (* space *)
+  val () = $B.put_byte_safe(out, 61)   (* = *)
+  val () = $B.put_byte_safe(out, 32)   (* space *)
+  val () = $B.put_byte_safe(out, 34)   (* " *)
   (* package path *)
   val () = emit_range(src, pkg_s, pkg_e, src_max, out,
     $AR.checked_nat(pkg_e - pkg_s + 1))
   (* /src/lib.sats"\n *)
-  val () = $B.put_byte(out, 47)   (* / *)
-  val () = $B.put_byte(out, 115)  (* s *)
-  val () = $B.put_byte(out, 114)  (* r *)
-  val () = $B.put_byte(out, 99)   (* c *)
-  val () = $B.put_byte(out, 47)   (* / *)
-  val () = $B.put_byte(out, 108)  (* l *)
-  val () = $B.put_byte(out, 105)  (* i *)
-  val () = $B.put_byte(out, 98)   (* b *)
-  val () = $B.put_byte(out, 46)   (* . *)
-  val () = $B.put_byte(out, 115)  (* s *)
-  val () = $B.put_byte(out, 97)   (* a *)
-  val () = $B.put_byte(out, 116)  (* t *)
-  val () = $B.put_byte(out, 115)  (* s *)
-  val () = $B.put_byte(out, 34)   (* " *)
-  val () = $B.put_byte(out, 10)   (* \n *)
+  val () = $B.put_byte_safe(out, 47)   (* / *)
+  val () = $B.put_byte_safe(out, 115)  (* s *)
+  val () = $B.put_byte_safe(out, 114)  (* r *)
+  val () = $B.put_byte_safe(out, 99)   (* c *)
+  val () = $B.put_byte_safe(out, 47)   (* / *)
+  val () = $B.put_byte_safe(out, 108)  (* l *)
+  val () = $B.put_byte_safe(out, 105)  (* i *)
+  val () = $B.put_byte_safe(out, 98)   (* b *)
+  val () = $B.put_byte_safe(out, 46)   (* . *)
+  val () = $B.put_byte_safe(out, 115)  (* s *)
+  val () = $B.put_byte_safe(out, 97)   (* a *)
+  val () = $B.put_byte_safe(out, 116)  (* t *)
+  val () = $B.put_byte_safe(out, 115)  (* s *)
+  val () = $B.put_byte_safe(out, 34)   (* " *)
+  val () = $B.put_byte_safe(out, 10)   (* \n *)
 in end
 
 (* ============================================================
