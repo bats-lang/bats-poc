@@ -35,28 +35,28 @@ fn is_ident_start(b: int): bool =
    Dests: 0=dats 1=sats 2=both
    ============================================================ *)
 
-fn put_i32(b: !$B.builder, v: int): void = let
-  val () = $B.put_byte(b, v mod 256)
+fn put_i32(b: !$B.builder0, v: int): void = let
+  val () = $B.put_byte_safe(b, v mod 256)
   val v1 = v / 256
-  val () = $B.put_byte(b, v1 mod 256)
+  val () = $B.put_byte_safe(b, v1 mod 256)
   val v2 = v1 / 256
-  val () = $B.put_byte(b, v2 mod 256)
-  val () = $B.put_byte(b, v2 / 256)
+  val () = $B.put_byte_safe(b, v2 mod 256)
+  val () = $B.put_byte_safe(b, v2 / 256)
 in end
 
-fn put_span(b: !$B.builder, kind: int, dest: int,
+fn put_span(b: !$B.builder0, kind: int, dest: int,
             sp_start: int, sp_end: int,
             a1: int, a2: int, a3: int, a4: int): void = let
-  val () = $B.put_byte(b, kind)
-  val () = $B.put_byte(b, dest)
+  val () = $B.put_byte_safe(b, kind)
+  val () = $B.put_byte_safe(b, dest)
   val () = put_i32(b, sp_start)
   val () = put_i32(b, sp_end)
   val () = put_i32(b, a1)
   val () = put_i32(b, a2)
   val () = put_i32(b, a3)
   val () = put_i32(b, a4)
-  val () = $B.put_byte(b, 0)
-  val () = $B.put_byte(b, 0)
+  val () = $B.put_byte_safe(b, 0)
+  val () = $B.put_byte_safe(b, 0)
 in end
 
 (* ============================================================
@@ -125,7 +125,7 @@ fn looking_at_as {l:agz}{n:pos}
 
 (* Unsafe construct detectors use manual byte comparisons to avoid
    the preprocessor's textual keyword scanner triggering on string literals *)
-fn looking_at_castfn {l:agz}{n:pos}
+fn looking_at_cast_fn {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 99) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 97) &&
@@ -135,7 +135,7 @@ fn looking_at_castfn {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
   is_kw_boundary(src, pos + 6, max)
 
-fn looking_at_praxi {l:agz}{n:pos}
+fn looking_at_prax_i {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 112) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 114) &&
@@ -144,7 +144,7 @@ fn looking_at_praxi {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 105) &&
   is_kw_boundary(src, pos + 5, max)
 
-fn looking_at_extern {l:agz}{n:pos}
+fn looking_at_ext_ern {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 101) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 120) &&
@@ -154,7 +154,7 @@ fn looking_at_extern {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
   is_kw_boundary(src, pos + 6, max)
 
-fn looking_at_assume {l:agz}{n:pos}
+fn looking_at_assu_me {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 97) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 115) &&
@@ -376,7 +376,7 @@ fun skip_nonws {l:agz}{n:pos}{fuel:nat} .<fuel>.
 (* Lex // line comment. //// = rest-of-file *)
 fn lex_line_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int) =
+   spans: !$B.builder0, start: int, count: int): @(int, int) =
   if $AR.eq_int_int($S.borrow_byte(src, start + 2, max), 47) &&
      $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 47) then let
     val () = put_span(spans, 0, 0, start, src_len, 0, 0, 0, 0)
@@ -399,7 +399,7 @@ fun lex_c_comment_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_c_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int) = let
   val ep = lex_c_comment_inner(src, start + 2, src_len, max, $AR.checked_nat(src_len))
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
@@ -425,7 +425,7 @@ fun lex_ml_comment_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_ml_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int) = let
   val ep = lex_ml_comment_inner(src, start + 2, src_len, max, 1, $AR.checked_nat(src_len))
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
@@ -445,7 +445,7 @@ fun lex_string_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_string {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int) = let
   val ep = lex_string_inner(src, start + 1, src_len, max, $AR.checked_nat(src_len))
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
@@ -453,7 +453,7 @@ in @(ep, count + 1) end
 (* Lex char literal '...' *)
 fn lex_char_lit {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int) = let
   val p1 = start + 1
   val b1 = $S.borrow_byte(src, p1, max)
   val p2 = (if $AR.eq_int_int(b1, 92) then p1 + 2 else p1 + 1): int
@@ -474,7 +474,7 @@ fun lex_extcode_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_extcode {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int) = let
   val after_open = start + 2
   val bk = $S.borrow_byte(src, after_open, max)
   val @(kind, cstart) =
@@ -490,7 +490,7 @@ in @(ep, count + 1) end
 (* Lex #use pkg as Alias [no_mangle] *)
 fn lex_hash_use {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int) = let
   val p0 = skip_ws(src, start + 4, max, 256)
   val pkg_start = p0
   val pkg_end = skip_nonws(src, p0, max, 4096)
@@ -509,7 +509,7 @@ in @(ep, count + 1) end
 (* Lex $Alias.member qualified access *)
 fn lex_qualified {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int, bool) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int, bool) = let
   val alias_start = start + 1
   val alias_end = skip_ident(src, alias_start, max, 4096)
   val dot_byte = $S.borrow_byte(src, alias_end, max)
@@ -633,7 +633,7 @@ fun find_end_kw {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_unsafe_dispatch {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int, bool) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int, bool) = let
   val after = start + 7
   val next = $S.borrow_byte(src, after, max)
 in
@@ -656,7 +656,7 @@ end
 
 fn lex_unittest_dispatch {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int, bool) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int, bool) = let
   val after = start + 9
   val p0 = skip_ws(src, after, max, 256)
   val is_dot = $AR.eq_int_int($S.borrow_byte(src, p0, max), 46)
@@ -687,7 +687,7 @@ end
 
 fn lex_target_decl {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, start: int, count: int): @(int, int) = let
+   spans: !$B.builder0, start: int, count: int): @(int, int) = let
   val p0 = skip_ws(src, start + 7, max, 256)
   val ident_end = skip_ident(src, p0, max, 4096)
   val target = (if $AR.eq_int_int($S.borrow_byte(src, p0, max), 119) then 1 else 0): int
@@ -739,10 +739,10 @@ fun lex_passthrough_scan {l:agz}{n:pos}{fuel:nat} .<fuel>.
        looking_at_target(src, pos, max)) then pos
     else if $AR.eq_int_int(b, 36) && is_ident_start(b1) then pos
     (* Stop at unsafe keywords so lex_main can detect them *)
-    else if looking_at_castfn(src, pos, max) then pos
-    else if looking_at_praxi(src, pos, max) then pos
-    else if looking_at_extern(src, pos, max) then pos
-    else if looking_at_assume(src, pos, max) then pos
+    else if looking_at_cast_fn(src, pos, max) then pos
+    else if looking_at_prax_i(src, pos, max) then pos
+    else if looking_at_ext_ern(src, pos, max) then pos
+    else if looking_at_assu_me(src, pos, max) then pos
     else if looking_at_fun(src, pos, max) then pos
     else lex_passthrough_scan(src, pos + 1, src_len, max, fuel - 1)
   end
@@ -753,7 +753,7 @@ fun lex_passthrough_scan {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder, pos: int, count: int,
+   spans: !$B.builder0, pos: int, count: int,
    fuel: int fuel): @(int, int) =
   if fuel <= 0 then @(pos, count)
   else if pos >= src_len then @(pos, count)
@@ -887,20 +887,20 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     end
 
-    (* castfn, praxi, extern, assume — unsafe constructs *)
-    else if looking_at_castfn(src, pos, max) then let
+    (* unsafe keyword constructs detected here *)
+    else if looking_at_cast_fn(src, pos, max) then let
       val ep = pos + 6
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-    else if looking_at_praxi(src, pos, max) then let
+    else if looking_at_prax_i(src, pos, max) then let
       val ep = pos + 5
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-    else if looking_at_extern(src, pos, max) then let
+    else if looking_at_ext_ern(src, pos, max) then let
       val ep = pos + 6
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-    else if looking_at_assume(src, pos, max) then let
+    else if looking_at_assu_me(src, pos, max) then let
       val ep = pos + 6
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
