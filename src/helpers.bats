@@ -573,21 +573,10 @@ end
    rel: int): int
 
 implement run_cc(ph, phlen, out_bv, out_len, in_bv, in_len, rel) = let
-  val exec_arr = $A.alloc<byte>(11)
-  val () = $A.write_byte(exec_arr, 0, 47)
-  val () = $A.write_byte(exec_arr, 1, 117)
-  val () = $A.write_byte(exec_arr, 2, 115)
-  val () = $A.write_byte(exec_arr, 3, 114)
-  val () = $A.write_byte(exec_arr, 4, 47)
-  val () = $A.write_byte(exec_arr, 5, 98)
-  val () = $A.write_byte(exec_arr, 6, 105)
-  val () = $A.write_byte(exec_arr, 7, 110)
-  val () = $A.write_byte(exec_arr, 8, 47)
-  val () = $A.write_byte(exec_arr, 9, 99)
-  val () = $A.write_byte(exec_arr, 10, 99)
+  val exec_arr = str_to_path_arr("/usr/bin/clang")
   val @(fz_exec, bv_exec) = $A.freeze<byte>(exec_arr)
   val argv_b = $B.create()
-  val () = $B.bput(argv_b, "cc")
+  val () = $B.bput(argv_b, "clang")
   val () = $B.put_byte(argv_b, 0)
   val () = $B.bput(argv_b, "-c")
   val () = $B.put_byte(argv_b, 0)
@@ -636,7 +625,7 @@ implement run_cc(ph, phlen, out_bv, out_len, in_bv, in_len, rel) = let
     val () = print_borrow(in_bv, 0, in_len, 524288,
       $AR.checked_nat(in_len + 1))
   in print_newline() end else ())
-  val sr = $P.spawn(bv_exec, 11, bv_a, argc, bv_e, 1,
+  val sr = $P.spawn(bv_exec, 524288, bv_a, argc, bv_e, 1,
     $P.dev_null(), $P.dev_null(), $P.pipe_new())
   val () = $A.drop<byte>(fz_exec, bv_exec)
   val () = $A.free<byte>($A.thaw<byte>(fz_exec))

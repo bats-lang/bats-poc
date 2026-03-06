@@ -1384,10 +1384,10 @@ in
     val _ = write_file_from_builder(bv_nrtp, 524288, nrt_b)
     val () = $A.drop<byte>(fz_nrtp, bv_nrtp)
     val () = $A.free<byte>($A.thaw<byte>(fz_nrtp))
-    val nrt_exec = str_to_path_arr("/usr/bin/cc")
+    val nrt_exec = str_to_path_arr("/usr/bin/clang")
     val @(fz_nrt_exec, bv_nrt_exec) = $A.freeze<byte>(nrt_exec)
     val nrt_argv = $B.create()
-    val () = $B.bput(nrt_argv, "cc") val () = $B.put_byte(nrt_argv, 0)
+    val () = $B.bput(nrt_argv, "clang") val () = $B.put_byte(nrt_argv, 0)
     val () = $B.bput(nrt_argv, "-c") val () = $B.put_byte(nrt_argv, 0)
     val () = $B.bput(nrt_argv, "-o") val () = $B.put_byte(nrt_argv, 0)
     val () = $B.bput(nrt_argv, "build/_bats_native_runtime.o") val () = $B.put_byte(nrt_argv, 0)
@@ -3283,8 +3283,8 @@ in
                     (* Step 8: Link *)
                     val link = $B.create()
                     val () = (if rel > 0 then
-                      $B.bput(link, "cc -o dist/release/")
-                      else $B.bput(link, "cc -o dist/debug/"))
+                      $B.bput(link, "clang -o dist/release/")
+                      else $B.bput(link, "clang -o dist/debug/"))
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
                       $AR.checked_nat(stem_len + 1))
                     val () = $B.bput(link, " build/_bats_entry_")
@@ -3573,8 +3573,7 @@ in
                       $AR.checked_nat(link_len + 1))
                     val () = $A.drop<byte>(fz_la, bv_la)
                     val () = $A.free<byte>($A.thaw<byte>(fz_la))
-                    (* First arg is "cc" or "PATH=... cc" — extract the exec path *)
-                    val cc_exec = str_to_path_arr("/usr/bin/cc")
+                    val cc_exec = str_to_path_arr("/usr/bin/clang")
                     val @(fz_cce, bv_cce) = $A.freeze<byte>(cc_exec)
                     (* Remove the first "PATH=..." token and "cc" token,
                        start argv from "cc" *)
@@ -3610,8 +3609,39 @@ in
             val dcr2 = $F.dir_close(d2)
             val () = $R.discard<int><int>(dcr2)
           in end
-        | ~$R.err(_) =>
-            println! ("error: cannot open src/bin/"))
+        | ~$R.err(_) => ())
+
+      (* Process src/lib.bats if it exists (library packages) *)
+      val lib_src = str_to_path_arr("src/lib.bats")
+      val @(fz_ls, bv_ls) = $A.freeze<byte>(lib_src)
+      val lib_sats = str_to_path_arr("build/src/lib.sats")
+      val @(fz_lss, bv_lss) = $A.freeze<byte>(lib_sats)
+      val lib_dats = str_to_path_arr("build/src/lib.dats")
+      val @(fz_lsd, bv_lsd) = $A.freeze<byte>(lib_dats)
+      val lib_pr = preprocess_one(bv_ls, bv_lss, bv_lsd, build_target, is_unsafe)
+      val () = $A.drop<byte>(fz_ls, bv_ls)
+      val () = $A.free<byte>($A.thaw<byte>(fz_ls))
+      val () = $A.drop<byte>(fz_lss, bv_lss)
+      val () = $A.free<byte>($A.thaw<byte>(fz_lss))
+      val () = $A.drop<byte>(fz_lsd, bv_lsd)
+      val () = $A.free<byte>($A.thaw<byte>(fz_lsd))
+      val () = (if lib_pr = 0 then let
+          val () = if ~is_quiet() then println! ("  preprocessed: src/lib.bats")
+          val lib_c_out = str_to_path_arr("build/src/lib_dats.c")
+          val @(fz_lc, bv_lc) = $A.freeze<byte>(lib_c_out)
+          val lib_d_in = str_to_path_arr("build/src/lib.dats")
+          val @(fz_ld, bv_ld) = $A.freeze<byte>(lib_d_in)
+          val lrc = run_patsopt(bv_patshome, phlen, bv_lc, 524288, bv_ld, 524288)
+          val () = $A.drop<byte>(fz_lc, bv_lc)
+          val () = $A.free<byte>($A.thaw<byte>(fz_lc))
+          val () = $A.drop<byte>(fz_ld, bv_ld)
+          val () = $A.free<byte>($A.thaw<byte>(fz_ld))
+          val () = (if lrc <> 0 then
+            println! ("error: patsopt failed for src/lib.bats")
+          else if ~is_quiet() then println! ("  patsopt: src/lib.bats")
+          else ())
+        in end
+        else ())
 
       (* --to-c: copy C files and generate Makefile *)
       val () = (if is_to_c() then if get_to_c_done() = 0 then let
