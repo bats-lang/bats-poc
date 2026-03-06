@@ -35,28 +35,28 @@ fn is_ident_start(b: int): bool =
    Dests: 0=dats 1=sats 2=both
    ============================================================ *)
 
-fn put_i32(b: !$B.builder0, v: int): void = let
-  val () = $B.put_byte_safe(b, v mod 256)
+fn put_i32(b: !$B.builder_v >> $B.builder_v, v: int): void = let
+  val () = $B.put_char(b, v mod 256)
   val v1 = v / 256
-  val () = $B.put_byte_safe(b, v1 mod 256)
+  val () = $B.put_char(b, v1 mod 256)
   val v2 = v1 / 256
-  val () = $B.put_byte_safe(b, v2 mod 256)
-  val () = $B.put_byte_safe(b, v2 / 256)
+  val () = $B.put_char(b, v2 mod 256)
+  val () = $B.put_char(b, v2 / 256)
 in end
 
-fn put_span(b: !$B.builder0, kind: int, dest: int,
+fn put_span(b: !$B.builder_v >> $B.builder_v, kind: int, dest: int,
             sp_start: int, sp_end: int,
             a1: int, a2: int, a3: int, a4: int): void = let
-  val () = $B.put_byte_safe(b, kind)
-  val () = $B.put_byte_safe(b, dest)
+  val () = $B.put_char(b, kind)
+  val () = $B.put_char(b, dest)
   val () = put_i32(b, sp_start)
   val () = put_i32(b, sp_end)
   val () = put_i32(b, a1)
   val () = put_i32(b, a2)
   val () = put_i32(b, a3)
   val () = put_i32(b, a4)
-  val () = $B.put_byte_safe(b, 0)
-  val () = $B.put_byte_safe(b, 0)
+  val () = $B.put_char(b, 0)
+  val () = $B.put_char(b, 0)
 in end
 
 (* ============================================================
@@ -164,8 +164,9 @@ fn looking_at_assu_me {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 101) &&
   is_kw_boundary(src, pos + 6, max)
 
-fn looking_at_staload {l:agz}{n:pos}
+fn looking_at_stld {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  is_kw_boundary_before(src, pos, max) &&
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 115) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 116) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 97) &&
@@ -387,7 +388,7 @@ fun skip_nonws {l:agz}{n:pos}{fuel:nat} .<fuel>.
 (* Lex // line comment. //// = rest-of-file *)
 fn lex_line_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int) =
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) =
   if $AR.eq_int_int($S.borrow_byte(src, start + 2, max), 47) &&
      $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 47) then let
     val () = put_span(spans, 0, 0, start, src_len, 0, 0, 0, 0)
@@ -410,7 +411,7 @@ fun lex_c_comment_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_c_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
   val ep = lex_c_comment_inner(src, start + 2, src_len, max, $AR.checked_nat(src_len))
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
@@ -436,7 +437,7 @@ fun lex_ml_comment_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_ml_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
   val ep = lex_ml_comment_inner(src, start + 2, src_len, max, 1, $AR.checked_nat(src_len))
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
@@ -456,7 +457,7 @@ fun lex_string_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_string {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
   val ep = lex_string_inner(src, start + 1, src_len, max, $AR.checked_nat(src_len))
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
@@ -464,7 +465,7 @@ in @(ep, count + 1) end
 (* Lex char literal '...' *)
 fn lex_char_lit {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
   val p1 = start + 1
   val b1 = $S.borrow_byte(src, p1, max)
   val p2 = (if $AR.eq_int_int(b1, 92) then p1 + 2 else p1 + 1): int
@@ -485,7 +486,7 @@ fun lex_extcode_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_extcode {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
   val after_open = start + 2
   val bk = $S.borrow_byte(src, after_open, max)
   val @(kind, cstart) =
@@ -501,7 +502,7 @@ in @(ep, count + 1) end
 (* Lex #use pkg as Alias [no_mangle] *)
 fn lex_hash_use {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
   val p0 = skip_ws(src, start + 4, max, 256)
   val pkg_start = p0
   val pkg_end = skip_nonws(src, p0, max, 4096)
@@ -520,7 +521,7 @@ in @(ep, count + 1) end
 (* Lex $Alias.member qualified access *)
 fn lex_qualified {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int, bool) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int, bool) = let
   val alias_start = start + 1
   val alias_end = skip_ident(src, alias_start, max, 4096)
   val dot_byte = $S.borrow_byte(src, alias_end, max)
@@ -644,7 +645,7 @@ fun find_end_kw {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fn lex_unsafe_dispatch {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int, bool) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int, bool) = let
   val after = start + 7
   val next = $S.borrow_byte(src, after, max)
 in
@@ -667,7 +668,7 @@ end
 
 fn lex_unittest_dispatch {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int, bool) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int, bool) = let
   val after = start + 9
   val p0 = skip_ws(src, after, max, 256)
   val is_dot = $AR.eq_int_int($S.borrow_byte(src, p0, max), 46)
@@ -698,7 +699,7 @@ end
 
 fn lex_target_decl {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, start: int, count: int): @(int, int) = let
+   spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
   val p0 = skip_ws(src, start + 7, max, 256)
   val ident_end = skip_ident(src, p0, max, 4096)
   val target = (if $AR.eq_int_int($S.borrow_byte(src, p0, max), 119) then 1 else 0): int
@@ -755,7 +756,7 @@ fun lex_passthrough_scan {l:agz}{n:pos}{fuel:nat} .<fuel>.
     else if looking_at_ext_ern(src, pos, max) then pos
     else if looking_at_assu_me(src, pos, max) then pos
     else if looking_at_fun(src, pos, max) then pos
-    else if looking_at_staload(src, pos, max) then pos
+    else if looking_at_stld(src, pos, max) then pos
     else lex_passthrough_scan(src, pos + 1, src_len, max, fuel - 1)
   end
 
@@ -765,7 +766,7 @@ fun lex_passthrough_scan {l:agz}{n:pos}{fuel:nat} .<fuel>.
 
 fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
-   spans: !$B.builder0, pos: int, count: int,
+   spans: !$B.builder_v >> $B.builder_v, pos: int, count: int,
    fuel: int fuel): @(int, int) =
   if fuel <= 0 then @(pos, count)
   else if pos >= src_len then @(pos, count)
@@ -917,7 +918,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     (* staload lines: kind=12, go to both .sats and .dats with .bats→.sats rename *)
-    else if looking_at_staload(src, pos, max) then let
+    else if looking_at_stld(src, pos, max) then let
       val ep = skip_to_eol(src, pos + 7, src_len, max, $AR.checked_nat(src_len))
       val () = put_span(spans, 12, 2, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
@@ -934,7 +935,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
   ): @([ls:agz] $A.arr(byte, ls, 524288), int, int)
 
 implement do_lex (src, src_len, max) = let
-  val span_builder = $B.create()
+  var span_builder: $B.builder_v = $B.create()
   val @(_, span_count) = lex_main(src, src_len, max, span_builder, 0, 0, $AR.checked_nat(src_len))
   val @(span_arr, span_arr_len) = $B.to_arr(span_builder)
 in @(span_arr, span_arr_len, span_count) end
