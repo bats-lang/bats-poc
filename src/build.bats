@@ -2342,6 +2342,58 @@ in
                 val next = pos + elen + 1
               in emit_closure_dynloads(seen2, spos, next, eb, fuel_ed - 1) end
 
+            (* Scan shared modules (build/src/*.dats) for dep references *)
+            fun scan_shared_module_deps {ls2:agz}{fuel_sm:nat} .<fuel_sm>.
+              (seen2: !$A.arr(byte, ls2, 16384), spos: int,
+               d_sm: !$F.dir, fuel_sm: int fuel_sm): int =
+              if fuel_sm <= 0 then spos
+              else let
+                val sme = $A.alloc<byte>(256)
+                val snr = $F.dir_next(d_sm, sme, 256)
+                val sel = $R.option_unwrap_or<int>(snr, ~1)
+              in if sel < 0 then let
+                val () = $A.free<byte>(sme)
+              in spos end
+              else let
+                val is_dats = $S.has_suffix(sme, sel, 256, ".dats", 5)
+              in if ~is_dats then let
+                val () = $A.free<byte>(sme)
+              in scan_shared_module_deps(seen2, spos, d_sm, fuel_sm - 1) end
+              else let
+                (* Build path: build/src/NAME.dats *)
+                var smpath: $B.builder_v = $B.create()
+                val () = $B.bput(smpath, "build/src/")
+                val @(fz_sme, bv_sme) = $A.freeze<byte>(sme)
+                val () = copy_to_builder(bv_sme, 0, sel, 256, smpath,
+                  $AR.checked_nat(sel + 1))
+                val () = $A.drop<byte>(fz_sme, bv_sme)
+                val () = $A.free<byte>($A.thaw<byte>(fz_sme))
+                val () = $B.put_char(smpath, 0)
+                val @(smpa, _) = $B.to_arr(smpath)
+                val @(fz_smp, bv_smp) = $A.freeze<byte>(smpa)
+                val smor = $F.file_open(bv_smp, 524288, 0, 0)
+                val () = $A.drop<byte>(fz_smp, bv_smp)
+                val () = $A.free<byte>($A.thaw<byte>(fz_smp))
+                val new_spos = (case+ smor of
+                  | ~$R.ok(smfd) => let
+                      val smbuf = $A.alloc<byte>(524288)
+                      val smrr = $F.file_read(smfd, smbuf, 524288)
+                      val smnb = (case+ smrr of
+                        | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+                      val smcr = $F.file_close(smfd)
+                      val () = $R.discard<int><int>(smcr)
+                      val @(fz_smb, bv_smb) = $A.freeze<byte>(smbuf)
+                      val ns = scan_staload_deps(bv_smb, smnb, seen2,
+                        spos, 0, 500)
+                      val () = $A.drop<byte>(fz_smb, bv_smb)
+                      val () = $A.free<byte>($A.thaw<byte>(fz_smb))
+                    in ns end
+                  | ~$R.err(_) => spos): int
+              in scan_shared_module_deps(seen2, new_spos, d_sm,
+                fuel_sm - 1) end
+              end
+              end
+
             (* Link .o files for deps in the staload-chain closure *)
             fun link_closure_deps {ls2:agz}{fuel_ld:nat} .<fuel_ld>.
               (seen2: !$A.arr(byte, ls2, 16384), spos: int,
@@ -2505,10 +2557,29 @@ in
                             dep_seen, 0, 0, 500)
                           val () = $A.drop<byte>(fz_db, bv_db)
                           val () = $A.free<byte>($A.thaw<byte>(fz_db))
-                          val fsp = collect_trans_deps(dep_seen, sp1, 0, 200)
-                          val () = emit_closure_dynloads(dep_seen, fsp,
-                            0, entry, 200)
-                          val () = $A.free<byte>(dep_seen)
+                          (* Also scan shared modules for deps *)
+                          val sm_dir_arr = str_to_path_arr("build/src")
+                          val @(fz_smd, bv_smd) = $A.freeze<byte>(sm_dir_arr)
+                          val sm_dir_r = $F.dir_open(bv_smd, 524288)
+                          val () = $A.drop<byte>(fz_smd, bv_smd)
+                          val () = $A.free<byte>($A.thaw<byte>(fz_smd))
+                          val () = (case+ sm_dir_r of
+                            | ~$R.ok(smd) => let
+                                val sp2 = scan_shared_module_deps(dep_seen,
+                                  sp1, smd, 100)
+                                val dcr_sm = $F.dir_close(smd)
+                                val () = $R.discard<int><int>(dcr_sm)
+                                val fsp = collect_trans_deps(dep_seen, sp2, 0, 200)
+                                val () = emit_closure_dynloads(dep_seen, fsp,
+                                  0, entry, 200)
+                                val () = $A.free<byte>(dep_seen)
+                              in end
+                            | ~$R.err(_) => let
+                                val fsp = collect_trans_deps(dep_seen, sp1, 0, 200)
+                                val () = emit_closure_dynloads(dep_seen, fsp,
+                                  0, entry, 200)
+                                val () = $A.free<byte>(dep_seen)
+                              in end)
                         in end
                       | ~$R.err(_) => ())
                     (* dynload src/*.dats shared modules *)
@@ -3482,10 +3553,29 @@ in
                             lk_dep_seen, 0, 0, 500)
                           val () = $A.drop<byte>(fz_ldb, bv_ldb)
                           val () = $A.free<byte>($A.thaw<byte>(fz_ldb))
-                          val lk_fsp = collect_trans_deps(lk_dep_seen, lk_sp1, 0, 200)
-                          val () = link_closure_deps(lk_dep_seen, lk_fsp,
-                            0, link, 200)
-                          val () = $A.free<byte>(lk_dep_seen)
+                          (* Also scan shared modules for deps *)
+                          val lk_smd_arr = str_to_path_arr("build/src")
+                          val @(fz_lksmd, bv_lksmd) = $A.freeze<byte>(lk_smd_arr)
+                          val lk_smd_r = $F.dir_open(bv_lksmd, 524288)
+                          val () = $A.drop<byte>(fz_lksmd, bv_lksmd)
+                          val () = $A.free<byte>($A.thaw<byte>(fz_lksmd))
+                          val () = (case+ lk_smd_r of
+                            | ~$R.ok(lksmd) => let
+                                val lk_sp2 = scan_shared_module_deps(lk_dep_seen,
+                                  lk_sp1, lksmd, 100)
+                                val dcr_lksm = $F.dir_close(lksmd)
+                                val () = $R.discard<int><int>(dcr_lksm)
+                                val lk_fsp = collect_trans_deps(lk_dep_seen, lk_sp2, 0, 200)
+                                val () = link_closure_deps(lk_dep_seen, lk_fsp,
+                                  0, link, 200)
+                                val () = $A.free<byte>(lk_dep_seen)
+                              in end
+                            | ~$R.err(_) => let
+                                val lk_fsp = collect_trans_deps(lk_dep_seen, lk_sp1, 0, 200)
+                                val () = link_closure_deps(lk_dep_seen, lk_fsp,
+                                  0, link, 200)
+                                val () = $A.free<byte>(lk_dep_seen)
+                              in end)
                         in end
                       | ~$R.err(_) => ())
                     (* Link src/*.dats shared module .o files *)
