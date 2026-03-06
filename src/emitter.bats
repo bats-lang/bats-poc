@@ -87,18 +87,18 @@ fn span_aux4 {l:agz}{n:pos}
 (* Copy bytes from source borrow to builder. *)
 fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder0, fuel: int fuel): void =
+   max: int ns, out: !$B.builder_v >> $B.builder_v, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
     val b = $S.borrow_byte(src, start, max)
-    val () = $B.put_byte_safe(out, b)
+    val () = $B.put_char(out, b)
   in emit_range(src, start + 1, end_pos, max, out, fuel - 1) end
 
 (* Copy bytes, transforming .bats" → .sats" for staload paths. *)
-fun emit_range_staload {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
+fun emit_range_stald {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder0, fuel: int fuel): void =
+   max: int ns, out: !$B.builder_v >> $B.builder_v, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
@@ -111,8 +111,8 @@ fun emit_range_staload {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
       $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 115) &&
       $AR.eq_int_int($S.borrow_byte(src, start + 4, max), 34)
     then 115 else b): int
-    val () = $B.put_byte_safe(out, b_out)
-  in emit_range_staload(src, start + 1, end_pos, max, out, fuel - 1) end
+    val () = $B.put_char(out, b_out)
+  in emit_range_stald(src, start + 1, end_pos, max, out, fuel - 1) end
 
 (* Count newlines in source range, emit that many newlines *)
 fun emit_blanks_count {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
@@ -126,16 +126,16 @@ fun emit_blanks_count {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   in emit_blanks_count(src, start + 1, end_pos, max, new_count, fuel - 1) end
 
 fun emit_newlines {fuel:nat} .<fuel>.
-  (out: !$B.builder0, count: int, fuel: int fuel): void =
+  (out: !$B.builder_v >> $B.builder_v, count: int, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if count <= 0 then ()
   else let
-    val () = $B.put_byte_safe(out, 10)
+    val () = $B.put_char(out, 10)
   in emit_newlines(out, count - 1, fuel - 1) end
 
 fn emit_blanks {ls:agz}{ns:pos}
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder0): void = let
+   max: int ns, out: !$B.builder_v >> $B.builder_v): void = let
   val nl_count = emit_blanks_count(src, start, end_pos, max, 0,
     $AR.checked_nat(end_pos - start + 1))
   val () = emit_newlines(out, nl_count, $AR.checked_nat(nl_count + 1))
@@ -186,7 +186,7 @@ fun find_matching_end {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
    content recursively, blanks end. Other content emitted as-is. *)
 fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder0, fuel: int fuel): void =
+   max: int ns, out: !$B.builder_v >> $B.builder_v, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
@@ -203,7 +203,7 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
       val next = $S.borrow_byte(src, after, max)
     in
       if $AR.eq_int_int(next, 46) then let
-        val () = $B.put_byte_safe(out, b)
+        val () = $B.put_char(out, b)
       in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
       else let
         (* Skip whitespace after $UNSAFE *)
@@ -229,7 +229,7 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
           val () = emit_blanks(src, end2, ep2, max, out)
         in emit_range_process_unsafe(src, ep2, end_pos, max, out, fuel - 1) end
         else let
-          val () = $B.put_byte_safe(out, b)
+          val () = $B.put_char(out, b)
         in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
       end
     end
@@ -241,7 +241,7 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
         $AR.eq_int_int($S.borrow_byte(src, start + 3, max), 115) &&
         $AR.eq_int_int($S.borrow_byte(src, start + 4, max), 34)
       then 115 else b): int
-      val () = $B.put_byte_safe(out, b_out)
+      val () = $B.put_char(out, b_out)
     in emit_range_process_unsafe(src, start + 1, end_pos, max, out, fuel - 1) end
   end
 
@@ -250,33 +250,33 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
    ============================================================ *)
 
 (* Emit __BATS__ prefix: 95,95,66,65,84,83,95,95 *)
-fn emit_bats_prefix(out: !$B.builder0): void = let
-  val () = $B.put_byte_safe(out, 95)   (* _ *)
-  val () = $B.put_byte_safe(out, 95)   (* _ *)
-  val () = $B.put_byte_safe(out, 66)   (* B *)
-  val () = $B.put_byte_safe(out, 65)   (* A *)
-  val () = $B.put_byte_safe(out, 84)   (* T *)
-  val () = $B.put_byte_safe(out, 83)   (* S *)
-  val () = $B.put_byte_safe(out, 95)   (* _ *)
-  val () = $B.put_byte_safe(out, 95)   (* _ *)
+fn emit_bats_prefix(out: !$B.builder_v >> $B.builder_v): void = let
+  val () = $B.put_char(out, 95)   (* _ *)
+  val () = $B.put_char(out, 95)   (* _ *)
+  val () = $B.put_char(out, 66)   (* B *)
+  val () = $B.put_char(out, 65)   (* A *)
+  val () = $B.put_char(out, 84)   (* T *)
+  val () = $B.put_char(out, 83)   (* S *)
+  val () = $B.put_char(out, 95)   (* _ *)
+  val () = $B.put_char(out, 95)   (* _ *)
 in end
 
 (* Emit hex digit for a nibble *)
-fn emit_hex_nibble(out: !$B.builder0, v: int): void =
-  if v < 10 then $B.put_byte_safe(out, v + 48)  (* '0' + v *)
-  else $B.put_byte_safe(out, v - 10 + 97)  (* 'a' + v-10 *)
+fn emit_hex_nibble(out: !$B.builder_v >> $B.builder_v, v: int): void =
+  if v < 10 then $B.put_char(out, v + 48)  (* '0' + v *)
+  else $B.put_char(out, v - 10 + 97)  (* 'a' + v-10 *)
 
 (* Mangle a single byte: alnum passes through, / becomes __, else _XX *)
-fn emit_mangled_byte(out: !$B.builder0, b: int): void =
+fn emit_mangled_byte(out: !$B.builder_v >> $B.builder_v, b: int): void =
   if (b >= 97 && b <= 122) || (b >= 65 && b <= 90) ||
      (b >= 48 && b <= 57) then
-    $B.put_byte_safe(out, b)
+    $B.put_char(out, b)
   else if $AR.eq_int_int(b, 47) then let  (* '/' -> __ *)
-    val () = $B.put_byte_safe(out, 95)
-    val () = $B.put_byte_safe(out, 95)
+    val () = $B.put_char(out, 95)
+    val () = $B.put_char(out, 95)
   in end
   else let  (* _XX hex *)
-    val () = $B.put_byte_safe(out, 95)
+    val () = $B.put_char(out, 95)
     val () = emit_hex_nibble(out, b / 16)
     val () = emit_hex_nibble(out, b mod 16)
   in end
@@ -284,7 +284,7 @@ fn emit_mangled_byte(out: !$B.builder0, b: int): void =
 (* Emit mangled package name from source range *)
 fun emit_mangled_pkg {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder0, fuel: int fuel): void =
+   max: int ns, out: !$B.builder_v >> $B.builder_v, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
@@ -296,7 +296,7 @@ fun emit_mangled_pkg {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
 fn emit_qualified {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_idx: int, span_max: int np,
-   out: !$B.builder0): void = let
+   out: !$B.builder_v >> $B.builder_v): void = let
   val alias_s = span_aux1(spans, span_idx, span_max)
   val alias_e = span_aux2(spans, span_idx, span_max)
   val member_s = span_aux3(spans, span_idx, span_max)
@@ -304,10 +304,10 @@ fn emit_qualified {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (* For now, emit $alias.member as-is since we need the use-table
      to look up which package the alias maps to.
      TODO: implement use-table lookup for proper mangling *)
-  val () = $B.put_byte_safe(out, 36)  (* $ *)
+  val () = $B.put_char(out, 36)  (* $ *)
   val () = emit_range(src, alias_s, alias_e, src_max, out,
     $AR.checked_nat(alias_e - alias_s + 1))
-  val () = $B.put_byte_safe(out, 46)  (* . *)
+  val () = $B.put_char(out, 46)  (* . *)
   val () = emit_range(src, member_s, member_e, src_max, out,
     $AR.checked_nat(member_e - member_s + 1))
 in end
@@ -317,104 +317,104 @@ in end
    ============================================================ *)
 
 (* Emit: staload "./FILENAME.sats"\n *)
-fn emit_self_staload(out: !$B.builder0, filename_len: int): void = let
+fn emit_self_stld(out: !$B.builder_v >> $B.builder_v, filename_len: int): void = let
   (* "staload " = 115,116,97,108,111,97,100,32 *)
-  val () = $B.put_byte_safe(out, 115)
-  val () = $B.put_byte_safe(out, 116)
-  val () = $B.put_byte_safe(out, 97)
-  val () = $B.put_byte_safe(out, 108)
-  val () = $B.put_byte_safe(out, 111)
-  val () = $B.put_byte_safe(out, 97)
-  val () = $B.put_byte_safe(out, 100)
-  val () = $B.put_byte_safe(out, 32)
+  val () = $B.put_char(out, 115)
+  val () = $B.put_char(out, 116)
+  val () = $B.put_char(out, 97)
+  val () = $B.put_char(out, 108)
+  val () = $B.put_char(out, 111)
+  val () = $B.put_char(out, 97)
+  val () = $B.put_char(out, 100)
+  val () = $B.put_char(out, 32)
   (* "./ *)
-  val () = $B.put_byte_safe(out, 34)
-  val () = $B.put_byte_safe(out, 46)
-  val () = $B.put_byte_safe(out, 47)
+  val () = $B.put_char(out, 34)
+  val () = $B.put_char(out, 46)
+  val () = $B.put_char(out, 47)
 in end
 
 (* Emit one staload line for a #use dependency: staload "pkg/src/lib.dats" (no alias) *)
-fn emit_dep_staload {ls:agz}{ns:pos}{lp:agz}{np:pos}
+fn emit_dep_stld {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_idx: int, span_max: int np,
-   out: !$B.builder0): void = let
+   out: !$B.builder_v >> $B.builder_v): void = let
   val pkg_s = span_aux1(spans, span_idx, span_max)
   val pkg_e = span_aux2(spans, span_idx, span_max)
   (* staload " *)
-  val () = $B.put_byte_safe(out, 115)
-  val () = $B.put_byte_safe(out, 116)
-  val () = $B.put_byte_safe(out, 97)
-  val () = $B.put_byte_safe(out, 108)
-  val () = $B.put_byte_safe(out, 111)
-  val () = $B.put_byte_safe(out, 97)
-  val () = $B.put_byte_safe(out, 100)
-  val () = $B.put_byte_safe(out, 32)
-  val () = $B.put_byte_safe(out, 34)
+  val () = $B.put_char(out, 115)
+  val () = $B.put_char(out, 116)
+  val () = $B.put_char(out, 97)
+  val () = $B.put_char(out, 108)
+  val () = $B.put_char(out, 111)
+  val () = $B.put_char(out, 97)
+  val () = $B.put_char(out, 100)
+  val () = $B.put_char(out, 32)
+  val () = $B.put_char(out, 34)
   (* package path *)
   val () = emit_range(src, pkg_s, pkg_e, src_max, out,
     $AR.checked_nat(pkg_e - pkg_s + 1))
   (* /src/lib.dats"\n *)
-  val () = $B.put_byte_safe(out, 47)   (* / *)
-  val () = $B.put_byte_safe(out, 115)  (* s *)
-  val () = $B.put_byte_safe(out, 114)  (* r *)
-  val () = $B.put_byte_safe(out, 99)   (* c *)
-  val () = $B.put_byte_safe(out, 47)   (* / *)
-  val () = $B.put_byte_safe(out, 108)  (* l *)
-  val () = $B.put_byte_safe(out, 105)  (* i *)
-  val () = $B.put_byte_safe(out, 98)   (* b *)
-  val () = $B.put_byte_safe(out, 46)   (* . *)
-  val () = $B.put_byte_safe(out, 100)  (* d *)
-  val () = $B.put_byte_safe(out, 97)   (* a *)
-  val () = $B.put_byte_safe(out, 116)  (* t *)
-  val () = $B.put_byte_safe(out, 115)  (* s *)
-  val () = $B.put_byte_safe(out, 34)   (* " *)
-  val () = $B.put_byte_safe(out, 10)   (* \n *)
+  val () = $B.put_char(out, 47)   (* / *)
+  val () = $B.put_char(out, 115)  (* s *)
+  val () = $B.put_char(out, 114)  (* r *)
+  val () = $B.put_char(out, 99)   (* c *)
+  val () = $B.put_char(out, 47)   (* / *)
+  val () = $B.put_char(out, 108)  (* l *)
+  val () = $B.put_char(out, 105)  (* i *)
+  val () = $B.put_char(out, 98)   (* b *)
+  val () = $B.put_char(out, 46)   (* . *)
+  val () = $B.put_char(out, 100)  (* d *)
+  val () = $B.put_char(out, 97)   (* a *)
+  val () = $B.put_char(out, 116)  (* t *)
+  val () = $B.put_char(out, 115)  (* s *)
+  val () = $B.put_char(out, 34)   (* " *)
+  val () = $B.put_char(out, 10)   (* \n *)
 in end
 
 (* Emit one staload line for .sats: staload ALIAS = "pkg/src/lib.sats" *)
-fn emit_dep_staload_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}
+fn emit_dep_stld_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_idx: int, span_max: int np,
-   out: !$B.builder0): void = let
+   out: !$B.builder_v >> $B.builder_v): void = let
   val pkg_s = span_aux1(spans, span_idx, span_max)
   val pkg_e = span_aux2(spans, span_idx, span_max)
   val alias_s = span_aux3(spans, span_idx, span_max)
   val alias_e = span_aux4(spans, span_idx, span_max)
   (* staload  *)
-  val () = $B.put_byte_safe(out, 115)
-  val () = $B.put_byte_safe(out, 116)
-  val () = $B.put_byte_safe(out, 97)
-  val () = $B.put_byte_safe(out, 108)
-  val () = $B.put_byte_safe(out, 111)
-  val () = $B.put_byte_safe(out, 97)
-  val () = $B.put_byte_safe(out, 100)
-  val () = $B.put_byte_safe(out, 32)
+  val () = $B.put_char(out, 115)
+  val () = $B.put_char(out, 116)
+  val () = $B.put_char(out, 97)
+  val () = $B.put_char(out, 108)
+  val () = $B.put_char(out, 111)
+  val () = $B.put_char(out, 97)
+  val () = $B.put_char(out, 100)
+  val () = $B.put_char(out, 32)
   (* ALIAS = " *)
   val () = emit_range(src, alias_s, alias_e, src_max, out,
     $AR.checked_nat(alias_e - alias_s + 1))
-  val () = $B.put_byte_safe(out, 32)   (* space *)
-  val () = $B.put_byte_safe(out, 61)   (* = *)
-  val () = $B.put_byte_safe(out, 32)   (* space *)
-  val () = $B.put_byte_safe(out, 34)   (* " *)
+  val () = $B.put_char(out, 32)   (* space *)
+  val () = $B.put_char(out, 61)   (* = *)
+  val () = $B.put_char(out, 32)   (* space *)
+  val () = $B.put_char(out, 34)   (* " *)
   (* package path *)
   val () = emit_range(src, pkg_s, pkg_e, src_max, out,
     $AR.checked_nat(pkg_e - pkg_s + 1))
   (* /src/lib.sats"\n *)
-  val () = $B.put_byte_safe(out, 47)   (* / *)
-  val () = $B.put_byte_safe(out, 115)  (* s *)
-  val () = $B.put_byte_safe(out, 114)  (* r *)
-  val () = $B.put_byte_safe(out, 99)   (* c *)
-  val () = $B.put_byte_safe(out, 47)   (* / *)
-  val () = $B.put_byte_safe(out, 108)  (* l *)
-  val () = $B.put_byte_safe(out, 105)  (* i *)
-  val () = $B.put_byte_safe(out, 98)   (* b *)
-  val () = $B.put_byte_safe(out, 46)   (* . *)
-  val () = $B.put_byte_safe(out, 115)  (* s *)
-  val () = $B.put_byte_safe(out, 97)   (* a *)
-  val () = $B.put_byte_safe(out, 116)  (* t *)
-  val () = $B.put_byte_safe(out, 115)  (* s *)
-  val () = $B.put_byte_safe(out, 34)   (* " *)
-  val () = $B.put_byte_safe(out, 10)   (* \n *)
+  val () = $B.put_char(out, 47)   (* / *)
+  val () = $B.put_char(out, 115)  (* s *)
+  val () = $B.put_char(out, 114)  (* r *)
+  val () = $B.put_char(out, 99)   (* c *)
+  val () = $B.put_char(out, 47)   (* / *)
+  val () = $B.put_char(out, 108)  (* l *)
+  val () = $B.put_char(out, 105)  (* i *)
+  val () = $B.put_char(out, 98)   (* b *)
+  val () = $B.put_char(out, 46)   (* . *)
+  val () = $B.put_char(out, 115)  (* s *)
+  val () = $B.put_char(out, 97)   (* a *)
+  val () = $B.put_char(out, 116)  (* t *)
+  val () = $B.put_char(out, 115)  (* s *)
+  val () = $B.put_char(out, 34)   (* " *)
+  val () = $B.put_char(out, 10)   (* \n *)
 in end
 
 (* ============================================================
@@ -425,7 +425,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
-   sats: !$B.builder0, dats: !$B.builder0,
+   sats: !$B.builder_v >> $B.builder_v, dats: !$B.builder_v >> $B.builder_v,
    build_target: int, is_unsafe: int, errors: int, fuel: int fuel): int =
   if fuel <= 0 then errors
   else if idx >= span_count then errors
@@ -457,7 +457,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
     else if $AR.eq_int_int(kind, 1) then let
       val () = emit_blanks(src, ss, se, src_max, sats)
       (* In dats: emit staload ALIAS = "pkg/src/lib.sats" at the #use position *)
-      val () = emit_dep_staload_sats(src, src_max, spans, idx, span_max, dats)
+      val () = emit_dep_stld_sats(src, src_max, spans, idx, span_max, dats)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                   sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
@@ -540,20 +540,22 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       val ce = span_aux2(spans, idx, span_max)
       val tm8 = if is_test_mode() then 1 else 0
       val in_test = $AR.gt_int_int(tm8, 0)
-      val () = (if in_test then let
+    in
+      if in_test then let
         val fuel2 = $AR.checked_nat(ce - cs + 1)
         val () = emit_blanks(src, ss, cs, src_max, dats)
         val () = emit_blanks(src, ss, cs, src_max, sats)
         val () = emit_range(src, cs, ce, src_max, dats, fuel2)
         val () = emit_blanks(src, ce, se, src_max, dats)
         val () = emit_blanks(src, ss, se, src_max, sats)
-      in end
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
       else let
         val () = emit_blanks(src, ss, se, src_max, sats)
         val () = emit_blanks(src, ss, se, src_max, dats)
-      in end)
-    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
+    end
 
     (* kind=9: restricted_keyword — same as kind 5, always error *)
     else if $AR.eq_int_int(kind, 9) then let
@@ -569,20 +571,22 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       val ce = span_aux2(spans, idx, span_max)
       val tm10 = if is_test_mode() then 1 else 0
       val in_test = $AR.gt_int_int(tm10, 0)
-      val () = (if in_test then let
+    in
+      if in_test then let
         val fuel2 = $AR.checked_nat(ce - cs + 1)
         val () = emit_blanks(src, ss, cs, src_max, dats)
         val () = emit_blanks(src, ss, cs, src_max, sats)
         val () = emit_range(src, cs, ce, src_max, dats, fuel2)
         val () = emit_blanks(src, ce, se, src_max, dats)
         val () = emit_blanks(src, ss, se, src_max, sats)
-      in end
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
       else let
         val () = emit_blanks(src, ss, se, src_max, sats)
         val () = emit_blanks(src, ss, se, src_max, dats)
-      in end)
-    in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
-                  sats, dats, build_target, is_unsafe, errors, fuel - 1) end
+      in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
+                    sats, dats, build_target, is_unsafe, errors, fuel - 1) end
+    end
 
     (* kind=11: target_block - emit contents only if build_target matches *)
     else if $AR.eq_int_int(kind, 11) then let
@@ -613,8 +617,8 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
     (* kind=12: staload_line - emit to both with .bats→.sats rename *)
     else if $AR.eq_int_int(kind, 12) then let
       val fuel2 = $AR.checked_nat(se - ss + 1)
-      val () = emit_range_staload(src, ss, se, src_max, dats, fuel2)
-      val () = emit_range_staload(src, ss, se, src_max, sats, fuel2)
+      val () = emit_range_stald(src, ss, se, src_max, dats, fuel2)
+      val () = emit_range_stald(src, ss, se, src_max, sats, fuel2)
     in emit_spans(src, src_max, spans, span_max, span_count, idx + 1,
                   sats, dats, build_target, is_unsafe, errors, fuel - 1) end
 
@@ -624,19 +628,19 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
                   sats, dats, build_target, is_unsafe, errors, fuel - 1)
   end
 
-(* Build dats prelude: self-staload + dependency staloads *)
+(* Build dats prelude: self-stld + dependency staloads *)
 fun build_prelude {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
-   prelude: !$B.builder0, fuel: int fuel): int =
+   prelude: !$B.builder_v >> $B.builder_v, fuel: int fuel): int =
   if fuel <= 0 then 0
   else if idx >= span_count then 0
   else let
     val kind = span_kind(spans, idx, span_max)
   in
     if $AR.eq_int_int(kind, 1) then let  (* hash_use *)
-      val () = emit_dep_staload(src, src_max, spans, idx, span_max, prelude)
+      val () = emit_dep_stld(src, src_max, spans, idx, span_max, prelude)
       val rest = build_prelude(src, src_max, spans, span_max, span_count,
         idx + 1, prelude, fuel - 1)
     in rest + 1 end
@@ -650,14 +654,14 @@ fun build_prelude_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
-   prelude: !$B.builder0, fuel: int fuel): void =
+   prelude: !$B.builder_v >> $B.builder_v, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if idx >= span_count then ()
   else let
     val kind = span_kind(spans, idx, span_max)
   in
     if $AR.eq_int_int(kind, 1) then let
-      val () = emit_dep_staload_sats(src, src_max, spans, idx, span_max, prelude)
+      val () = emit_dep_stld_sats(src, src_max, spans, idx, span_max, prelude)
     in build_prelude_sats(src, src_max, spans, span_max, span_count,
         idx + 1, prelude, fuel - 1) end
     else
@@ -674,12 +678,12 @@ fun build_prelude_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
       [lb:agz] $A.arr(byte, lb, 524288), int, int, int)
 
 implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_target, is_unsafe) = let
-  val sats_b = $B.create()
-  val dats_b = $B.create()
-  val prelude_b = $B.create()
-  val sats_prelude_b = $B.create()
+  var sats_b: $B.builder_v = $B.create()
+  var dats_b: $B.builder_v = $B.create()
+  var prelude_b: $B.builder_v = $B.create()
+  var sats_prelude_b: $B.builder_v = $B.create()
 
-  (* Build dats prelude: self-staload line is always 1 line *)
+  (* Build dats prelude: self-stld line is always 1 line *)
   val dep_count = build_prelude(src, src_max, spans, span_max,
     span_count, 0, prelude_b, $AR.checked_nat(span_count + 1))
   val prelude_lines = dep_count + 1
@@ -777,7 +781,7 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
   val has_main0 = main0_pos >= 0
 
   (* Build final dats with rename *)
-  val dats_final = $B.create()
+  var dats_final: $B.builder_v = $B.create()
   val () = (if has_main0 then let
     (* Copy before match *)
     val () = emit_range(bv_dt, 0, main0_pos, 524288, dats_final,
@@ -788,17 +792,15 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
     val after = main0_pos + 15
     val () = emit_range(bv_dt, after, dats_tmp_len, 524288, dats_final,
       $AR.checked_nat(dats_tmp_len - after + 1))
+    (* Add declaration to sats *)
+    val () = $B.bput(sats_b, "\nfun __BATS_main0 (): void\n")
   in end
-  else (* No main0, just copy as-is *)
-    emit_range(bv_dt, 0, dats_tmp_len, 524288, dats_final,
+  else let
+    val () = emit_range(bv_dt, 0, dats_tmp_len, 524288, dats_final,
       $AR.checked_nat(dats_tmp_len + 1))
-  )
+  in end)
   val () = $A.drop<byte>(fz_dt, bv_dt)
   val () = $A.free<byte>($A.thaw<byte>(fz_dt))
-
-  (* If has main0, add declaration to sats *)
-  val () = (if has_main0 then $B.bput(sats_b, "\nfun __BATS_main0 (): void\n") else ())
-
   val @(sats_arr, sats_len) = $B.to_arr(sats_b)
   val @(dats_arr, dats_len) = $B.to_arr(dats_final)
 in @(sats_arr, sats_len, dats_arr, dats_len, prelude_lines, emit_errors) end
