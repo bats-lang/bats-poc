@@ -125,7 +125,7 @@ fn looking_at_as {l:agz}{n:pos}
 
 (* Unsafe construct detectors use manual byte comparisons to avoid
    the preprocessor's textual keyword scanner triggering on string literals *)
-fn looking_at_castfn {l:agz}{n:pos}
+fn looking_at_cast_fn {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 99) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 97) &&
@@ -135,7 +135,7 @@ fn looking_at_castfn {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
   is_kw_boundary(src, pos + 6, max)
 
-fn looking_at_praxi {l:agz}{n:pos}
+fn looking_at_prax_i {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 112) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 114) &&
@@ -144,7 +144,7 @@ fn looking_at_praxi {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 105) &&
   is_kw_boundary(src, pos + 5, max)
 
-fn looking_at_extern {l:agz}{n:pos}
+fn looking_at_ext_ern {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 101) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 120) &&
@@ -154,7 +154,7 @@ fn looking_at_extern {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 110) &&
   is_kw_boundary(src, pos + 6, max)
 
-fn looking_at_assume {l:agz}{n:pos}
+fn looking_at_assu_me {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 97) &&
   $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 115) &&
@@ -739,10 +739,10 @@ fun lex_passthrough_scan {l:agz}{n:pos}{fuel:nat} .<fuel>.
        looking_at_target(src, pos, max)) then pos
     else if $AR.eq_int_int(b, 36) && is_ident_start(b1) then pos
     (* Stop at unsafe keywords so lex_main can detect them *)
-    else if looking_at_castfn(src, pos, max) then pos
-    else if looking_at_praxi(src, pos, max) then pos
-    else if looking_at_extern(src, pos, max) then pos
-    else if looking_at_assume(src, pos, max) then pos
+    else if looking_at_cast_fn(src, pos, max) then pos
+    else if looking_at_prax_i(src, pos, max) then pos
+    else if looking_at_ext_ern(src, pos, max) then pos
+    else if looking_at_assu_me(src, pos, max) then pos
     else if looking_at_fun(src, pos, max) then pos
     else lex_passthrough_scan(src, pos + 1, src_len, max, fuel - 1)
   end
@@ -887,20 +887,20 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     end
 
-    (* castfn, praxi, extern, assume — unsafe constructs *)
-    else if looking_at_castfn(src, pos, max) then let
+    (* unsafe keyword constructs detected here *)
+    else if looking_at_cast_fn(src, pos, max) then let
       val ep = pos + 6
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-    else if looking_at_praxi(src, pos, max) then let
+    else if looking_at_prax_i(src, pos, max) then let
       val ep = pos + 5
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-    else if looking_at_extern(src, pos, max) then let
+    else if looking_at_ext_ern(src, pos, max) then let
       val ep = pos + 6
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
-    else if looking_at_assume(src, pos, max) then let
+    else if looking_at_assu_me(src, pos, max) then let
       val ep = pos + 6
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
