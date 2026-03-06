@@ -184,7 +184,7 @@ implement print_borrow(buf, i, len, max, fuel) =
    ============================================================ *)
 
 #pub fun copy_to_builder {l:agz}{n:pos}{fuel:nat}  (src: !$A.borrow(byte, l, n), start: int, len: int, max: int n,
-   dst: !$B.builder, fuel: int fuel): void
+   dst: !$B.builder0, fuel: int fuel): void
 
 implement copy_to_builder(src, start, len, max, dst, fuel) =
   if fuel <= 0 then ()
@@ -231,7 +231,7 @@ implement is_newer(p1, p2) = let
 in $AR.gt_int_int(mt1, 0) && $AR.gt_int_int(mt1, mt2) end
 
 #pub fn freshness_check_bv
-  (out_b: $B.builder, in_b: $B.builder): bool
+  (out_b: $B.builder0, in_b: $B.builder0): bool
 
 implement freshness_check_bv(out_b, in_b) = let
   val @(oa, _) = $B.to_arr(out_b)
@@ -269,7 +269,7 @@ implement token_eq_arr(buf, tstart, tend, sarr, si, fuel) =
     end
 
 #pub fun arr_range_to_builder {l:agz}{fuel:nat}  (src: !$A.arr(byte, l, 4096), i: int, lim: int,
-   dst: !$B.builder, fuel: int fuel): void
+   dst: !$B.builder0, fuel: int fuel): void
 
 implement arr_range_to_builder(src, i, lim, dst, fuel) =
   if fuel <= 0 then ()
@@ -314,7 +314,7 @@ end
    argc is the number of arguments.
    Returns exit code or -1 on error. *)
 (* Run mkdir -p <path>. path_b is consumed. Returns exit code. *)
-#pub fn run_mkdir(path_b: $B.builder): int
+#pub fn run_mkdir(path_b: $B.builder0): int
 
 implement run_mkdir(path_b) = let
   val () = $B.put_byte(path_b, 0)
@@ -337,7 +337,7 @@ in rc end
 
 #pub fn run_cmd {le:agz}
   (exec_bv: !$A.borrow(byte, le, 524288), exec_len: int,
-   argv_b: $B.builder, argc: int): int
+   argv_b: $B.builder0, argc: int): int
 
 implement run_cmd (exec_bv, exec_len, argv_b, argc) = let
   val @(argv_arr, _) = $B.to_arr(argv_b)
@@ -427,7 +427,7 @@ in @(y2, m, d, secs_of_day) end
 (* Run a command and capture stdout into outbuf. Returns @(exit_code, stdout_len). *)
 #pub fn run_cmd_capture {le:agz}{lo:agz}
   (exec_bv: !$A.borrow(byte, le, 524288), exec_len: int,
-   argv_b: $B.builder, argc: int,
+   argv_b: $B.builder0, argc: int,
    outbuf: !$A.arr(byte, lo, 4096)): @(int, int)
 
 implement run_cmd_capture (exec_bv, exec_len, argv_b, argc, outbuf) = let
@@ -671,7 +671,7 @@ end
 
 #pub fn write_file_from_builder {lp:agz}{np:pos | np < 1048576}
   (path_bv: !$A.borrow(byte, lp, np), path_len: int np,
-   content_b: $B.builder): int
+   content_b: $B.builder0): int
 
 implement write_file_from_builder(path_bv, path_len, content_b) = let
   val @(content_arr, content_len) = $B.to_arr(content_b)

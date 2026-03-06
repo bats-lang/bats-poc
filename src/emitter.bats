@@ -88,7 +88,7 @@ fn span_aux4 {l:agz}{n:pos}
    Transforms .bats" → .sats" in staload paths. *)
 fun emit_range {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder, fuel: int fuel): void =
+   max: int ns, out: !$B.builder0, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
@@ -116,7 +116,7 @@ fun emit_blanks_count {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   in emit_blanks_count(src, start + 1, end_pos, max, new_count, fuel - 1) end
 
 fun emit_newlines {fuel:nat} .<fuel>.
-  (out: !$B.builder, count: int, fuel: int fuel): void =
+  (out: !$B.builder0, count: int, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if count <= 0 then ()
   else let
@@ -125,7 +125,7 @@ fun emit_newlines {fuel:nat} .<fuel>.
 
 fn emit_blanks {ls:agz}{ns:pos}
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder): void = let
+   max: int ns, out: !$B.builder0): void = let
   val nl_count = emit_blanks_count(src, start, end_pos, max, 0,
     $AR.checked_nat(end_pos - start + 1))
   val () = emit_newlines(out, nl_count, $AR.checked_nat(nl_count + 1))
@@ -176,7 +176,7 @@ fun find_matching_end {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
    content recursively, blanks end. Other content emitted as-is. *)
 fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder, fuel: int fuel): void =
+   max: int ns, out: !$B.builder0, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
@@ -240,7 +240,7 @@ fun emit_range_process_unsafe {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
    ============================================================ *)
 
 (* Emit __BATS__ prefix: 95,95,66,65,84,83,95,95 *)
-fn emit_bats_prefix(out: !$B.builder): void = let
+fn emit_bats_prefix(out: !$B.builder0): void = let
   val () = $B.put_byte(out, 95)   (* _ *)
   val () = $B.put_byte(out, 95)   (* _ *)
   val () = $B.put_byte(out, 66)   (* B *)
@@ -252,12 +252,12 @@ fn emit_bats_prefix(out: !$B.builder): void = let
 in end
 
 (* Emit hex digit for a nibble *)
-fn emit_hex_nibble(out: !$B.builder, v: int): void =
+fn emit_hex_nibble(out: !$B.builder0, v: int): void =
   if v < 10 then $B.put_byte(out, v + 48)  (* '0' + v *)
   else $B.put_byte(out, v - 10 + 97)  (* 'a' + v-10 *)
 
 (* Mangle a single byte: alnum passes through, / becomes __, else _XX *)
-fn emit_mangled_byte(out: !$B.builder, b: int): void =
+fn emit_mangled_byte(out: !$B.builder0, b: int): void =
   if (b >= 97 && b <= 122) || (b >= 65 && b <= 90) ||
      (b >= 48 && b <= 57) then
     $B.put_byte(out, b)
@@ -274,7 +274,7 @@ fn emit_mangled_byte(out: !$B.builder, b: int): void =
 (* Emit mangled package name from source range *)
 fun emit_mangled_pkg {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), start: int, end_pos: int,
-   max: int ns, out: !$B.builder, fuel: int fuel): void =
+   max: int ns, out: !$B.builder0, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if start >= end_pos then ()
   else let
@@ -286,7 +286,7 @@ fun emit_mangled_pkg {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
 fn emit_qualified {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_idx: int, span_max: int np,
-   out: !$B.builder): void = let
+   out: !$B.builder0): void = let
   val alias_s = span_aux1(spans, span_idx, span_max)
   val alias_e = span_aux2(spans, span_idx, span_max)
   val member_s = span_aux3(spans, span_idx, span_max)
@@ -307,7 +307,7 @@ in end
    ============================================================ *)
 
 (* Emit: staload "./FILENAME.sats"\n *)
-fn emit_self_staload(out: !$B.builder, filename_len: int): void = let
+fn emit_self_staload(out: !$B.builder0, filename_len: int): void = let
   (* "staload " = 115,116,97,108,111,97,100,32 *)
   val () = $B.put_byte(out, 115)
   val () = $B.put_byte(out, 116)
@@ -327,7 +327,7 @@ in end
 fn emit_dep_staload {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_idx: int, span_max: int np,
-   out: !$B.builder): void = let
+   out: !$B.builder0): void = let
   val pkg_s = span_aux1(spans, span_idx, span_max)
   val pkg_e = span_aux2(spans, span_idx, span_max)
   (* staload " *)
@@ -365,7 +365,7 @@ in end
 fn emit_dep_staload_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_idx: int, span_max: int np,
-   out: !$B.builder): void = let
+   out: !$B.builder0): void = let
   val pkg_s = span_aux1(spans, span_idx, span_max)
   val pkg_e = span_aux2(spans, span_idx, span_max)
   val alias_s = span_aux3(spans, span_idx, span_max)
@@ -415,7 +415,7 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
-   sats: !$B.builder, dats: !$B.builder,
+   sats: !$B.builder0, dats: !$B.builder0,
    build_target: int, is_unsafe: int, errors: int, fuel: int fuel): int =
   if fuel <= 0 then errors
   else if idx >= span_count then errors
@@ -611,7 +611,7 @@ fun build_prelude {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
-   prelude: !$B.builder, fuel: int fuel): int =
+   prelude: !$B.builder0, fuel: int fuel): int =
   if fuel <= 0 then 0
   else if idx >= span_count then 0
   else let
@@ -632,7 +632,7 @@ fun build_prelude_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
-   prelude: !$B.builder, fuel: int fuel): void =
+   prelude: !$B.builder0, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if idx >= span_count then ()
   else let

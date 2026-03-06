@@ -139,7 +139,7 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
         val () = $B.bput(doc_b, "# API Reference\n\n")
         (* Scan for #pub lines: 35,112,117,98,32 *)
         fun scan_pub {l2:agz}{fuel:nat} .<fuel>.
-          (buf: !$A.arr(byte, l2, 524288), doc: !$B.builder,
+          (buf: !$A.arr(byte, l2, 524288), doc: !$B.builder0,
            pos: int, len: int, fuel: int fuel): void =
           if fuel <= 0 then ()
           else if pos >= len then ()
@@ -160,7 +160,7 @@ implement do_generate_docs(pkg_name_len, kind_is_lib) =
                       (* Found #pub , copy rest of line *)
                       val () = $B.bput(doc, "```\n")
                       fun copy_line {l3:agz}{fuel2:nat} .<fuel2>.
-                        (buf: !$A.arr(byte, l3, 524288), doc: !$B.builder,
+                        (buf: !$A.arr(byte, l3, 524288), doc: !$B.builder0,
                          pos: int, fuel2: int fuel2): int =
                         if fuel2 <= 0 then pos
                         else if pos < 0 then pos
@@ -372,7 +372,7 @@ in
                 val pfx = $B.create()
                 fun copy_replace_slash {l:agz}{fuel:nat} .<fuel>.
                   (bv: !$A.borrow(byte, l, 256), i: int, len: int,
-                   b: !$B.builder, fuel: int fuel): void =
+                   b: !$B.builder0, fuel: int fuel): void =
                   if fuel <= 0 then () else if i >= len then ()
                   else let
                     val byte_val = byte2int0($A.read<byte>(bv, $AR.checked_idx(i, 256)))
@@ -965,7 +965,7 @@ in
   else if start < len then let
     val out = $B.create()
     fun copy_extras {l2:agz}{fuel:nat} .<fuel>.
-      (buf: !$A.arr(byte, l2, 4096), out: !$B.builder,
+      (buf: !$A.arr(byte, l2, 4096), out: !$B.builder0,
        pos: int, len: int, fuel: int fuel): void =
       if fuel <= 0 then ()
       else if pos >= len then ()
@@ -993,7 +993,7 @@ end
 
 (* Append saved extra args to a builder (for do_run) *)
 
-#pub fun append_run_args(cmd: !$B.builder): void
+#pub fun append_run_args(cmd: !$B.builder0): void
 
 implement append_run_args(cmd) = let
   val ep = str_to_path_arr("/tmp/_bpoc_extra.txt")
@@ -1013,7 +1013,7 @@ in
       if elen > 0 then let
         val @(fz_eb, bv_eb) = $A.freeze<byte>(ebuf)
         fun append_lines {l2:agz}{fuel:nat} .<fuel>.
-          (bv: !$A.borrow(byte, l2, 4096), cmd: !$B.builder,
+          (bv: !$A.borrow(byte, l2, 4096), cmd: !$B.builder0,
            pos: int, len: int, fuel: int fuel): void =
           if fuel <= 0 then ()
           else if pos >= len then ()

@@ -295,7 +295,7 @@ in
               fun resolve {lk:agz}{lr:agz}{fuel:nat} .<fuel>.
                 (ks: !$A.arr(byte, lk, 4096), pos: int, kl: int,
                  rb: !$A.borrow(byte, lr, 4096), rl: int,
-                 lb: !$B.builder, cnt: int, fuel: int fuel): int =
+                 lb: !$B.builder0, cnt: int, fuel: int fuel): int =
                 if fuel <= 0 then cnt
                 else if pos >= kl then cnt
                 else let
@@ -489,7 +489,7 @@ in
                           (* Version from filename *)
                           val pfx = $B.create()
                           fun mkp {ls4:agz}{f4:nat} .<f4>.
-                            (s: !$A.arr(byte, ls4, 4096), i: int, l: int, d3: !$B.builder, f4: int f4): void =
+                            (s: !$A.arr(byte, ls4, 4096), i: int, l: int, d3: !$B.builder0, f4: int f4): void =
                             if f4 <= 0 then () else if i >= l then ()
                             else if i < 0 then () else if i >= 4096 then ()
                             else let val c = byte2int0($A.get<byte>(s, $AR.checked_idx(i, 4096)))
@@ -530,7 +530,7 @@ in
                  in extracted packages' bats.toml files. Repeat until stable. *)
               fun resolve_pass {lr2:agz}{fuel:nat} .<fuel>.
                 (rb2: !$A.borrow(byte, lr2, 4096), rl2: int,
-                 lb2: !$B.builder, prev_cnt: int, fuel: int fuel): int =
+                 lb2: !$B.builder0, prev_cnt: int, fuel: int fuel): int =
                 if fuel <= 0 then prev_cnt
                 else let
                   val bmd = str_to_path_arr("bats_modules")
@@ -920,7 +920,7 @@ implement do_build_wasm(release) = let
   val link_count1 = (case+ dr of
     | ~$R.ok(d) => let
         fun scan_build {fuel2:nat} .<fuel2>.
-          (d: !$F.dir, lb: !$B.builder, lc: int, fuel2: int fuel2): int =
+          (d: !$F.dir, lb: !$B.builder0, lc: int, fuel2: int fuel2): int =
           if fuel2 <= 0 then lc
           else let
             val e = $A.alloc<byte>(256)
@@ -976,7 +976,7 @@ implement do_build_wasm(release) = let
   val link_count2 = (case+ bm_dr of
     | ~$R.ok(bm_d) => let
         fun add_dep_objs {fuel3:nat} .<fuel3>.
-          (bm_d: !$F.dir, lb: !$B.builder, lc: int, fuel3: int fuel3): int =
+          (bm_d: !$F.dir, lb: !$B.builder0, lc: int, fuel3: int fuel3): int =
           if fuel3 <= 0 then lc
           else let
             val e = $A.alloc<byte>(256)
@@ -1001,7 +1001,7 @@ implement do_build_wasm(release) = let
               val lc2 = (case+ sd of
                 | ~$R.ok(sd_d) => let
                     fun compile_dep_c {le2:agz}{fuel4:nat} .<fuel4>.
-                      (sd_d: !$F.dir, lb2: !$B.builder,
+                      (sd_d: !$F.dir, lb2: !$B.builder0,
                        bv_e2: !$A.borrow(byte, le2, 256), el2: int,
                        lc: int, fuel4: int fuel4): int =
                       if fuel4 <= 0 then lc
@@ -1056,7 +1056,7 @@ implement do_build_wasm(release) = let
                   in (case+ nsd of
                     | ~$R.ok(nsd_d) => let
                         fun compile_ns_c {lns:agz}{fuel5:nat} .<fuel5>.
-                          (nsd_d: !$F.dir, lb3: !$B.builder,
+                          (nsd_d: !$F.dir, lb3: !$B.builder0,
                            ns_bv: !$A.borrow(byte, lns, 256), ns_len: int,
                            lc: int, fuel5: int fuel5): int =
                           if fuel5 <= 0 then lc
@@ -1083,7 +1083,7 @@ implement do_build_wasm(release) = let
                                 val lc4 = (case+ sd2 of
                                   | ~$R.ok(sd2_d) => let
                                       fun compile_ns_sub_c {le3:agz}{fuel6:nat} .<fuel6>.
-                                        (sd2_d: !$F.dir, lb4: !$B.builder,
+                                        (sd2_d: !$F.dir, lb4: !$B.builder0,
                                          ns2: !$A.borrow(byte, lns, 256), nl2: int,
                                          sub2: !$A.borrow(byte, le3, 256), sl2: int,
                                          lc: int, fuel6: int fuel6): int =
@@ -1161,7 +1161,7 @@ implement do_build_wasm(release) = let
   val link_count3 = (case+ src_dr of
     | ~$R.ok(sd) => let
         fun wasm_cc_src {fuel7:nat} .<fuel7>.
-          (sd: !$F.dir, lb: !$B.builder, lc: int, fuel7: int fuel7): int =
+          (sd: !$F.dir, lb: !$B.builder0, lc: int, fuel7: int fuel7): int =
           if fuel7 <= 0 then lc
           else let
             val e = $A.alloc<byte>(256)
@@ -1207,7 +1207,7 @@ implement do_build_wasm(release) = let
   val link_count4 = (case+ bin_dr of
     | ~$R.ok(bd) => let
         fun wasm_cc_bin {fuel8:nat} .<fuel8>.
-          (bd: !$F.dir, lb: !$B.builder, lc: int, fuel8: int fuel8): int =
+          (bd: !$F.dir, lb: !$B.builder0, lc: int, fuel8: int fuel8): int =
           if fuel8 <= 0 then lc
           else let
             val e = $A.alloc<byte>(256)
@@ -1413,7 +1413,7 @@ in
     (* Copy arr bytes to builder — uses src_byte to avoid !arr in conditional *)
     fun arr_to_builder {l:agz}{fuel:nat} .<fuel>.
       (buf: !$A.borrow(byte, l, 512), pos: int, len: int,
-       dst: !$B.builder, fuel: int fuel): void =
+       dst: !$B.builder0, fuel: int fuel): void =
       if fuel <= 0 then ()
       else if pos >= len then ()
       else let
@@ -2118,7 +2118,7 @@ in
                     val () = (case+ bdir2 of
                       | ~$R.ok(dd) => let
                           fun add_dynloads {fuel2:nat} .<fuel2>.
-                            (dd: !$F.dir, eb: !$B.builder,
+                            (dd: !$F.dir, eb: !$B.builder0,
                              fuel2: int fuel2): void =
                             if fuel2 <= 0 then ()
                             else let
@@ -2162,7 +2162,7 @@ in
                                     val () = (case+ ns_dr of
                                       | ~$R.ok(nsdd) => let
                                           fun dynload_ns {lns5:agz}{fuel_dn:nat} .<fuel_dn>.
-                                            (nsdd: !$F.dir, eb2: !$B.builder,
+                                            (nsdd: !$F.dir, eb2: !$B.builder0,
                                              ns5: !$A.borrow(byte, lns5, 256), ns5len: int,
                                              fuel_dn: int fuel_dn): void =
                                             if fuel_dn <= 0 then ()
@@ -2197,7 +2197,7 @@ in
                                                   val () = (case+ dns_dir of
                                                     | ~$R.ok(d_dn) => let
                                                         fun dynload_ns_extra {lsub6:agz}{fuel_de2:nat} .<fuel_de2>.
-                                                          (d_dn: !$F.dir, eb3: !$B.builder,
+                                                          (d_dn: !$F.dir, eb3: !$B.builder0,
                                                            ns6: !$A.borrow(byte, lns5, 256), ns6len: int,
                                                            sub6: !$A.borrow(byte, lsub6, 256), sub6len: int,
                                                            fuel_de2: int fuel_de2): void =
@@ -2269,7 +2269,7 @@ in
                                     | ~$R.ok(d_dyn) => let
                                         fun add_extra_dynloads
                                           {ld2:agz}{fuel_d:nat} .<fuel_d>.
-                                          (d_dyn: !$F.dir, eb2: !$B.builder,
+                                          (d_dyn: !$F.dir, eb2: !$B.builder0,
                                            dep2: !$A.borrow(byte, ld2, 256),
                                            dep2_len: int,
                                            fuel_d: int fuel_d): void =
@@ -2330,7 +2330,7 @@ in
                     val () = (case+ dyn_sm_dir of
                       | ~$R.ok(d_dsm) => let
                           fun add_src_dynloads {fuel_dsm:nat} .<fuel_dsm>.
-                            (d_dsm: !$F.dir, eb: !$B.builder,
+                            (d_dsm: !$F.dir, eb: !$B.builder0,
                              fuel_dsm: int fuel_dsm): void =
                             if fuel_dsm <= 0 then ()
                             else let
@@ -3285,7 +3285,7 @@ in
                     val () = (case+ bdir5 of
                       | ~$R.ok(dd5) => let
                           fun link_deps {fuel5:nat} .<fuel5>.
-                            (dd5: !$F.dir, lb: !$B.builder,
+                            (dd5: !$F.dir, lb: !$B.builder0,
                              fuel5: int fuel5): void =
                             if fuel5 <= 0 then ()
                             else let
@@ -3328,7 +3328,7 @@ in
                                     val () = (case+ ns_lr of
                                       | ~$R.ok(nsld) => let
                                           fun link_ns {lns4:agz}{fuel_ln:nat} .<fuel_ln>.
-                                            (nsld: !$F.dir, lb2: !$B.builder,
+                                            (nsld: !$F.dir, lb2: !$B.builder0,
                                              ns4: !$A.borrow(byte, lns4, 256), ns4len: int,
                                              fuel_ln: int fuel_ln): void =
                                             if fuel_ln <= 0 then ()
@@ -3363,7 +3363,7 @@ in
                                                   val () = (case+ lns_dir of
                                                     | ~$R.ok(d_ln2) => let
                                                         fun link_ns_extra {lsub5:agz}{fuel_le:nat} .<fuel_le>.
-                                                          (d_ln2: !$F.dir, lb3: !$B.builder,
+                                                          (d_ln2: !$F.dir, lb3: !$B.builder0,
                                                            ns5: !$A.borrow(byte, lns4, 256), ns5len: int,
                                                            sub5: !$A.borrow(byte, lsub5, 256), sub5len: int,
                                                            fuel_le: int fuel_le): void =
@@ -3434,7 +3434,7 @@ in
                                     | ~$R.ok(d_lk) => let
                                         fun link_extra
                                           {ld5:agz}{fuel_l:nat} .<fuel_l>.
-                                          (d_lk: !$F.dir, lb2: !$B.builder,
+                                          (d_lk: !$F.dir, lb2: !$B.builder0,
                                            dep5: !$A.borrow(byte, ld5, 256),
                                            dep5_len: int,
                                            fuel_l: int fuel_l): void =
@@ -3494,7 +3494,7 @@ in
                     val () = (case+ lsm_dir of
                       | ~$R.ok(d_lsm) => let
                           fun link_src_modules {fuel_lsm:nat} .<fuel_lsm>.
-                            (d_lsm: !$F.dir, lb: !$B.builder,
+                            (d_lsm: !$F.dir, lb: !$B.builder0,
                              fuel_lsm: int fuel_lsm): void =
                             if fuel_lsm <= 0 then ()
                             else let
@@ -3532,7 +3532,7 @@ in
                     val link_argv = $B.create()
                     fun split_spaces {l2:agz}{fuel:nat} .<fuel>.
                       (bv: !$A.borrow(byte, l2, 524288), i: int, len: int,
-                       dst: !$B.builder, argc: int, in_arg: int,
+                       dst: !$B.builder0, argc: int, in_arg: int,
                        fuel: int fuel): int =
                       if fuel <= 0 then argc
                       else if i >= len then
