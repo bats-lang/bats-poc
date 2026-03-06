@@ -3611,22 +3611,19 @@ in
           in end
         | ~$R.err(_) => ())
 
-      (* Process src/lib.bats if it exists (library packages) *)
-      val lib_src = str_to_path_arr("src/lib.bats")
-      val @(fz_ls, bv_ls) = $A.freeze<byte>(lib_src)
-      val lib_sats = str_to_path_arr("build/src/lib.sats")
-      val @(fz_lss, bv_lss) = $A.freeze<byte>(lib_sats)
-      val lib_dats = str_to_path_arr("build/src/lib.dats")
-      val @(fz_lsd, bv_lsd) = $A.freeze<byte>(lib_dats)
-      val lib_pr = preprocess_one(bv_ls, bv_lss, bv_lsd, build_target, is_unsafe)
-      val () = $A.drop<byte>(fz_ls, bv_ls)
-      val () = $A.free<byte>($A.thaw<byte>(fz_ls))
-      val () = $A.drop<byte>(fz_lss, bv_lss)
-      val () = $A.free<byte>($A.thaw<byte>(fz_lss))
-      val () = $A.drop<byte>(fz_lsd, bv_lsd)
-      val () = $A.free<byte>($A.thaw<byte>(fz_lsd))
-      val () = (if lib_pr = 0 then let
-          val () = if ~is_quiet() then println! ("  preprocessed: src/lib.bats")
+      (* Run patsopt on src/lib.bats if scan_src_modules preprocessed it *)
+      val lib_d_path = str_to_path_arr("build/src/lib.dats")
+      val @(fz_ldp, bv_ldp) = $A.freeze<byte>(lib_d_path)
+      val lib_or = $F.file_open(bv_ldp, 524288, 0, 0)
+      val () = $A.drop<byte>(fz_ldp, bv_ldp)
+      val () = $A.free<byte>($A.thaw<byte>(fz_ldp))
+      val lib_exists = (case+ lib_or of
+        | ~$R.ok(fd) => let
+            val cr = $F.file_close(fd)
+            val () = $R.discard<int><int>(cr)
+          in true end
+        | ~$R.err(_) => false): bool
+      val () = (if lib_exists then let
           val lib_c_out = str_to_path_arr("build/src/lib_dats.c")
           val @(fz_lc, bv_lc) = $A.freeze<byte>(lib_c_out)
           val lib_d_in = str_to_path_arr("build/src/lib.dats")
