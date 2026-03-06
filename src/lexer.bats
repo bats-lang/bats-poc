@@ -164,6 +164,17 @@ fn looking_at_assu_me {l:agz}{n:pos}
   $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 101) &&
   is_kw_boundary(src, pos + 6, max)
 
+fn looking_at_staload {l:agz}{n:pos}
+  (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
+  $AR.eq_int_int($S.borrow_byte(src, pos, max), 115) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 1, max), 116) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 108) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 111) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 97) &&
+  $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 100) &&
+  is_kw_boundary(src, pos + 7, max)
+
 fn looking_at_extval {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), pos: int, max: int n): bool =
   $AR.eq_int_int($S.borrow_byte(src, pos, max), 36) &&
@@ -744,6 +755,7 @@ fun lex_passthrough_scan {l:agz}{n:pos}{fuel:nat} .<fuel>.
     else if looking_at_ext_ern(src, pos, max) then pos
     else if looking_at_assu_me(src, pos, max) then pos
     else if looking_at_fun(src, pos, max) then pos
+    else if looking_at_staload(src, pos, max) then pos
     else lex_passthrough_scan(src, pos + 1, src_len, max, fuel - 1)
   end
 
@@ -905,31 +917,14 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
       val () = put_span(spans, 5, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     (* staload lines: kind=12, go to both .sats and .dats with .bats→.sats rename *)
-    else if $AR.eq_int_int(b0, 115) &&
-       $AR.eq_int_int(b1, 116) &&
-       $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 97) &&
-       $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 108) &&
-       $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 111) &&
-       $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 97) &&
-       $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 100) then let
+    else if looking_at_staload(src, pos, max) then let
       val ep = skip_to_eol(src, pos + 7, src_len, max, $AR.checked_nat(src_len))
       val () = put_span(spans, 12, 2, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     (* Default: passthrough *)
     else let
       val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
-      (* staload lines use kind=12 for .bats→.sats rename *)
-      val is_staload = (if $AR.eq_int_int(b0, 115) &&
-         $AR.eq_int_int(b1, 116) &&
-         $AR.eq_int_int($S.borrow_byte(src, pos + 2, max), 97) &&
-         $AR.eq_int_int($S.borrow_byte(src, pos + 3, max), 108) &&
-         $AR.eq_int_int($S.borrow_byte(src, pos + 4, max), 111) &&
-         $AR.eq_int_int($S.borrow_byte(src, pos + 5, max), 97) &&
-         $AR.eq_int_int($S.borrow_byte(src, pos + 6, max), 100)
-       then true else false): bool
-      val kind = (if is_staload then 12 else 0): int
-      val dest = (if is_staload then 2 else 0): int
-      val () = put_span(spans, kind, dest, pos, ep, 0, 0, 0, 0)
+      val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
   end
 
