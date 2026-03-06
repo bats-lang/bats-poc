@@ -2342,6 +2342,77 @@ in
                 val next = pos + elen + 1
               in emit_closure_dynloads(seen2, spos, next, eb, fuel_ed - 1) end
 
+            (* Link .o files for deps in the staload-chain closure *)
+            fun link_closure_deps {ls2:agz}{fuel_ld:nat} .<fuel_ld>.
+              (seen2: !$A.arr(byte, ls2, 16384), spos: int,
+               pos: int, lb: !$B.builder_v >> $B.builder_v,
+               fuel_ld: int fuel_ld): void =
+              if fuel_ld <= 0 then ()
+              else if pos >= spos then ()
+              else let
+                val elen = arr_entry_len(seen2, pos, 256)
+                (* Add " build/bats_modules/DEP/src/lib_dats.o" *)
+                val () = $B.bput(lb, " build/bats_modules/")
+                val () = copy_arr_to_bld(seen2, pos, elen, lb,
+                  $AR.checked_nat(elen + 1))
+                val () = $B.bput(lb, "/src/lib_dats.o")
+                (* Also link extra _dats.o files *)
+                var ldsb: $B.builder_v = $B.create()
+                val () = $B.bput(ldsb, "build/bats_modules/")
+                val () = copy_arr_to_bld(seen2, pos, elen, ldsb,
+                  $AR.checked_nat(elen + 1))
+                val () = $B.bput(ldsb, "/src")
+                val () = $B.put_char(ldsb, 0)
+                val @(ldsba, _) = $B.to_arr(ldsb)
+                val @(fz_ldsb, bv_ldsb) = $A.freeze<byte>(ldsba)
+                val ld_dir = $F.dir_open(bv_ldsb, 524288)
+                val () = $A.drop<byte>(fz_ldsb, bv_ldsb)
+                val () = $A.free<byte>($A.thaw<byte>(fz_ldsb))
+                val () = (case+ ld_dir of
+                  | ~$R.ok(d_ld) => let
+                      fun link_extra_o {ls3:agz}{fuel_le:nat} .<fuel_le>.
+                        (d_ld2: !$F.dir,
+                         seen3: !$A.arr(byte, ls3, 16384),
+                         dep_pos: int, dep_len: int,
+                         lb2: !$B.builder_v >> $B.builder_v,
+                         fuel_le: int fuel_le): void =
+                        if fuel_le <= 0 then ()
+                        else let
+                          val le = $A.alloc<byte>(256)
+                          val lnr = $F.dir_next(d_ld2, le, 256)
+                          val lel = $R.option_unwrap_or<int>(lnr, ~1)
+                        in if lel < 0 then $A.free<byte>(le)
+                        else let
+                          val is_o = $S.has_suffix(le, lel, 256, "_dats.o", 7)
+                          val is_l = $S.has_suffix(le, lel, 256, "lib_dats.o", 10)
+                        in if is_o then
+                          if is_l then let
+                            val () = $A.free<byte>(le)
+                          in link_extra_o(d_ld2, seen3, dep_pos, dep_len, lb2, fuel_le-1) end
+                          else let
+                            val @(fz_le, bv_le) = $A.freeze<byte>(le)
+                            val () = $B.bput(lb2, " build/bats_modules/")
+                            val () = copy_arr_to_bld(seen3, dep_pos, dep_len, lb2,
+                              $AR.checked_nat(dep_len + 1))
+                            val () = $B.bput(lb2, "/src/")
+                            val () = copy_to_builder(bv_le, 0, lel, 256,
+                              lb2, $AR.checked_nat(lel + 1))
+                            val () = $A.drop<byte>(fz_le, bv_le)
+                            val () = $A.free<byte>($A.thaw<byte>(fz_le))
+                          in link_extra_o(d_ld2, seen3, dep_pos, dep_len, lb2, fuel_le-1) end
+                        else let
+                          val () = $A.free<byte>(le)
+                        in link_extra_o(d_ld2, seen3, dep_pos, dep_len, lb2, fuel_le-1) end
+                        end
+                        end
+                      val () = link_extra_o(d_ld, seen2, pos, elen, lb, 200)
+                      val dcr = $F.dir_close(d_ld)
+                      val () = $R.discard<int><int>(dcr)
+                    in end
+                  | ~$R.err(_) => ())
+                val next = pos + elen + 1
+              in link_closure_deps(seen2, spos, next, lb, fuel_ld - 1) end
+
             fun scan_bins {lph:agz}{fuel:nat} .<fuel>.
               (d: !$F.dir, ph: !$A.borrow(byte, lph, 512),
                phlen: int, rel: int, fuel: int fuel): void =
@@ -3395,213 +3466,26 @@ in
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, link,
                       $AR.checked_nat(stem_len + 1))
                     val () = $B.bput(link, "_dats.o build/_bats_native_runtime.o")
-                    (* Add all dep .o files *)
-                    val bm5_arr = str_to_path_arr("bats_modules")
-                    val @(fz_bm5, bv_bm5) = $A.freeze<byte>(bm5_arr)
-                    val bdir5 = $F.dir_open(bv_bm5, 524288)
-                    val () = $A.drop<byte>(fz_bm5, bv_bm5)
-                    val () = $A.free<byte>($A.thaw<byte>(fz_bm5))
-                    val () = (case+ bdir5 of
-                      | ~$R.ok(dd5) => let
-                          fun link_deps {fuel5:nat} .<fuel5>.
-                            (dd5: !$F.dir, lb: !$B.builder_v >> $B.builder_v,
-                             fuel5: int fuel5): void =
-                            if fuel5 <= 0 then ()
-                            else let
-                              val de = $A.alloc<byte>(256)
-                              val dnr = $F.dir_next(dd5, de, 256)
-                              val dlen = $R.option_unwrap_or<int>(dnr, ~1)
-                            in
-                              if dlen < 0 then $A.free<byte>(de)
-                              else let
-                                val ddd = is_dot_or_dotdot(de, dlen, 256)
-                              in
-                                if ddd then let
-                                  val () = $A.free<byte>(de)
-                                in link_deps(dd5, lb, fuel5 - 1) end
-                                else let
-                                  val @(fz_de, bv_de) = $A.freeze<byte>(de)
-                                  var pk_b4: $B.builder_v = $B.create()
-                                  val () = $B.bput(pk_b4, "bats_modules/")
-                                  val () = copy_to_builder(bv_de, 0, dlen, 256, pk_b4, $AR.checked_nat(dlen+1))
-                                  val () = $B.bput(pk_b4, "/bats.toml")
-                                  val () = $B.put_char(pk_b4, 0)
-                                  val @(pka4, _) = $B.to_arr(pk_b4)
-                                  val @(fz_pk4, bv_pk4) = $A.freeze<byte>(pka4)
-                                  val pk_r4 = $F.file_mtime(bv_pk4, 524288)
-                                  val is_p4 = (case+ pk_r4 of | ~$R.ok(_) => true | ~$R.err(_) => false): bool
-                                  val () = $A.drop<byte>(fz_pk4, bv_pk4)
-                                  val () = $A.free<byte>($A.thaw<byte>(fz_pk4))
-                                in
-                                  if ~is_p4 then let
-                                    (* Namespace dir — iterate subdirs for link *)
-                                    var ns_ld: $B.builder_v = $B.create()
-                                    val () = $B.bput(ns_ld, "bats_modules/")
-                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ns_ld, $AR.checked_nat(dlen+1))
-                                    val () = $B.put_char(ns_ld, 0)
-                                    val @(ns_lda, _) = $B.to_arr(ns_ld)
-                                    val @(fz_nsld, bv_nsld) = $A.freeze<byte>(ns_lda)
-                                    val ns_lr = $F.dir_open(bv_nsld, 524288)
-                                    val () = $A.drop<byte>(fz_nsld, bv_nsld)
-                                    val () = $A.free<byte>($A.thaw<byte>(fz_nsld))
-                                    val () = (case+ ns_lr of
-                                      | ~$R.ok(nsld) => let
-                                          fun link_ns {lns4:agz}{fuel_ln:nat} .<fuel_ln>.
-                                            (nsld: !$F.dir, lb2: !$B.builder_v >> $B.builder_v,
-                                             ns4: !$A.borrow(byte, lns4, 256), ns4len: int,
-                                             fuel_ln: int fuel_ln): void =
-                                            if fuel_ln <= 0 then ()
-                                            else let
-                                              val sde = $A.alloc<byte>(256)
-                                              val snr = $F.dir_next(nsld, sde, 256)
-                                              val sel = $R.option_unwrap_or<int>(snr, ~1)
-                                            in if sel < 0 then $A.free<byte>(sde)
-                                              else let val sdd = is_dot_or_dotdot(sde, sel, 256) in
-                                                if sdd then let val () = $A.free<byte>(sde)
-                                                in link_ns(nsld, lb2, ns4, ns4len, fuel_ln-1) end
-                                                else let
-                                                  val @(fz_sde, bv_sde) = $A.freeze<byte>(sde)
-                                                  val () = $B.bput(lb2, " build/bats_modules/")
-                                                  val () = copy_to_builder(ns4, 0, ns4len, 256, lb2, $AR.checked_nat(ns4len+1))
-                                                  val () = $B.bput(lb2, "/")
-                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, lb2, $AR.checked_nat(sel+1))
-                                                  val () = $B.bput(lb2, "/src/lib_dats.o")
-                                                  (* Also link extra _dats.o files from shared modules *)
-                                                  var lnsd: $B.builder_v = $B.create()
-                                                  val () = $B.bput(lnsd, "build/bats_modules/")
-                                                  val () = copy_to_builder(ns4, 0, ns4len, 256, lnsd, $AR.checked_nat(ns4len+1))
-                                                  val () = $B.bput(lnsd, "/")
-                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, lnsd, $AR.checked_nat(sel+1))
-                                                  val () = $B.bput(lnsd, "/src")
-                                                  val () = $B.put_char(lnsd, 0)
-                                                  val @(lnsda, _) = $B.to_arr(lnsd)
-                                                  val @(fz_lnsd, bv_lnsd) = $A.freeze<byte>(lnsda)
-                                                  val lns_dir = $F.dir_open(bv_lnsd, 524288)
-                                                  val () = $A.drop<byte>(fz_lnsd, bv_lnsd)
-                                                  val () = $A.free<byte>($A.thaw<byte>(fz_lnsd))
-                                                  val () = (case+ lns_dir of
-                                                    | ~$R.ok(d_ln2) => let
-                                                        fun link_ns_extra {lsub5:agz}{fuel_le:nat} .<fuel_le>.
-                                                          (d_ln2: !$F.dir, lb3: !$B.builder_v >> $B.builder_v,
-                                                           ns5: !$A.borrow(byte, lns4, 256), ns5len: int,
-                                                           sub5: !$A.borrow(byte, lsub5, 256), sub5len: int,
-                                                           fuel_le: int fuel_le): void =
-                                                          if fuel_le <= 0 then ()
-                                                          else let
-                                                            val le = $A.alloc<byte>(256)
-                                                            val lnr = $F.dir_next(d_ln2, le, 256)
-                                                            val lel = $R.option_unwrap_or<int>(lnr, ~1)
-                                                          in if lel < 0 then $A.free<byte>(le)
-                                                            else let
-                                                              val is_o = $S.has_suffix(le, lel, 256, "_dats.o", 7)
-                                                            in if ~is_o then let val () = $A.free<byte>(le)
-                                                              in link_ns_extra(d_ln2, lb3, ns5, ns5len, sub5, sub5len, fuel_le-1) end
-                                                            else let
-                                                              val is_l = $S.has_suffix(le, lel, 256, "lib_dats.o", 10)
-                                                            in if is_l then let val () = $A.free<byte>(le)
-                                                              in link_ns_extra(d_ln2, lb3, ns5, ns5len, sub5, sub5len, fuel_le-1) end
-                                                              else let
-                                                                val @(fz_le, bv_le) = $A.freeze<byte>(le)
-                                                                val () = $B.bput(lb3, " build/bats_modules/")
-                                                                val () = copy_to_builder(ns5, 0, ns5len, 256, lb3, $AR.checked_nat(ns5len+1))
-                                                                val () = $B.bput(lb3, "/")
-                                                                val () = copy_to_builder(sub5, 0, sub5len, 256, lb3, $AR.checked_nat(sub5len+1))
-                                                                val () = $B.bput(lb3, "/src/")
-                                                                val () = copy_to_builder(bv_le, 0, lel, 256, lb3, $AR.checked_nat(lel+1))
-                                                                val () = $A.drop<byte>(fz_le, bv_le)
-                                                                val () = $A.free<byte>($A.thaw<byte>(fz_le))
-                                                              in link_ns_extra(d_ln2, lb3, ns5, ns5len, sub5, sub5len, fuel_le-1) end
-                                                            end
-                                                            end
-                                                          end
-                                                      in
-                                                        link_ns_extra(d_ln2, lb2, ns4, ns4len, bv_sde, sel, 200);
-                                                        (let val dcr_le = $F.dir_close(d_ln2) val () = $R.discard<int><int>(dcr_le) in end)
-                                                      end
-                                                    | ~$R.err(_) => ())
-                                                  val () = $A.drop<byte>(fz_sde, bv_sde)
-                                                  val () = $A.free<byte>($A.thaw<byte>(fz_sde))
-                                                in link_ns(nsld, lb2, ns4, ns4len, fuel_ln-1) end
-                                              end
-                                            end
-                                          val () = link_ns(nsld, lb, bv_de, dlen, 100)
-                                          val dcr_ln = $F.dir_close(nsld)
-                                          val () = $R.discard<int><int>(dcr_ln)
-                                        in end
-                                      | ~$R.err(_) => ())
-                                    val () = $A.drop<byte>(fz_de, bv_de)
-                                    val () = $A.free<byte>($A.thaw<byte>(fz_de))
-                                  in link_deps(dd5, lb, fuel5 - 1) end
-                                  else let
-                                  val () = $B.bput(lb, " build/bats_modules/")
-                                  val () = copy_to_builder(bv_de, 0, dlen, 256,
-                                    lb, $AR.checked_nat(dlen + 1))
-                                  val () = $B.bput(lb, "/src/lib_dats.o")
-                                  (* link extra _dats.o files for this dep *)
-                                  var lk_src_b: $B.builder_v = $B.create()
-                                  val () = $B.bput(lk_src_b, "build/bats_modules/")
-                                  val () = copy_to_builder(bv_de, 0, dlen, 256, lk_src_b,
-                                    $AR.checked_nat(dlen + 1))
-                                  val () = $B.bput(lk_src_b, "/src")
-                                  val () = $B.put_char(lk_src_b, 0)
-                                  val @(lk_a, _) = $B.to_arr(lk_src_b)
-                                  val @(fz_lk, bv_lk) = $A.freeze<byte>(lk_a)
-                                  val lk_dir = $F.dir_open(bv_lk, 524288)
-                                  val () = $A.drop<byte>(fz_lk, bv_lk)
-                                  val () = $A.free<byte>($A.thaw<byte>(fz_lk))
-                                  val () = (case+ lk_dir of
-                                    | ~$R.ok(d_lk) => let
-                                        fun link_extra
-                                          {ld5:agz}{fuel_l:nat} .<fuel_l>.
-                                          (d_lk: !$F.dir, lb2: !$B.builder_v >> $B.builder_v,
-                                           dep5: !$A.borrow(byte, ld5, 256),
-                                           dep5_len: int,
-                                           fuel_l: int fuel_l): void =
-                                          if fuel_l <= 0 then ()
-                                          else let
-                                            val de5 = $A.alloc<byte>(256)
-                                            val nr5 = $F.dir_next(d_lk, de5, 256)
-                                            val dl5 = $R.option_unwrap_or<int>(nr5, ~1)
-                                          in
-                                            if dl5 < 0 then $A.free<byte>(de5)
-                                            else let
-                                              val is_o = has_dats_o_ext(de5, dl5, 256)
-                                              val is_l = is_lib_dats_o(de5, dl5, 256)
-                                            in
-                                              if is_o then
-                                                if is_l then let
-                                                  val () = $A.free<byte>(de5)
-                                                in link_extra(d_lk, lb2, dep5, dep5_len, fuel_l - 1) end
-                                                else let
-                                                  val @(fz_d5, bv_d5) = $A.freeze<byte>(de5)
-                                                  val () = $B.bput(lb2, " build/bats_modules/")
-                                                  val () = copy_to_builder(dep5, 0, dep5_len, 256,
-                                                    lb2, $AR.checked_nat(dep5_len + 1))
-                                                  val () = $B.bput(lb2, "/src/")
-                                                  val () = copy_to_builder(bv_d5, 0, dl5, 256,
-                                                    lb2, $AR.checked_nat(dl5 + 1))
-                                                  val () = $A.drop<byte>(fz_d5, bv_d5)
-                                                  val () = $A.free<byte>($A.thaw<byte>(fz_d5))
-                                                in link_extra(d_lk, lb2, dep5, dep5_len, fuel_l - 1) end
-                                              else let
-                                                val () = $A.free<byte>(de5)
-                                              in link_extra(d_lk, lb2, dep5, dep5_len, fuel_l - 1) end
-                                            end
-                                          end
-                                        val () = link_extra(d_lk, lb, bv_de, dlen, 200)
-                                        val dcr_lk = $F.dir_close(d_lk)
-                                        val () = $R.discard<int><int>(dcr_lk)
-                                      in end
-                                    | ~$R.err(_) => ())
-                                  val () = $A.drop<byte>(fz_de, bv_de)
-                                  val () = $A.free<byte>($A.thaw<byte>(fz_de))
-                                in link_deps(dd5, lb, fuel5 - 1) end
-                                  end (* if ~is_p4 *)
-                              end
-                            end
-                          val () = link_deps(dd5, link, 200)
-                          val dcr5 = $F.dir_close(dd5)
-                          val () = $R.discard<int><int>(dcr5)
+                    (* Add dep .o files via staload-chain scanning *)
+                    val lk_dor = $F.file_open(bv_sd, 524288, 0, 0)
+                    val () = (case+ lk_dor of
+                      | ~$R.ok(lk_dfd) => let
+                          val lk_dep_buf = $A.alloc<byte>(524288)
+                          val lk_drr = $F.file_read(lk_dfd, lk_dep_buf, 524288)
+                          val lk_dep_nb = (case+ lk_drr of
+                            | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+                          val lk_dcr = $F.file_close(lk_dfd)
+                          val () = $R.discard<int><int>(lk_dcr)
+                          val @(fz_ldb, bv_ldb) = $A.freeze<byte>(lk_dep_buf)
+                          val lk_dep_seen = $A.alloc<byte>(16384)
+                          val lk_sp1 = scan_staload_deps(bv_ldb, lk_dep_nb,
+                            lk_dep_seen, 0, 0, 500)
+                          val () = $A.drop<byte>(fz_ldb, bv_ldb)
+                          val () = $A.free<byte>($A.thaw<byte>(fz_ldb))
+                          val lk_fsp = collect_trans_deps(lk_dep_seen, lk_sp1, 0, 200)
+                          val () = link_closure_deps(lk_dep_seen, lk_fsp,
+                            0, link, 200)
+                          val () = $A.free<byte>(lk_dep_seen)
                         in end
                       | ~$R.err(_) => ())
                     (* Link src/*.dats shared module .o files *)
