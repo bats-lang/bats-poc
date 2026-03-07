@@ -347,6 +347,13 @@ implement arr_range_to_builder(src, i, lim, dst, fuel) =
     val () = $B.put_char(dst, b)
   in arr_range_to_builder(src, i + 1, lim, dst, fuel - 1) end
 
+#pub fn arr_range_to_builder_v {l:agz}
+  (src: !$A.arr(byte, l, 4096), i: int, lim: int,
+   dst: !$B.builder_v >> $B.builder_v): void
+
+implement arr_range_to_builder_v(src, i, lim, dst) =
+  arr_range_to_builder(src, i, lim, dst, 524288 - $B.length(dst))
+
 #pub fun str_fill_loop {lb:agz}{sn:nat}{i:nat | i <= sn}{fuel:nat}  (b: !$A.arr(byte, lb, 4096), s: string sn, slen: int sn, i: int i, fuel: int fuel): void
 
 implement str_fill_loop(b, s, slen, i, fuel) =

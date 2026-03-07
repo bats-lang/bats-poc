@@ -527,7 +527,7 @@ implement do_completions(shell) =
 
 (* Check if a file exists by trying to open it *)
 
-#pub fn file_exists {sn:nat} (path: string sn): bool
+#pub fn file_exists {sn:nat | sn < $B.BUILDER_CAP} (path: string sn): bool
 
 implement file_exists(path) = let
   val pa = str_to_path_arr(path)
