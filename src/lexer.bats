@@ -36,27 +36,27 @@ fn is_ident_start(b: int): bool =
    ============================================================ *)
 
 fn put_i32(b: !$B.builder_v >> $B.builder_v, v: int): void = let
-  val () = $B.put_char(b, v mod 256)
+  val () = put_char_v(b, v mod 256)
   val v1 = v / 256
-  val () = $B.put_char(b, v1 mod 256)
+  val () = put_char_v(b, v1 mod 256)
   val v2 = v1 / 256
-  val () = $B.put_char(b, v2 mod 256)
-  val () = $B.put_char(b, v2 / 256)
+  val () = put_char_v(b, v2 mod 256)
+  val () = put_char_v(b, v2 / 256)
 in end
 
 fn put_span(b: !$B.builder_v >> $B.builder_v, kind: int, dest: int,
             sp_start: int, sp_end: int,
             a1: int, a2: int, a3: int, a4: int): void = let
-  val () = $B.put_char(b, kind)
-  val () = $B.put_char(b, dest)
+  val () = put_char_v(b, kind)
+  val () = put_char_v(b, dest)
   val () = put_i32(b, sp_start)
   val () = put_i32(b, sp_end)
   val () = put_i32(b, a1)
   val () = put_i32(b, a2)
   val () = put_i32(b, a3)
   val () = put_i32(b, a4)
-  val () = $B.put_char(b, 0)
-  val () = $B.put_char(b, 0)
+  val () = put_char_v(b, 0)
+  val () = put_char_v(b, 0)
 in end
 
 (* ============================================================
