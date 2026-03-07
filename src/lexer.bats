@@ -367,7 +367,7 @@ fun _has_primplement {l:agz}{n:pos}{fuel:nat} .<fuel>.
       val found_len = nend - p
     in
       if $AR.eq_int_int(found_len, name_len) then
-        if _names_match(src, name_start, p, name_len, max, $AR.checked_nat(name_len)) then true
+        if _names_match(src, name_start, p, name_len, max, max) then true
         else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
       else _has_primplement(src, src_len, max, name_start, name_len, scan_pos + 1, fuel - 1)
     end
@@ -394,7 +394,7 @@ fn lex_line_comment {l:agz}{n:pos}
     val () = put_span(spans, 0, 0, start, src_len, 0, 0, 0, 0)
   in @(src_len, count + 1) end
   else let
-    val ep = skip_to_eol(src, start + 2, src_len, max, $AR.checked_nat(src_len))
+    val ep = skip_to_eol(src, start + 2, src_len, max, max)
     val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
   in @(ep, count + 1) end
 
@@ -412,7 +412,7 @@ fun lex_c_comment_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 fn lex_c_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
    spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
-  val ep = lex_c_comment_inner(src, start + 2, src_len, max, $AR.checked_nat(src_len))
+  val ep = lex_c_comment_inner(src, start + 2, src_len, max, max)
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
 
@@ -438,7 +438,7 @@ fun lex_ml_comment_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 fn lex_ml_comment {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
    spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
-  val ep = lex_ml_comment_inner(src, start + 2, src_len, max, 1, $AR.checked_nat(src_len))
+  val ep = lex_ml_comment_inner(src, start + 2, src_len, max, 1, max)
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
 
@@ -458,7 +458,7 @@ fun lex_string_inner {l:agz}{n:pos}{fuel:nat} .<fuel>.
 fn lex_string {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n,
    spans: !$B.builder_v >> $B.builder_v, start: int, count: int): @(int, int) = let
-  val ep = lex_string_inner(src, start + 1, src_len, max, $AR.checked_nat(src_len))
+  val ep = lex_string_inner(src, start + 1, src_len, max, max)
   val () = put_span(spans, 0, 0, start, ep, 0, 0, 0, 0)
 in @(ep, count + 1) end
 
@@ -494,7 +494,7 @@ fn lex_extcode {l:agz}{n:pos}
      else if $AR.eq_int_int(bk, 36) then @(2, after_open + 1)
      else if $AR.eq_int_int(bk, 35) then @(3, after_open + 1)
      else @(0, after_open)): @(int, int)
-  val ep = lex_extcode_inner(src, cstart, src_len, max, $AR.checked_nat(src_len))
+  val ep = lex_extcode_inner(src, cstart, src_len, max, max)
   val cend = (if ep >= 2 then ep - 2 else ep): int
   val () = put_span(spans, 6, 0, start, ep, cstart, cend, kind, 0)
 in @(ep, count + 1) end
@@ -513,7 +513,7 @@ fn lex_hash_use {l:agz}{n:pos}
   val alias_end = skip_ident(src, p3, max, 4096)
   val p4 = skip_ws(src, alias_end, max, 256)
   val mangle = (if looking_at_no_mangle(src, p4, max) then 0 else 1): int
-  val ep = skip_to_eol(src, p4, src_len, max, $AR.checked_nat(src_len))
+  val ep = skip_to_eol(src, p4, src_len, max, max)
   val () = put_span(spans, 1, mangle + 1, start, ep,
                     pkg_start, pkg_end, alias_start, alias_end)
 in @(ep, count + 1) end
@@ -559,7 +559,7 @@ fun lex_pub_lines {l:agz}{n:pos}{fuel:nat} .<fuel>.
   if fuel <= 0 then pos
   else if pos >= src_len then pos
   else let
-    val eol = skip_to_eol(src, pos, src_len, max, $AR.checked_nat(src_len))
+    val eol = skip_to_eol(src, pos, src_len, max, max)
   in
     if eol >= src_len then eol
     else if is_blank_line(src, eol, src_len, max, 256) then let
@@ -569,7 +569,7 @@ fun lex_pub_lines {l:agz}{n:pos}{fuel:nat} .<fuel>.
         if fb <= 0 then p
         else if p >= sl then p
         else if is_blank_line(s, p, sl, m, 256) then
-          skip_blanks(s, skip_to_eol(s, p, sl, m, $AR.checked_nat(sl)), sl, m, fb - 1)
+          skip_blanks(s, skip_to_eol(s, p, sl, m, m), sl, m, fb - 1)
         else p
       val next = skip_blanks(src, eol, src_len, max, 64)
     in
@@ -658,7 +658,7 @@ in
   in
     if looking_at_begin(src, p0, max) then let
       val contents_start = p0 + 5
-      val end_pos = find_end_kw(src, contents_start, src_len, max, 1, $AR.checked_nat(src_len))
+      val end_pos = find_end_kw(src, contents_start, src_len, max, 1, max)
       val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
       val () = put_span(spans, 4, 0, start, ep, contents_start, end_pos, 0, 0)
     in @(ep, count + 1, true) end
@@ -682,7 +682,7 @@ in
   in
     if looking_at_begin(src, p1, max) then let
       val contents_start = p1 + 5
-      val end_pos = find_end_kw(src, contents_start, src_len, max, 1, $AR.checked_nat(src_len))
+      val end_pos = find_end_kw(src, contents_start, src_len, max, 1, max)
       val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
       val () = put_span(spans, 10, 0, start, ep, contents_start, end_pos, 0, 0)
     in @(ep, count + 1, true) end
@@ -690,7 +690,7 @@ in
   end
   else if looking_at_begin(src, p0, max) then let
     val contents_start = p0 + 5
-    val end_pos = find_end_kw(src, contents_start, src_len, max, 0, $AR.checked_nat(src_len))
+    val end_pos = find_end_kw(src, contents_start, src_len, max, 0, max)
     val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
     val () = put_span(spans, 8, 0, start, ep, contents_start, end_pos, 0, 0)
   in @(ep, count + 1, true) end
@@ -709,20 +709,20 @@ in
   if looking_at_begin(src, p1, max) then let
     (* Block form: find matching end, store content range *)
     val contents_start = p1 + 5
-    val end_pos = find_end_kw(src, contents_start, src_len, max, 1, $AR.checked_nat(src_len))
+    val end_pos = find_end_kw(src, contents_start, src_len, max, 1, max)
     val ep = (if end_pos < src_len then end_pos + 3 else end_pos): int
     (* kind=11: target_block. aux1=target(0=native,1=wasm), aux2/aux3=content range *)
     val () = put_span(spans, 11, 0, start, ep, target, contents_start, end_pos, 0)
   in @(ep, count + 1) end
   else if looking_at_binary(src, p1, max) then let
     (* Binary marker form: #target wasm binary *)
-    val ep = skip_to_eol(src, p1 + 6, src_len, max, $AR.checked_nat(src_len))
+    val ep = skip_to_eol(src, p1 + 6, src_len, max, max)
     (* kind=7, aux1=2 means "wasm binary marker" *)
     val () = put_span(spans, 7, 2, start, ep, 2, 0, 0, 0)
   in @(ep, count + 1) end
   else let
     (* Line form: just the directive *)
-    val ep = skip_to_eol(src, ident_end, src_len, max, $AR.checked_nat(src_len))
+    val ep = skip_to_eol(src, ident_end, src_len, max, max)
     val () = put_span(spans, 7, 2, start, ep, target, 0, 0, 0)
   in @(ep, count + 1) end
 end
@@ -808,7 +808,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
     else if looking_at_pub(src, pos, max) then let
       val p0 = skip_ws(src, pos + 4, max, 256)
       val contents_start = p0
-      val ep = lex_pub_lines(src, p0, src_len, max, $AR.checked_nat(src_len))
+      val ep = lex_pub_lines(src, p0, src_len, max, max)
       val is_prfun = _content_starts_prfun(src, contents_start, max)
       val is_prfn = if is_prfun then false else _content_starts_prfn(src, contents_start, max)
       val span_kind =
@@ -818,7 +818,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
           val name_end = skip_ident(src, name_pos, max, 4096)
           val name_len = name_end - name_pos
         in
-          if _has_primplement(src, src_len, max, name_pos, name_len, 0, $AR.checked_nat(src_len)) then 2
+          if _has_primplement(src, src_len, max, name_pos, name_len, 0, max) then 2
           else 5
         end
         else 2
@@ -854,7 +854,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
     in
       if matched then lex_main(src, src_len, max, spans, np, nc, fuel - 1)
       else let
-        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
+        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, max)
         val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
       in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     end
@@ -865,7 +865,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
     in
       if matched then lex_main(src, src_len, max, spans, np, nc, fuel - 1)
       else let
-        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
+        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, max)
         val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
       in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     end
@@ -881,7 +881,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
     in
       if matched then lex_main(src, src_len, max, spans, np, nc, fuel - 1)
       else let
-        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
+        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, max)
         val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
       in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     end
@@ -890,8 +890,8 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
     else if looking_at_fun(src, pos, max) then let
       val after = pos + 3
     in
-      if _has_metric(src, after, max, $AR.checked_nat(max)) then let
-        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
+      if _has_metric(src, after, max, max) then let
+        val ep = lex_passthrough_scan(src, pos + 1, src_len, max, max)
         val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
       in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
       else let
@@ -919,12 +919,12 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     (* staload lines: kind=12, go to both .sats and .dats with .bats→.sats rename *)
     else if looking_at_stld(src, pos, max) then let
-      val ep = skip_to_eol(src, pos + 7, src_len, max, $AR.checked_nat(src_len))
+      val ep = skip_to_eol(src, pos + 7, src_len, max, max)
       val () = put_span(spans, 12, 2, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
     (* Default: passthrough *)
     else let
-      val ep = lex_passthrough_scan(src, pos + 1, src_len, max, $AR.checked_nat(src_len))
+      val ep = lex_passthrough_scan(src, pos + 1, src_len, max, max)
       val () = put_span(spans, 0, 0, pos, ep, 0, 0, 0, 0)
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
   end
@@ -935,7 +935,7 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
   ): @([ls:agz] $A.arr(byte, ls, 524288), int, int)
 
 implement do_lex (src, src_len, max) = let
-  var span_builder: $B.builder_v = $B.create()
-  val @(_, span_count) = lex_main(src, src_len, max, span_builder, 0, 0, $AR.checked_nat(src_len))
+  var span_builder = $B.create()
+  val @(_, span_count) = lex_main(src, src_len, max, span_builder, 0, 0, max)
   val @(span_arr, span_arr_len) = $B.to_arr(span_builder)
 in @(span_arr, span_arr_len, span_count) end

@@ -51,7 +51,7 @@ in
       val () = $A.drop<byte>(fz_src, bv_src)
       val () = $A.free<byte>($A.thaw<byte>(fz_src))
       (* Write .sats *)
-      var sb: $B.builder_v = $B.create()
+      var sb = $B.create()
       val @(fz_s, bv_s) = $A.freeze<byte>(sats_arr)
       val () = copy_to_builder(bv_s, 0, sats_len, 524288, sb,
         $AR.checked_nat(sats_len + 1))
@@ -59,7 +59,7 @@ in
       val () = $A.free<byte>($A.thaw<byte>(fz_s))
       val r1 = write_file_from_builder(sats_bv, 524288, sb)
       (* Write .dats - prepend self-staload *)
-      var db: $B.builder_v = $B.create()
+      var db = $B.create()
       val bn_start = find_basename_start(sats_bv, 0, 524288, ~1, 4096)
       val bn_end = $S.find_null_bv(sats_bv, bn_start, 524288, 4096)
       val () = $B.bput(db, "staload \"./")
@@ -113,18 +113,18 @@ in case+ dr of
               val stem = el - 5
               val @(fz_e, bv_e) = $A.freeze<byte>(e)
               val dl = dir_len - 1
-              var ob: $B.builder_v = $B.create()
+              var ob = $B.create()
               val () = copy_to_builder(dir_bv, 0, dl, 524288, ob, $AR.checked_nat(dl + 1))
               val () = $B.bput(ob, "/")
-              val () = copy_to_builder(bv_e, 0, stem, 256, ob, $AR.checked_nat(stem + 1))
+              val () = copy_to_builder(bv_e, 0, stem, 256, ob, 256)
               val () = $B.bput(ob, "_dats.c")
               val () = $B.put_char(ob, 0)
               val @(oa, ol) = $B.to_arr(ob)
               val @(fz_o, bv_o) = $A.freeze<byte>(oa)
-              var ib: $B.builder_v = $B.create()
+              var ib = $B.create()
               val () = copy_to_builder(dir_bv, 0, dl, 524288, ib, $AR.checked_nat(dl + 1))
               val () = $B.bput(ib, "/")
-              val () = copy_to_builder(bv_e, 0, el, 256, ib, $AR.checked_nat(el + 1))
+              val () = copy_to_builder(bv_e, 0, el, 256, ib, 256)
               val () = $B.put_char(ib, 0)
               val @(ia, il) = $B.to_arr(ib)
               val @(fz_i, bv_i) = $A.freeze<byte>(ia)
@@ -179,18 +179,18 @@ in case+ dr of
               val stem = el - 2
               val @(fz_e, bv_e) = $A.freeze<byte>(e)
               val dl = dir_len - 1
-              var ob: $B.builder_v = $B.create()
+              var ob = $B.create()
               val () = copy_to_builder(dir_bv, 0, dl, 524288, ob, $AR.checked_nat(dl + 1))
               val () = $B.bput(ob, "/")
-              val () = copy_to_builder(bv_e, 0, stem, 256, ob, $AR.checked_nat(stem + 1))
+              val () = copy_to_builder(bv_e, 0, stem, 256, ob, 256)
               val () = $B.bput(ob, ".o")
               val () = $B.put_char(ob, 0)
               val @(oa, ol) = $B.to_arr(ob)
               val @(fz_o, bv_o) = $A.freeze<byte>(oa)
-              var ib: $B.builder_v = $B.create()
+              var ib = $B.create()
               val () = copy_to_builder(dir_bv, 0, dl, 524288, ib, $AR.checked_nat(dl + 1))
               val () = $B.bput(ib, "/")
-              val () = copy_to_builder(bv_e, 0, el, 256, ib, $AR.checked_nat(el + 1))
+              val () = copy_to_builder(bv_e, 0, el, 256, ib, 256)
               val () = $B.put_char(ib, 0)
               val @(ia, il) = $B.to_arr(ib)
               val @(fz_i, bv_i) = $A.freeze<byte>(ia)
@@ -220,7 +220,7 @@ end
 implement do_clean() = let
   val exec = str_to_path_arr("/bin/rm")
   val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
-  var argv: $B.builder_v = $B.create()
+  var argv = $B.create()
   val () = $B.bput(argv, "rm") val () = $B.put_char(argv, 0)
   val () = $B.bput(argv, "-rf") val () = $B.put_char(argv, 0)
   val () = $B.bput(argv, "build") val () = $B.put_char(argv, 0)
@@ -287,10 +287,10 @@ in
               val klen = (case+ kr of | ~$R.some(n) => n | ~$R.none() => 0): int
               val () = $A.drop<byte>(fz_dk, bv_dk)
               val () = $A.free<byte>($A.thaw<byte>(fz_dk))
-              var mbb: $B.builder_v = $B.create()
+              var mbb = $B.create()
               val () = $B.bput(mbb, "bats_modules")
               val _ = run_mkdir(mbb)
-              var lock_b: $B.builder_v = $B.create()
+              var lock_b = $B.create()
               (* Resolve each dependency *)
               fun resolve {lk:agz}{lr:agz}{fuel:nat} .<fuel>.
                 (ks: !$A.arr(byte, lk, 4096), pos: int, kl: int,
@@ -299,7 +299,7 @@ in
                 if fuel <= 0 then cnt
                 else if pos >= kl then cnt
                 else let
-                  val de = $S.find_null(ks, pos, 4096, $AR.checked_nat(kl - pos + 1))
+                  val de = $S.find_null(ks, pos, 4096, 4096)
                   val dl = de - pos
                 in if dl <= 0 then resolve(ks, de + 1, kl, rb, rl, lb, cnt, fuel - 1)
                   else let
@@ -312,10 +312,10 @@ in
                     val dep_end = (if $AR.eq_int_int(last_byte, 34) then de - 1 else de): int
                     val dl = dep_end - dep_start
                     (* Scan repo/<dep>/ for latest .bats archive *)
-                    var dir_b: $B.builder_v = $B.create()
-                    val () = copy_to_builder(rb, 0, rl, 4096, dir_b, $AR.checked_nat(rl + 1))
+                    var dir_b = $B.create()
+                    val () = copy_to_builder(rb, 0, rl, 4096, dir_b, 4096)
                     val () = $B.bput(dir_b, "/")
-                    val () = arr_range_to_builder(ks, dep_start, dep_end, dir_b, $AR.checked_nat(dl + 1))
+                    val () = arr_range_to_builder(ks, dep_start, dep_end, dir_b, 4096)
                     val () = $B.put_char(dir_b, 0)
                     val @(da, _) = $B.to_arr(dir_b)
                     val @(fz_da, bv_da) = $A.freeze<byte>(da)
@@ -342,7 +342,7 @@ in
                               else if i < 0 then len
                               else if $AR.eq_int_int(byte2int0($A.get<byte>(a, $AR.checked_idx(i, 256))), 95) then i
                               else find_under(a, i + 1, len, f4 - 1)
-                            val us = find_under(a, 0, len, $AR.checked_nat(len + 1))
+                            val us = find_under(a, 0, len, 256)
                             (* Parse part: skip to the right dot-separated segment *)
                             fun skip_parts {la3:agz}{f4:nat} .<f4>.
                               (a: !$A.arr(byte, la3, 256), pos: int, len: int, remaining: int, f4: int f4): int =
@@ -353,7 +353,7 @@ in
                               else if $AR.eq_int_int(byte2int0($A.get<byte>(a, $AR.checked_idx(pos, 256))), 46) then
                                 skip_parts(a, pos + 1, len, remaining - 1, f4 - 1)
                               else skip_parts(a, pos + 1, len, remaining, f4 - 1)
-                            val vstart = skip_parts(a, us + 1, len, part, $AR.checked_nat(len + 1))
+                            val vstart = skip_parts(a, us + 1, len, part, 256)
                             (* Parse decimal at vstart *)
                             fun parse_num {la3:agz}{f4:nat} .<f4>.
                               (a: !$A.arr(byte, la3, 256), pos: int, len: int, acc: int, f4: int f4): int =
@@ -365,7 +365,7 @@ in
                               in if b >= 48 then if b <= 57 then parse_num(a, pos + 1, len, acc * 10 + (b - 48), f4 - 1)
                                 else acc else acc
                               end
-                          in parse_num(a, vstart, len, 0, $AR.checked_nat(len + 1)) end
+                          in parse_num(a, vstart, len, 0, 256) end
                         (* Compare two version filenames: returns true if e is newer than b *)
                         fn is_newer_ver {la2:agz}{lb3:agz}
                           (e: !$A.arr(byte, la2, 256), el: int,
@@ -437,7 +437,7 @@ in
                                     val v = byte2int0($A.get<byte>(s, idx))
                                     val () = $A.set<byte>(d2, idx, int2byte0(v))
                                   in cp_name(s, d2, i+1, l, f3-1) end
-                                val () = cp_name(e, b, 0, el, $AR.checked_nat(el+1))
+                                val () = cp_name(e, b, 0, el, 256)
                                 val () = !bl := el
                                 val () = $A.free<byte>(e)
                               in scan_v(d, b, bl, f2 - 1) end
@@ -453,41 +453,41 @@ in
                         val () = $R.discard<int><int>(dcr)
                       in if blen <= 0 then let
                           val () = print! ("error: no version for ")
-                          val () = print_arr(ks, dep_start, dep_end, 4096, $AR.checked_nat(dl + 1))
+                          val () = print_arr(ks, dep_start, dep_end, 4096, 4096)
                           val () = print_newline()
                           val () = $A.free<byte>(best)
                         in resolve(ks, de+1, kl, rb, rl, lb, cnt, fuel-1) end
                         else let
                           (* mkdir + unzip *)
-                          var mb: $B.builder_v = $B.create()
+                          var mb = $B.create()
                           val () = $B.bput(mb, "bats_modules/")
-                          val () = arr_range_to_builder(ks, dep_start, dep_end, mb, $AR.checked_nat(dl+1))
+                          val () = arr_range_to_builder(ks, dep_start, dep_end, mb, 4096)
                           val _ = run_mkdir(mb)
                           val uz = str_to_path_arr("/usr/bin/unzip")
                           val @(fz_uz, bv_uz) = $A.freeze<byte>(uz)
-                          var ua: $B.builder_v = $B.create()
+                          var ua = $B.create()
                           val () = $B.bput(ua, "unzip") val () = $B.put_char(ua, 0)
                           val () = $B.bput(ua, "-o") val () = $B.put_char(ua, 0)
                           val () = $B.bput(ua, "-q") val () = $B.put_char(ua, 0)
-                          val () = copy_to_builder(rb, 0, rl, 4096, ua, $AR.checked_nat(rl+1))
+                          val () = copy_to_builder(rb, 0, rl, 4096, ua, 4096)
                           val () = $B.bput(ua, "/")
-                          val () = arr_range_to_builder(ks, dep_start, dep_end, ua, $AR.checked_nat(dl+1))
+                          val () = arr_range_to_builder(ks, dep_start, dep_end, ua, 4096)
                           val () = $B.bput(ua, "/")
                           val @(fz_b, bv_b) = $A.freeze<byte>(best)
-                          val () = copy_to_builder(bv_b, 0, blen, 256, ua, $AR.checked_nat(blen+1))
+                          val () = copy_to_builder(bv_b, 0, blen, 256, ua, 256)
                           val () = $B.put_char(ua, 0)
                           val () = $B.bput(ua, "-d") val () = $B.put_char(ua, 0)
                           val () = $B.bput(ua, "bats_modules/")
-                          val () = arr_range_to_builder(ks, dep_start, dep_end, ua, $AR.checked_nat(dl+1))
+                          val () = arr_range_to_builder(ks, dep_start, dep_end, ua, 4096)
                           val () = $B.put_char(ua, 0)
                           val _ = run_cmd(bv_uz, 524288, ua, 6)
                           val () = $A.drop<byte>(fz_uz, bv_uz)
                           val () = $A.free<byte>($A.thaw<byte>(fz_uz))
                           (* Write lock line *)
-                          val () = arr_range_to_builder(ks, dep_start, dep_end, lb, $AR.checked_nat(dl+1))
+                          val () = arr_range_to_builder(ks, dep_start, dep_end, lb, 4096)
                           val () = $B.put_char(lb, 32)
                           (* Version from filename *)
-                          var pfx: $B.builder_v = $B.create()
+                          var pfx = $B.create()
                           fun mkp {ls4:agz}{f4:nat} .<f4>.
                             (s: !$A.arr(byte, ls4, 4096), i: int, l: int, d3: !$B.builder_v >> $B.builder_v, f4: int f4): void =
                             if f4 <= 0 then () else if i >= l then ()
@@ -499,20 +499,20 @@ in
                             else let
                               val () = $B.put_char(d3,c)
                             in mkp(s, i+1, l, d3, f4-1) end end
-                          val () = mkp(ks, dep_start, dep_end, pfx, $AR.checked_nat(dl+1))
+                          val () = mkp(ks, dep_start, dep_end, pfx, 4096)
                           val () = $B.put_char(pfx, 95)
                           val pl = $B.length(pfx)
                           val () = $B.builder_free(pfx)
                           val vs = pl val ve = blen - 5
                         in if vs < ve then let
-                          val () = copy_to_builder(bv_b, vs, ve, 256, lb, $AR.checked_nat(ve-vs+1))
+                          val () = copy_to_builder(bv_b, vs, ve, 256, lb, 256)
                           val () = $B.put_char(lb, 32)
                           val () = $B.bput(lb, "0")
                           val () = $B.put_char(lb, 10)
                           val () = print! ("fetched ")
-                          val () = print_arr(ks, dep_start, dep_end, 4096, $AR.checked_nat(dl+1))
+                          val () = print_arr(ks, dep_start, dep_end, 4096, 4096)
                           val () = print! (" v")
-                          val () = print_borrow(bv_b, vs, ve, 256, $AR.checked_nat(ve-vs+1))
+                          val () = print_borrow(bv_b, vs, ve, 256, 256)
                           val () = print_newline()
                           val () = $A.drop<byte>(fz_b, bv_b)
                           val () = $A.free<byte>($A.thaw<byte>(fz_b))
@@ -523,7 +523,7 @@ in
                           val () = $B.bput(lb, "0")
                           val () = $B.put_char(lb, 10)
                           val () = print! ("fetched ")
-                          val () = print_arr(ks, dep_start, dep_end, 4096, $AR.checked_nat(dl+1))
+                          val () = print_arr(ks, dep_start, dep_end, 4096, 4096)
                           val () = print! (" vunknown")
                           val () = print_newline()
                           val () = $A.drop<byte>(fz_b, bv_b)
@@ -532,7 +532,7 @@ in
                       end
                     | ~$R.err(_) => let
                         val () = print! ("error: package not found: ")
-                        val () = print_arr(ks, dep_start, dep_end, 4096, $AR.checked_nat(dl+1))
+                        val () = print_arr(ks, dep_start, dep_end, 4096, 4096)
                         val () = print_newline()
                       in resolve(ks, de+1, kl, rb, rl, lb, cnt, fuel-1) end
                   end
@@ -566,10 +566,10 @@ in
                             else let val dd = is_dot_or_dotdot(de, del, 256) in
                               if dd then let val () = $A.free<byte>(de) in sdt(bd, tk, tkl, f3-1) end
                               else let
-                                var tp: $B.builder_v = $B.create()
+                                var tp = $B.create()
                                 val () = $B.bput(tp, "bats_modules/")
                                 val @(fz_de, bv_de) = $A.freeze<byte>(de)
-                                val () = copy_to_builder(bv_de, 0, del, 256, tp, $AR.checked_nat(del+1))
+                                val () = copy_to_builder(bv_de, 0, del, 256, tp, 256)
                                 val () = $A.drop<byte>(fz_de, bv_de)
                                 val () = $A.free<byte>($A.thaw<byte>(fz_de))
                                 val () = $B.bput(tp, "/bats.toml")
@@ -681,7 +681,7 @@ end
 #pub fn write_wasm_runtime_h(): int
 
 implement write_wasm_runtime_h() = let
-  var b: $B.builder_v = $B.create()
+  var b = $B.create()
   val () = $B.bput(b, "/* runtime.h -- Freestanding WASM runtime for ATS2 */\n#ifndef BATS_WASM_RUNTIME_H\n#define BATS_WASM_RUNTIME_H\n")
   val () = $B.bput(b, "typedef void atstype_void;\ntypedef void atsvoid_t0ype;\ntypedef int atstype_int;\ntypedef unsigned int atstype_uint;\n")
   val () = $B.bput(b, "typedef long int atstype_lint;\ntypedef unsigned long int atstype_ulint;\ntypedef long long int atstype_llint;\n")
@@ -759,7 +759,7 @@ in rc end
 #pub fn write_wasm_runtime_c(): int
 
 implement write_wasm_runtime_c() = let
-  var b: $B.builder_v = $B.create()
+  var b = $B.create()
   val () = $B.bput(b, "/* runtime.c -- Freestanding WASM: free-list allocator */\nextern unsigned char __heap_base;\nstatic unsigned char *heap_ptr = &__heap_base;\n")
   val () = $B.bput(b, "#define WARD_HEADER 8\n#define WARD_NBUCKET 9\nstatic const unsigned int ward_bsz[WARD_NBUCKET] = {32,128,512,4096,8192,16384,524288,262144,1048576};\n")
   val () = $B.bput(b, "static void *ward_fl[WARD_NBUCKET] = {0,0,0,0,0,0,0,0,0};\nstatic void *ward_fl_over = 0;\n")
@@ -787,12 +787,12 @@ in rc end
 #pub fn write_wasm_stubs(): int
 
 implement write_wasm_stubs() = let
-  var mb: $B.builder_v = $B.create()
+  var mb = $B.create()
   val () = $B.bput(mb, "build/_bats_wasm_stubs/libats/libc/CATS/sys")
   val r0 = run_mkdir(mb)
   val stub = "/* stub */\n"
   fn write_stub {sn:nat} (path: string sn): int = let
-    var sb: $B.builder_v = $B.create()
+    var sb = $B.create()
     val () = $B.bput(sb, stub)
     val pp = str_to_path_arr(path)
     val @(fz_pp, bv_pp) = $A.freeze<byte>(pp)
@@ -808,7 +808,7 @@ in r0 end
 fn compile_wasm_runtime(): int = let
   val exec = str_to_path_arr("/usr/bin/clang")
   val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
-  var argv: $B.builder_v = $B.create()
+  var argv = $B.create()
   val () = $B.bput(argv, "clang") val () = $B.put_char(argv, 0)
   val () = $B.bput(argv, "--target=wasm32") val () = $B.put_char(argv, 0)
   val () = $B.bput(argv, "-O2") val () = $B.put_char(argv, 0)
@@ -839,7 +839,7 @@ fn run_wasm_cc {li:agz}{lo:agz}
    out_bv: !$A.borrow(byte, lo, 524288), out_len: int): int = let
   val exec = str_to_path_arr("/usr/bin/clang")
   val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
-  var argv: $B.builder_v = $B.create()
+  var argv = $B.create()
   val () = $B.bput(argv, "clang") val () = $B.put_char(argv, 0)
   val () = $B.bput(argv, "--target=wasm32") val () = $B.put_char(argv, 0)
   val () = $B.bput(argv, "-O2") val () = $B.put_char(argv, 0)
@@ -873,7 +873,7 @@ in rc end
 fn wasm_cc_file {l:agz}
   (path: !$A.borrow(byte, l, 524288), path_len: int): int = let
   (* path is like "build/.../_dats.c", replace .c with .o for output *)
-  var ob: $B.builder_v = $B.create()
+  var ob = $B.create()
   val pl = path_len - 1
   val () = copy_to_builder(path, 0, pl - 1, 524288, ob, $AR.checked_nat(pl))
   val () = $B.bput(ob, "o")
@@ -893,20 +893,20 @@ implement do_build_wasm(release) = let
   val () = (if rtrc <> 0 then println! ("error: WASM runtime compile failed") else ())
   (* Compile all _dats.c files found during the native patsopt pass *)
   (* We rely on the native build having already run patsopt to generate C files *)
-  var db: $B.builder_v = $B.create()
+  var db = $B.create()
   val () = $B.bput(db, "build")
   val () = $B.put_char(db, 0)
   val @(dba, _) = $B.to_arr(db)
   val @(fz_db, bv_db) = $A.freeze<byte>(dba)
   val () = println! ("  compiling WASM...")
   (* Compile entry *)
-  var eb: $B.builder_v = $B.create()
+  var eb = $B.create()
   val () = $B.bput(eb, "build/_bats_entry_")
   (* Find the entry file by scanning build/ for _bats_entry_*_dats.c *)
   val dr = $F.dir_open(bv_db, 524288)
   val () = $A.drop<byte>(fz_db, bv_db)
   val () = $A.free<byte>($A.thaw<byte>(fz_db))
-  var link_b: $B.builder_v = $B.create()
+  var link_b = $B.create()
   val () = $B.bput(link_b, "wasm-ld") val () = $B.put_char(link_b, 0)
   val () = $B.bput(link_b, "--no-entry") val () = $B.put_char(link_b, 0)
   val () = $B.bput(link_b, "--allow-undefined") val () = $B.put_char(link_b, 0)
@@ -945,17 +945,17 @@ implement do_build_wasm(release) = let
               val has_c = $S.has_suffix(e, el, 256, "_dats.c", 7)
             in
               if has_c then let
-                var pb: $B.builder_v = $B.create()
+                var pb = $B.create()
                 val () = $B.bput(pb, "build/")
                 val @(fz_e, bv_e) = $A.freeze<byte>(e)
-                val () = copy_to_builder(bv_e, 0, el, 256, pb, $AR.checked_nat(el + 1))
+                val () = copy_to_builder(bv_e, 0, el, 256, pb, 256)
                 val () = $B.put_char(pb, 0)
                 val @(pa, pl) = $B.to_arr(pb)
                 val @(fz_p, bv_p) = $A.freeze<byte>(pa)
                 val rc = wasm_cc_file(bv_p, pl)
               in if rc <> 0 then let
                   val () = print! ("error: wasm cc failed for ")
-                  val () = print_borrow(bv_e, 0, el, 256, $AR.checked_nat(el + 1))
+                  val () = print_borrow(bv_e, 0, el, 256, 256)
                   val () = print_newline()
                   val () = $B.bput(lb, "")
                   val () = $A.drop<byte>(fz_p, bv_p)
@@ -983,7 +983,7 @@ implement do_build_wasm(release) = let
       in link_count0 + nfiles end
     | ~$R.err(_) => let val () = $B.bput(link_b, "") in link_count0 end): int
   (* Compile dep _dats.c files with wasm cc and add .o to link *)
-  var bm: $B.builder_v = $B.create()
+  var bm = $B.create()
   val () = $B.bput(bm, "build/bats_modules")
   val () = $B.put_char(bm, 0)
   val @(bma, _) = $B.to_arr(bm)
@@ -1008,9 +1008,9 @@ implement do_build_wasm(release) = let
             else let
               val @(fz_e, bv_e) = $A.freeze<byte>(e)
               (* Open build/bats_modules/<dep>/src/ and compile _dats.c files *)
-              var sp: $B.builder_v = $B.create()
+              var sp = $B.create()
               val () = $B.bput(sp, "build/bats_modules/")
-              val () = copy_to_builder(bv_e, 0, el, 256, sp, $AR.checked_nat(el + 1))
+              val () = copy_to_builder(bv_e, 0, el, 256, sp, 256)
               val () = $B.bput(sp, "/src")
               val () = $B.put_char(sp, 0)
               val @(spa, _) = $B.to_arr(sp)
@@ -1034,11 +1034,11 @@ implement do_build_wasm(release) = let
                           in compile_dep_c(sd_d, lb2, bv_e2, el2, lc, fuel4 - 1) end
                         else let
                           val @(fz_oe, bv_oe) = $A.freeze<byte>(oe)
-                          var pb: $B.builder_v = $B.create()
+                          var pb = $B.create()
                           val () = $B.bput(pb, "build/bats_modules/")
-                          val () = copy_to_builder(bv_e2, 0, el2, 256, pb, $AR.checked_nat(el2 + 1))
+                          val () = copy_to_builder(bv_e2, 0, el2, 256, pb, 256)
                           val () = $B.bput(pb, "/src/")
-                          val () = copy_to_builder(bv_oe, 0, oel, 256, pb, $AR.checked_nat(oel + 1))
+                          val () = copy_to_builder(bv_oe, 0, oel, 256, pb, 256)
                           val () = $B.put_char(pb, 0)
                           val @(pa, pl) = $B.to_arr(pb)
                           val @(fz_p, bv_p) = $A.freeze<byte>(pa)
@@ -1071,9 +1071,9 @@ implement do_build_wasm(release) = let
                   in add_dep_objs(bm_d, lb, dc, fuel3 - 1) end
                 | ~$R.err(_) => let
                     (* Maybe it's a namespace dir — scan sub-packages *)
-                    var nsp: $B.builder_v = $B.create()
+                    var nsp = $B.create()
                     val () = $B.bput(nsp, "build/bats_modules/")
-                    val () = copy_to_builder(bv_e, 0, el, 256, nsp, $AR.checked_nat(el + 1))
+                    val () = copy_to_builder(bv_e, 0, el, 256, nsp, 256)
                     val () = $B.put_char(nsp, 0)
                     val @(nspa, _) = $B.to_arr(nsp)
                     val @(fz_nsp, bv_nsp) = $A.freeze<byte>(nspa)
@@ -1097,11 +1097,11 @@ implement do_build_wasm(release) = let
                               in compile_ns_c(nsd_d, lb3, ns_bv, ns_len, lc, fuel5 - 1) end
                               else let
                                 val @(fz_se, bv_se) = $A.freeze<byte>(se)
-                                var sp2: $B.builder_v = $B.create()
+                                var sp2 = $B.create()
                                 val () = $B.bput(sp2, "build/bats_modules/")
-                                val () = copy_to_builder(ns_bv, 0, ns_len, 256, sp2, $AR.checked_nat(ns_len + 1))
+                                val () = copy_to_builder(ns_bv, 0, ns_len, 256, sp2, 256)
                                 val () = $B.bput(sp2, "/")
-                                val () = copy_to_builder(bv_se, 0, sl, 256, sp2, $AR.checked_nat(sl + 1))
+                                val () = copy_to_builder(bv_se, 0, sl, 256, sp2, 256)
                                 val () = $B.bput(sp2, "/src")
                                 val () = $B.put_char(sp2, 0)
                                 val @(sp2a, _) = $B.to_arr(sp2)
@@ -1126,13 +1126,13 @@ implement do_build_wasm(release) = let
                                             in compile_ns_sub_c(sd2_d, lb4, ns2, nl2, sub2, sl2, lc, fuel6 - 1) end
                                           else let
                                             val @(fz_oe2, bv_oe2) = $A.freeze<byte>(oe2)
-                                            var pb2: $B.builder_v = $B.create()
+                                            var pb2 = $B.create()
                                             val () = $B.bput(pb2, "build/bats_modules/")
-                                            val () = copy_to_builder(ns2, 0, nl2, 256, pb2, $AR.checked_nat(nl2 + 1))
+                                            val () = copy_to_builder(ns2, 0, nl2, 256, pb2, 256)
                                             val () = $B.bput(pb2, "/")
-                                            val () = copy_to_builder(sub2, 0, sl2, 256, pb2, $AR.checked_nat(sl2 + 1))
+                                            val () = copy_to_builder(sub2, 0, sl2, 256, pb2, 256)
                                             val () = $B.bput(pb2, "/src/")
-                                            val () = copy_to_builder(bv_oe2, 0, oel2, 256, pb2, $AR.checked_nat(oel2 + 1))
+                                            val () = copy_to_builder(bv_oe2, 0, oel2, 256, pb2, 256)
                                             val () = $B.put_char(pb2, 0)
                                             val @(pa2, pl2) = $B.to_arr(pb2)
                                             val @(fz_p2, bv_p2) = $A.freeze<byte>(pa2)
@@ -1217,9 +1217,9 @@ implement do_build_wasm(release) = let
               in wasm_cc_src(sd, lb, lc, fuel7 - 1) end
             else let
               val @(fz_e, bv_e) = $A.freeze<byte>(e)
-              var pb: $B.builder_v = $B.create()
+              var pb = $B.create()
               val () = $B.bput(pb, "build/src/")
-              val () = copy_to_builder(bv_e, 0, el, 256, pb, $AR.checked_nat(el + 1))
+              val () = copy_to_builder(bv_e, 0, el, 256, pb, 256)
               val () = $B.put_char(pb, 0)
               val @(pa, pl) = $B.to_arr(pb)
               val @(fz_p, bv_p) = $A.freeze<byte>(pa)
@@ -1269,9 +1269,9 @@ implement do_build_wasm(release) = let
               in wasm_cc_bin(bd, lb, lc, fuel8 - 1) end
             else let
               val @(fz_e, bv_e) = $A.freeze<byte>(e)
-              var pb: $B.builder_v = $B.create()
+              var pb = $B.create()
               val () = $B.bput(pb, "build/src/bin/")
-              val () = copy_to_builder(bv_e, 0, el, 256, pb, $AR.checked_nat(el + 1))
+              val () = copy_to_builder(bv_e, 0, el, 256, pb, 256)
               val () = $B.put_char(pb, 0)
               val @(pa, pl) = $B.to_arr(pb)
               val @(fz_p, bv_p) = $A.freeze<byte>(pa)
@@ -1300,10 +1300,10 @@ implement do_build_wasm(release) = let
       in bc end
     | ~$R.err(_) => let val () = $B.bput(link_b, "") in link_count3 end): int
   val () = println! ("  linking WASM...")
-  var mb1: $B.builder_v = $B.create()
+  var mb1 = $B.create()
   val () = $B.bput(mb1, "dist")
   val _ = run_mkdir(mb1)
-  var mb2: $B.builder_v = $B.create()
+  var mb2 = $B.create()
   val () = $B.bput(mb2, "dist/wasm")
   val _ = run_mkdir(mb2)
   val exec_ld = str_to_path_arr("/usr/bin/wasm-ld")
@@ -1392,16 +1392,16 @@ end
 implement do_build(release, build_target) = let
   val is_unsafe = read_unsafe_flag()
   (* Step 1: mkdir build directories *)
-  var mb1: $B.builder_v = $B.create()
+  var mb1 = $B.create()
   val () = $B.bput(mb1, "build/src/bin")
   val _ = run_mkdir(mb1)
-  var mb2: $B.builder_v = $B.create()
+  var mb2 = $B.create()
   val () = $B.bput(mb2, "build/bats_modules")
   val _ = run_mkdir(mb2)
-  var mb3: $B.builder_v = $B.create()
+  var mb3 = $B.create()
   val () = $B.bput(mb3, "dist/debug")
   val _ = run_mkdir(mb3)
-  var mb4: $B.builder_v = $B.create()
+  var mb4 = $B.create()
   val () = $B.bput(mb4, "dist/release")
   val r0 = run_mkdir(mb4)
   val () = (if r0 <> 0 then println! ("error: mkdir failed") else ())
@@ -1409,7 +1409,7 @@ in
   if r0 <> 0 then ()
   else let
     (* Step 1b: Write and compile native runtime *)
-    var nrt_b: $B.builder_v = $B.create()
+    var nrt_b = $B.create()
     val () = $B.bput(nrt_b, "/* _bats_native_runtime.c -- ATS2 memory allocator backed by libc */\n")
     val () = $B.bput(nrt_b, "#include <stdlib.h>\n")
     val () = $B.bput(nrt_b, "void atsruntime_mfree_undef(void *ptr) { free(ptr); }\n")
@@ -1423,7 +1423,7 @@ in
     val () = $A.free<byte>($A.thaw<byte>(fz_nrtp))
     val nrt_exec = str_to_path_arr("/usr/bin/clang")
     val @(fz_nrt_exec, bv_nrt_exec) = $A.freeze<byte>(nrt_exec)
-    var nrt_argv: $B.builder_v = $B.create()
+    var nrt_argv = $B.create()
     val () = $B.bput(nrt_argv, "clang") val () = $B.put_char(nrt_argv, 0)
     val () = $B.bput(nrt_argv, "-c") val () = $B.put_char(nrt_argv, 0)
     val () = $B.bput(nrt_argv, "-o") val () = $B.put_char(nrt_argv, 0)
@@ -1478,8 +1478,8 @@ in
     fn ensure_ats2 {l:agz}
       (buf: !$A.borrow(byte, l, 512), plen: int): void = let
       (* Check if patsopt exists by trying to stat it *)
-      var test_path: $B.builder_v = $B.create()
-      val () = arr_to_builder(buf, 0, plen, test_path, $AR.checked_nat(plen + 1))
+      var test_path = $B.create()
+      val () = arr_to_builder(buf, 0, plen, test_path, 512)
       val () = $B.bput(test_path, "/bin/patsopt")
       val () = $B.put_char(test_path, 0)
       val @(tp_arr, _) = $B.to_arr(test_path)
@@ -1492,13 +1492,13 @@ in
       else let
         val () = println! ("ATS2 not found, installing...")
         (* mkdir -p <patshome> *)
-        var mkb: $B.builder_v = $B.create()
-        val () = arr_to_builder(buf, 0, plen, mkb, $AR.checked_nat(plen + 1))
+        var mkb = $B.create()
+        val () = arr_to_builder(buf, 0, plen, mkb, 512)
         val _ = run_mkdir(mkb)
         (* curl -sL <url> -o /tmp/_bpoc_ats2.tgz *)
         val curl_exec = str_to_path_arr("/usr/bin/curl")
         val @(fz_ce, bv_ce) = $A.freeze<byte>(curl_exec)
-        var curl_argv: $B.builder_v = $B.create()
+        var curl_argv = $B.create()
         val () = $B.bput(curl_argv, "curl") val () = $B.put_char(curl_argv, 0)
         val () = $B.bput(curl_argv, "-sL") val () = $B.put_char(curl_argv, 0)
         val () = $B.bput(curl_argv, "https://raw.githubusercontent.com/ats-lang/ats-lang.github.io/master/FROZEN000/ATS-Postiats/ATS2-Postiats-int-0.4.2.tgz")
@@ -1511,13 +1511,13 @@ in
         (* tar -xzf /tmp/_bpoc_ats2.tgz --strip-components=1 -C <patshome> *)
         val tar_exec = str_to_path_arr("/usr/bin/tar")
         val @(fz_te, bv_te) = $A.freeze<byte>(tar_exec)
-        var tar_argv: $B.builder_v = $B.create()
+        var tar_argv = $B.create()
         val () = $B.bput(tar_argv, "tar") val () = $B.put_char(tar_argv, 0)
         val () = $B.bput(tar_argv, "-xzf") val () = $B.put_char(tar_argv, 0)
         val () = $B.bput(tar_argv, "/tmp/_bpoc_ats2.tgz") val () = $B.put_char(tar_argv, 0)
         val () = $B.bput(tar_argv, "--strip-components=1") val () = $B.put_char(tar_argv, 0)
         val () = $B.bput(tar_argv, "-C") val () = $B.put_char(tar_argv, 0)
-        val () = arr_to_builder(buf, 0, plen, tar_argv, $AR.checked_nat(plen + 1))
+        val () = arr_to_builder(buf, 0, plen, tar_argv, 512)
         val () = $B.put_char(tar_argv, 0)
         val r2 = run_cmd(bv_te, 524288, tar_argv, 6)
         val () = $A.drop<byte>(fz_te, bv_te)
@@ -1525,7 +1525,7 @@ in
         (* rm /tmp/_bpoc_ats2.tgz *)
         val rm_exec = str_to_path_arr("/bin/rm")
         val @(fz_re, bv_re) = $A.freeze<byte>(rm_exec)
-        var rm_argv: $B.builder_v = $B.create()
+        var rm_argv = $B.create()
         val () = $B.bput(rm_argv, "rm") val () = $B.put_char(rm_argv, 0)
         val () = $B.bput(rm_argv, "/tmp/_bpoc_ats2.tgz") val () = $B.put_char(rm_argv, 0)
         val _ = run_cmd(bv_re, 524288, rm_argv, 2)
@@ -1535,16 +1535,16 @@ in
         val () = println! ("building ATS2...")
         val make_exec = str_to_path_arr("/usr/bin/make")
         val @(fz_me, bv_me) = $A.freeze<byte>(make_exec)
-        var make_argv: $B.builder_v = $B.create()
+        var make_argv = $B.create()
         val () = $B.bput(make_argv, "make") val () = $B.put_char(make_argv, 0)
         val () = $B.bput(make_argv, "-j4") val () = $B.put_char(make_argv, 0)
         val () = $B.bput(make_argv, "-C") val () = $B.put_char(make_argv, 0)
-        val () = arr_to_builder(buf, 0, plen, make_argv, $AR.checked_nat(plen + 1))
+        val () = arr_to_builder(buf, 0, plen, make_argv, 512)
         val () = $B.bput(make_argv, "/src/CBOOT") val () = $B.put_char(make_argv, 0)
         val () = $B.bput(make_argv, "patsopt") val () = $B.put_char(make_argv, 0)
-        var phome_arg: $B.builder_v = $B.create()
+        var phome_arg = $B.create()
         val () = $B.bput(phome_arg, "PATSHOME=")
-        val () = arr_to_builder(buf, 0, plen, phome_arg, $AR.checked_nat(plen + 1))
+        val () = arr_to_builder(buf, 0, plen, phome_arg, 512)
         val @(pha, phl) = $B.to_arr(phome_arg)
         val @(fz_pha, bv_pha) = $A.freeze<byte>(pha)
         val () = copy_to_builder(bv_pha, 0, phl, 524288, make_argv, $AR.checked_nat(phl + 1))
@@ -1555,18 +1555,18 @@ in
         val () = $A.drop<byte>(fz_me, bv_me)
         val () = $A.free<byte>($A.thaw<byte>(fz_me))
         (* mkdir -p <patshome>/bin *)
-        var mkb2: $B.builder_v = $B.create()
-        val () = arr_to_builder(buf, 0, plen, mkb2, $AR.checked_nat(plen + 1))
+        var mkb2 = $B.create()
+        val () = arr_to_builder(buf, 0, plen, mkb2, 512)
         val () = $B.bput(mkb2, "/bin")
         val _ = run_mkdir(mkb2)
         (* cp <patshome>/src/CBOOT/patsopt <patshome>/bin/patsopt *)
         val cp_exec = str_to_path_arr("/bin/cp")
         val @(fz_cpe, bv_cpe) = $A.freeze<byte>(cp_exec)
-        var cp_argv: $B.builder_v = $B.create()
+        var cp_argv = $B.create()
         val () = $B.bput(cp_argv, "cp") val () = $B.put_char(cp_argv, 0)
-        val () = arr_to_builder(buf, 0, plen, cp_argv, $AR.checked_nat(plen + 1))
+        val () = arr_to_builder(buf, 0, plen, cp_argv, 512)
         val () = $B.bput(cp_argv, "/src/CBOOT/patsopt") val () = $B.put_char(cp_argv, 0)
-        val () = arr_to_builder(buf, 0, plen, cp_argv, $AR.checked_nat(plen + 1))
+        val () = arr_to_builder(buf, 0, plen, cp_argv, 512)
         val () = $B.bput(cp_argv, "/bin/patsopt") val () = $B.put_char(cp_argv, 0)
         val r4 = run_cmd(bv_cpe, 524288, cp_argv, 3)
         val () = $A.drop<byte>(fz_cpe, bv_cpe)
@@ -1612,9 +1612,9 @@ in
                   else let
                     val @(fz_e, bv_e) = $A.freeze<byte>(ent)
                     (* Check if this is a package (has bats.toml) or a namespace dir *)
-                    var chk_b: $B.builder_v = $B.create()
+                    var chk_b = $B.create()
                     val () = $B.bput(chk_b, "bats_modules/")
-                    val () = copy_to_builder(bv_e, 0, elen, 256, chk_b, $AR.checked_nat(elen + 1))
+                    val () = copy_to_builder(bv_e, 0, elen, 256, chk_b, 256)
                     val () = $B.bput(chk_b, "/bats.toml")
                     val () = $B.put_char(chk_b, 0)
                     val @(chk_a, _) = $B.to_arr(chk_b)
@@ -1627,9 +1627,9 @@ in
                   in
                     if ~is_pkg then let
                       (* Namespace directory: scan subdirs as packages *)
-                      var nsd: $B.builder_v = $B.create()
+                      var nsd = $B.create()
                       val () = $B.bput(nsd, "bats_modules/")
-                      val () = copy_to_builder(bv_e, 0, elen, 256, nsd, $AR.checked_nat(elen + 1))
+                      val () = copy_to_builder(bv_e, 0, elen, 256, nsd, 256)
                       val () = $B.put_char(nsd, 0)
                       val @(nsd_a, _) = $B.to_arr(nsd)
                       val @(fz_nsd, bv_nsd) = $A.freeze<byte>(nsd_a)
@@ -1660,39 +1660,39 @@ in
                                     val @(fz_se, bv_se) = $A.freeze<byte>(se)
                                     (* Build full dep name: <namespace>/<subdir> *)
                                     (* mkdir build/bats_modules/<namespace>/<subdir>/src *)
-                                    var mc2: $B.builder_v = $B.create()
+                                    var mc2 = $B.create()
                                     val () = $B.bput(mc2, "build/bats_modules/")
-                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, mc2, $AR.checked_nat(ns_len + 1))
+                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, mc2, 256)
                                     val () = $B.bput(mc2, "/")
-                                    val () = copy_to_builder(bv_se, 0, sel, 256, mc2, $AR.checked_nat(sel + 1))
+                                    val () = copy_to_builder(bv_se, 0, sel, 256, mc2, 256)
                                     val () = $B.bput(mc2, "/src")
                                     val _ = run_mkdir(mc2)
                                     (* source *)
-                                    var sp2: $B.builder_v = $B.create()
+                                    var sp2 = $B.create()
                                     val () = $B.bput(sp2, "bats_modules/")
-                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, sp2, $AR.checked_nat(ns_len + 1))
+                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, sp2, 256)
                                     val () = $B.bput(sp2, "/")
-                                    val () = copy_to_builder(bv_se, 0, sel, 256, sp2, $AR.checked_nat(sel + 1))
+                                    val () = copy_to_builder(bv_se, 0, sel, 256, sp2, 256)
                                     val () = $B.bput(sp2, "/src/lib.bats")
                                     val () = $B.put_char(sp2, 0)
                                     val @(sa2, _) = $B.to_arr(sp2)
                                     val @(fz_sp2, bv_sp2) = $A.freeze<byte>(sa2)
                                     (* sats *)
-                                    var ss2: $B.builder_v = $B.create()
+                                    var ss2 = $B.create()
                                     val () = $B.bput(ss2, "build/bats_modules/")
-                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, ss2, $AR.checked_nat(ns_len + 1))
+                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, ss2, 256)
                                     val () = $B.bput(ss2, "/")
-                                    val () = copy_to_builder(bv_se, 0, sel, 256, ss2, $AR.checked_nat(sel + 1))
+                                    val () = copy_to_builder(bv_se, 0, sel, 256, ss2, 256)
                                     val () = $B.bput(ss2, "/src/lib.sats")
                                     val () = $B.put_char(ss2, 0)
                                     val @(ssa2, _) = $B.to_arr(ss2)
                                     val @(fz_ss2, bv_ss2) = $A.freeze<byte>(ssa2)
                                     (* dats *)
-                                    var sd2: $B.builder_v = $B.create()
+                                    var sd2 = $B.create()
                                     val () = $B.bput(sd2, "build/bats_modules/")
-                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, sd2, $AR.checked_nat(ns_len + 1))
+                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, sd2, 256)
                                     val () = $B.bput(sd2, "/")
-                                    val () = copy_to_builder(bv_se, 0, sel, 256, sd2, $AR.checked_nat(sel + 1))
+                                    val () = copy_to_builder(bv_se, 0, sel, 256, sd2, 256)
                                     val () = $B.bput(sd2, "/src/lib.dats")
                                     val () = $B.put_char(sd2, 0)
                                     val @(sda2, _) = $B.to_arr(sd2)
@@ -1700,15 +1700,15 @@ in
                                     val pr2 = preprocess_one(bv_sp2, bv_ss2, bv_sd2, build_target, 1)
                                     val () = (if pr2 <> 0 then let
                                       val () = print! ("warning: preprocess failed for dep ")
-                                      val () = print_borrow(ns_bv, 0, ns_len, 256, $AR.checked_nat(ns_len + 1))
+                                      val () = print_borrow(ns_bv, 0, ns_len, 256, 256)
                                       val () = print! ("/")
-                                      val () = print_borrow(bv_se, 0, sel, 256, $AR.checked_nat(sel + 1))
+                                      val () = print_borrow(bv_se, 0, sel, 256, 256)
                                     in print_newline() end
                                     else if ~is_quiet() then let
                                       val () = print! ("  preprocessed dep: ")
-                                      val () = print_borrow(ns_bv, 0, ns_len, 256, $AR.checked_nat(ns_len + 1))
+                                      val () = print_borrow(ns_bv, 0, ns_len, 256, 256)
                                       val () = print! ("/")
-                                      val () = print_borrow(bv_se, 0, sel, 256, $AR.checked_nat(sel + 1))
+                                      val () = print_borrow(bv_se, 0, sel, 256, 256)
                                     in print_newline() end
                                     else ())
                                     val () = $A.drop<byte>(fz_sp2, bv_sp2)
@@ -1718,11 +1718,11 @@ in
                                     val () = $A.drop<byte>(fz_sd2, bv_sd2)
                                     val () = $A.free<byte>($A.thaw<byte>(fz_sd2))
                                     (* Scan extra .bats shared modules for this namespaced dep *)
-                                    var nsd_src: $B.builder_v = $B.create()
+                                    var nsd_src = $B.create()
                                     val () = $B.bput(nsd_src, "bats_modules/")
-                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, nsd_src, $AR.checked_nat(ns_len + 1))
+                                    val () = copy_to_builder(ns_bv, 0, ns_len, 256, nsd_src, 256)
                                     val () = $B.bput(nsd_src, "/")
-                                    val () = copy_to_builder(bv_se, 0, sel, 256, nsd_src, $AR.checked_nat(sel + 1))
+                                    val () = copy_to_builder(bv_se, 0, sel, 256, nsd_src, 256)
                                     val () = $B.bput(nsd_src, "/src")
                                     val () = $B.put_char(nsd_src, 0)
                                     val @(nsd_sa, _) = $B.to_arr(nsd_src)
@@ -1758,34 +1758,34 @@ in
                                                   else let
                                                     val stem_ns = elen_ns - 5
                                                     val @(fz_ens, bv_ens) = $A.freeze<byte>(ent_ns)
-                                                    var sp_ns: $B.builder_v = $B.create()
+                                                    var sp_ns = $B.create()
                                                     val () = $B.bput(sp_ns, "bats_modules/")
-                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, sp_ns, $AR.checked_nat(ns_len2 + 1))
+                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, sp_ns, 256)
                                                     val () = $B.bput(sp_ns, "/")
-                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, sp_ns, $AR.checked_nat(se_len2 + 1))
+                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, sp_ns, 256)
                                                     val () = $B.bput(sp_ns, "/src/")
-                                                    val () = copy_to_builder(bv_ens, 0, elen_ns, 256, sp_ns, $AR.checked_nat(elen_ns + 1))
+                                                    val () = copy_to_builder(bv_ens, 0, elen_ns, 256, sp_ns, 256)
                                                     val () = $B.put_char(sp_ns, 0)
                                                     val @(spa_ns, _) = $B.to_arr(sp_ns)
                                                     val @(fz_spn, bv_spn) = $A.freeze<byte>(spa_ns)
-                                                    var ss_ns: $B.builder_v = $B.create()
+                                                    var ss_ns = $B.create()
                                                     val () = $B.bput(ss_ns, "build/bats_modules/")
-                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, ss_ns, $AR.checked_nat(ns_len2 + 1))
+                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, ss_ns, 256)
                                                     val () = $B.bput(ss_ns, "/")
-                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, ss_ns, $AR.checked_nat(se_len2 + 1))
+                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, ss_ns, 256)
                                                     val () = $B.bput(ss_ns, "/src/")
-                                                    val () = copy_to_builder(bv_ens, 0, stem_ns, 256, ss_ns, $AR.checked_nat(stem_ns + 1))
+                                                    val () = copy_to_builder(bv_ens, 0, stem_ns, 256, ss_ns, 256)
                                                     val () = $B.bput(ss_ns, ".sats")
                                                     val () = $B.put_char(ss_ns, 0)
                                                     val @(ssa_ns, _) = $B.to_arr(ss_ns)
                                                     val @(fz_ssn, bv_ssn) = $A.freeze<byte>(ssa_ns)
-                                                    var sd_ns: $B.builder_v = $B.create()
+                                                    var sd_ns = $B.create()
                                                     val () = $B.bput(sd_ns, "build/bats_modules/")
-                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, sd_ns, $AR.checked_nat(ns_len2 + 1))
+                                                    val () = copy_to_builder(ns_bv2, 0, ns_len2, 256, sd_ns, 256)
                                                     val () = $B.bput(sd_ns, "/")
-                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, sd_ns, $AR.checked_nat(se_len2 + 1))
+                                                    val () = copy_to_builder(se_bv2, 0, se_len2, 256, sd_ns, 256)
                                                     val () = $B.bput(sd_ns, "/src/")
-                                                    val () = copy_to_builder(bv_ens, 0, stem_ns, 256, sd_ns, $AR.checked_nat(stem_ns + 1))
+                                                    val () = copy_to_builder(bv_ens, 0, stem_ns, 256, sd_ns, 256)
                                                     val () = $B.bput(sd_ns, ".dats")
                                                     val () = $B.put_char(sd_ns, 0)
                                                     val @(sda_ns, _) = $B.to_arr(sd_ns)
@@ -1794,7 +1794,7 @@ in
                                                     val () = (if pr_ns <> 0 then ()
                                                     else if ~is_quiet() then let
                                                       val () = print! ("  preprocessed dep extra: ")
-                                                      val () = print_borrow(bv_ens, 0, elen_ns, 256, $AR.checked_nat(elen_ns + 1))
+                                                      val () = print_borrow(bv_ens, 0, elen_ns, 256, 256)
                                                     in print_newline() end
                                                     else ())
                                                     val () = $A.drop<byte>(fz_spn, bv_spn)
@@ -1832,14 +1832,14 @@ in
                     else let
                     (* Regular package *)
                     (* mkdir -p build/bats_modules/<name>/src *)
-                    var mc: $B.builder_v = $B.create()
+                    var mc = $B.create()
                     val () = $B.bput(mc, "build/bats_modules/")
                     val () = copy_to_builder(bv_e, 0, elen, 256, mc,
                       $AR.checked_nat(elen + 1))
                     val () = $B.bput(mc, "/src")
                     val _ = run_mkdir(mc)
                     (* source: bats_modules/<name>/src/lib.bats *)
-                    var sp: $B.builder_v = $B.create()
+                    var sp = $B.create()
                     val () = $B.bput(sp, "bats_modules/")
                     val () = copy_to_builder(bv_e, 0, elen, 256, sp,
                       $AR.checked_nat(elen + 1))
@@ -1848,7 +1848,7 @@ in
                     val @(sa, _) = $B.to_arr(sp)
                     val @(fz_sp, bv_sp) = $A.freeze<byte>(sa)
                     (* sats: build/bats_modules/<name>/src/lib.sats *)
-                    var ss: $B.builder_v = $B.create()
+                    var ss = $B.create()
                     val () = $B.bput(ss, "build/bats_modules/")
                     val () = copy_to_builder(bv_e, 0, elen, 256, ss,
                       $AR.checked_nat(elen + 1))
@@ -1857,7 +1857,7 @@ in
                     val @(ssa, _) = $B.to_arr(ss)
                     val @(fz_ss, bv_ss) = $A.freeze<byte>(ssa)
                     (* dats: build/bats_modules/<name>/src/lib.dats *)
-                    var sd: $B.builder_v = $B.create()
+                    var sd = $B.create()
                     val () = $B.bput(sd, "build/bats_modules/")
                     val () = copy_to_builder(bv_e, 0, elen, 256, sd,
                       $AR.checked_nat(elen + 1))
@@ -1868,15 +1868,15 @@ in
                     val pr = preprocess_one(bv_sp, bv_ss, bv_sd, build_target, 1)
                     val () = (if pr <> 0 then let
                       val () = print! ("warning: preprocess failed for dep ")
-                      val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
+                      val () = print_borrow(bv_e, 0, elen, 256, 256)
                     in print_newline() end
                     else if ~is_quiet() then let
                       val () = print! ("  preprocessed dep: ")
-                      val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
+                      val () = print_borrow(bv_e, 0, elen, 256, 256)
                     in print_newline() end
                     else ())
                     (* Scan additional .bats files in this dep *)
-                    var dep_src_b: $B.builder_v = $B.create()
+                    var dep_src_b = $B.create()
                     val () = $B.bput(dep_src_b, "bats_modules/")
                     val () = copy_to_builder(bv_e, 0, elen, 256, dep_src_b,
                       $AR.checked_nat(elen + 1))
@@ -1913,7 +1913,7 @@ in
                                   else let
                                     val stem_ex = elen_ex - 5
                                     val @(fz_ex, bv_ex) = $A.freeze<byte>(ent_ex)
-                                    var sp_ex: $B.builder_v = $B.create()
+                                    var sp_ex = $B.create()
                                     val () = $B.bput(sp_ex, "bats_modules/")
                                     val () = copy_to_builder(dep_bv, 0, dep_len, 256, sp_ex,
                                       $AR.checked_nat(dep_len + 1))
@@ -1923,7 +1923,7 @@ in
                                     val () = $B.put_char(sp_ex, 0)
                                     val @(spa_ex, _) = $B.to_arr(sp_ex)
                                     val @(fz_spa, bv_spa) = $A.freeze<byte>(spa_ex)
-                                    var ss_ex: $B.builder_v = $B.create()
+                                    var ss_ex = $B.create()
                                     val () = $B.bput(ss_ex, "build/bats_modules/")
                                     val () = copy_to_builder(dep_bv, 0, dep_len, 256, ss_ex,
                                       $AR.checked_nat(dep_len + 1))
@@ -1934,7 +1934,7 @@ in
                                     val () = $B.put_char(ss_ex, 0)
                                     val @(ssa_ex, _) = $B.to_arr(ss_ex)
                                     val @(fz_ssa, bv_ssa) = $A.freeze<byte>(ssa_ex)
-                                    var sd_ex: $B.builder_v = $B.create()
+                                    var sd_ex = $B.create()
                                     val () = $B.bput(sd_ex, "build/bats_modules/")
                                     val () = copy_to_builder(dep_bv, 0, dep_len, 256, sd_ex,
                                       $AR.checked_nat(dep_len + 1))
@@ -2023,7 +2023,7 @@ in
                     val stem_sm = elen_sm - 5
                     val @(fz_esm, bv_esm) = $A.freeze<byte>(ent_sm)
                     (* source: src/<name>.bats *)
-                    var sp_sm: $B.builder_v = $B.create()
+                    var sp_sm = $B.create()
                     val () = $B.bput(sp_sm, "src/")
                     val () = copy_to_builder(bv_esm, 0, elen_sm, 256, sp_sm,
                       $AR.checked_nat(elen_sm + 1))
@@ -2031,7 +2031,7 @@ in
                     val @(spa_sm, _) = $B.to_arr(sp_sm)
                     val @(fz_spa_sm, bv_spa_sm) = $A.freeze<byte>(spa_sm)
                     (* sats: build/src/<stem>.sats *)
-                    var ss_sm: $B.builder_v = $B.create()
+                    var ss_sm = $B.create()
                     val () = $B.bput(ss_sm, "build/src/")
                     val () = copy_to_builder(bv_esm, 0, stem_sm, 256, ss_sm,
                       $AR.checked_nat(stem_sm + 1))
@@ -2040,7 +2040,7 @@ in
                     val @(ssa_sm, _) = $B.to_arr(ss_sm)
                     val @(fz_ssa_sm, bv_ssa_sm) = $A.freeze<byte>(ssa_sm)
                     (* dats: build/src/<stem>.dats *)
-                    var sd_sm: $B.builder_v = $B.create()
+                    var sd_sm = $B.create()
                     val () = $B.bput(sd_sm, "build/src/")
                     val () = copy_to_builder(bv_esm, 0, stem_sm, 256, sd_sm,
                       $AR.checked_nat(stem_sm + 1))
@@ -2242,7 +2242,7 @@ in
               else let
                 val elen = arr_entry_len(seen2, scan_from, 256)
                 val next_scan = scan_from + elen + 1
-                var pb: $B.builder_v = $B.create()
+                var pb = $B.create()
                 val () = $B.bput(pb, "build/bats_modules/")
                 val () = copy_arr_to_bld(seen2, scan_from, elen, pb,
                   $AR.checked_nat(elen + 1))
@@ -2285,7 +2285,7 @@ in
                   $AR.checked_nat(elen + 1))
                 val () = $B.bput(eb, "/src/lib.dats\"\n")
                 (* Scan build/bats_modules/DEP/src/ for extra .dats *)
-                var dsb: $B.builder_v = $B.create()
+                var dsb = $B.create()
                 val () = $B.bput(dsb, "build/bats_modules/")
                 val () = copy_arr_to_bld(seen2, pos, elen, dsb,
                   $AR.checked_nat(elen + 1))
@@ -2361,7 +2361,7 @@ in
               in scan_shared_module_deps(seen2, spos, d_sm, fuel_sm - 1) end
               else let
                 (* Build path: build/src/NAME.dats *)
-                var smpath: $B.builder_v = $B.create()
+                var smpath = $B.create()
                 val () = $B.bput(smpath, "build/src/")
                 val @(fz_sme, bv_sme) = $A.freeze<byte>(sme)
                 val () = copy_to_builder(bv_sme, 0, sel, 256, smpath,
@@ -2409,7 +2409,7 @@ in
                   $AR.checked_nat(elen + 1))
                 val () = $B.bput(lb, "/src/lib_dats.o")
                 (* Also link extra _dats.o files *)
-                var ldsb: $B.builder_v = $B.create()
+                var ldsb = $B.create()
                 val () = $B.bput(ldsb, "build/bats_modules/")
                 val () = copy_arr_to_bld(seen2, pos, elen, ldsb,
                   $AR.checked_nat(elen + 1))
@@ -2488,7 +2488,7 @@ in
                   else let
                     val @(fz_e, bv_e) = $A.freeze<byte>(ent)
                     val stem_len = elen - 5
-                    var sp: $B.builder_v = $B.create()
+                    var sp = $B.create()
                     val () = $B.bput(sp, "src/bin/")
                     val () = copy_to_builder(bv_e, 0, elen, 256, sp,
                       $AR.checked_nat(elen + 1))
@@ -2508,7 +2508,7 @@ in
                   in scan_bins(d, ph, phlen, rel, fuel - 1) end
                   else let
                     val bin_bt = (if is_wasm_bin > 0 then 1 else 0): int
-                    var ss: $B.builder_v = $B.create()
+                    var ss = $B.create()
                     val () = $B.bput(ss, "build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, ss,
                       $AR.checked_nat(stem_len + 1))
@@ -2517,7 +2517,7 @@ in
                     val @(ssa, _) = $B.to_arr(ss)
                     val @(fz_ss, bv_ss) = $A.freeze<byte>(ssa)
                     (* dats: build/src/bin/<name>.dats *)
-                    var sd: $B.builder_v = $B.create()
+                    var sd = $B.create()
                     val () = $B.bput(sd, "build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, sd,
                       $AR.checked_nat(stem_len + 1))
@@ -2528,15 +2528,15 @@ in
                     val pr = preprocess_one(bv_sp, bv_ss, bv_sd, bin_bt, is_unsafe)
                     val () = (if pr <> 0 then let
                       val () = print! ("error: preprocess failed for ")
-                      val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
+                      val () = print_borrow(bv_e, 0, elen, 256, 256)
                     in print_newline() end
                     else if ~is_quiet() then let
                       val () = print! ("  preprocessed: src/bin/")
-                      val () = print_borrow(bv_e, 0, elen, 256, $AR.checked_nat(elen + 1))
+                      val () = print_borrow(bv_e, 0, elen, 256, 256)
                     in print_newline() end
                     else ())
                     (* Step 5: Generate synthetic entry *)
-                    var entry: $B.builder_v = $B.create()
+                    var entry = $B.create()
                     val () = $B.bput(entry, "staload \"./src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, entry,
                       $AR.checked_nat(stem_len + 1))
@@ -2629,7 +2629,7 @@ in
                     val () = $B.bput(entry, "implement ")
                     val () = $B.bput(entry, "main0 () = __BATS_main0 ()\n")
                     (* Write synthetic entry *)
-                    var ep: $B.builder_v = $B.create()
+                    var ep = $B.create()
                     val () = $B.bput(ep, "build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, ep,
                       $AR.checked_nat(stem_len + 1))
@@ -2674,9 +2674,9 @@ in
                                 else let
                                   val @(fz_de, bv_de) = $A.freeze<byte>(de)
                                   (* Check if package (has bats.toml) — skip namespace dirs *)
-                                  var pk_b: $B.builder_v = $B.create()
+                                  var pk_b = $B.create()
                                   val () = $B.bput(pk_b, "bats_modules/")
-                                  val () = copy_to_builder(bv_de, 0, dlen, 256, pk_b, $AR.checked_nat(dlen+1))
+                                  val () = copy_to_builder(bv_de, 0, dlen, 256, pk_b, 256)
                                   val () = $B.bput(pk_b, "/bats.toml")
                                   val () = $B.put_char(pk_b, 0)
                                   val @(pka, _) = $B.to_arr(pk_b)
@@ -2688,9 +2688,9 @@ in
                                 in
                                   if ~is_p then let
                                     (* Namespace dir — iterate subdirs *)
-                                    var ns_d: $B.builder_v = $B.create()
+                                    var ns_d = $B.create()
                                     val () = $B.bput(ns_d, "bats_modules/")
-                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ns_d, $AR.checked_nat(dlen+1))
+                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ns_d, 256)
                                     val () = $B.put_char(ns_d, 0)
                                     val @(ns_da, _) = $B.to_arr(ns_d)
                                     val @(fz_nsd, bv_nsd) = $A.freeze<byte>(ns_da)
@@ -2715,20 +2715,20 @@ in
                                                 else let
                                                   val @(fz_sde, bv_sde) = $A.freeze<byte>(sde)
                                                   (* Build paths: build/bats_modules/<ns>/<sub>/src/lib.dats *)
-                                                  var po: $B.builder_v = $B.create()
+                                                  var po = $B.create()
                                                   val () = $B.bput(po, "build/bats_modules/")
-                                                  val () = copy_to_builder(ns_name, 0, ns_len, 256, po, $AR.checked_nat(ns_len+1))
+                                                  val () = copy_to_builder(ns_name, 0, ns_len, 256, po, 256)
                                                   val () = $B.bput(po, "/")
-                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, po, $AR.checked_nat(sel+1))
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, po, 256)
                                                   val () = $B.bput(po, "/src/lib_dats.c")
                                                   val () = $B.put_char(po, 0)
                                                   val @(poa, po_len) = $B.to_arr(po)
                                                   val @(fz_po, bv_po) = $A.freeze<byte>(poa)
-                                                  var pi: $B.builder_v = $B.create()
+                                                  var pi = $B.create()
                                                   val () = $B.bput(pi, "build/bats_modules/")
-                                                  val () = copy_to_builder(ns_name, 0, ns_len, 256, pi, $AR.checked_nat(ns_len+1))
+                                                  val () = copy_to_builder(ns_name, 0, ns_len, 256, pi, 256)
                                                   val () = $B.bput(pi, "/")
-                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, pi, $AR.checked_nat(sel+1))
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, pi, 256)
                                                   val () = $B.bput(pi, "/src/lib.dats")
                                                   val () = $B.put_char(pi, 0)
                                                   val @(pia, pi_len) = $B.to_arr(pi)
@@ -2740,23 +2740,23 @@ in
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_pi))
                                                   val () = (if rc_ns <> 0 then let
                                                     val () = print! ("error: patsopt failed for dep ")
-                                                    val () = print_borrow(ns_name, 0, ns_len, 256, $AR.checked_nat(ns_len+1))
+                                                    val () = print_borrow(ns_name, 0, ns_len, 256, 256)
                                                     val () = print! ("/")
-                                                    val () = print_borrow(bv_sde, 0, sel, 256, $AR.checked_nat(sel+1))
+                                                    val () = print_borrow(bv_sde, 0, sel, 256, 256)
                                                   in print_newline() end
                                                   else if ~is_quiet() then let
                                                     val () = print! ("  patsopt: ")
-                                                    val () = print_borrow(ns_name, 0, ns_len, 256, $AR.checked_nat(ns_len+1))
+                                                    val () = print_borrow(ns_name, 0, ns_len, 256, 256)
                                                     val () = print! ("/")
-                                                    val () = print_borrow(bv_sde, 0, sel, 256, $AR.checked_nat(sel+1))
+                                                    val () = print_borrow(bv_sde, 0, sel, 256, 256)
                                                   in print_newline() end
                                                   else ())
                                                   (* patsopt extra .dats in this sub-package *)
-                                                  var peb: $B.builder_v = $B.create()
+                                                  var peb = $B.create()
                                                   val () = $B.bput(peb, "build/bats_modules/")
-                                                  val () = copy_to_builder(ns_name, 0, ns_len, 256, peb, $AR.checked_nat(ns_len+1))
+                                                  val () = copy_to_builder(ns_name, 0, ns_len, 256, peb, 256)
                                                   val () = $B.bput(peb, "/")
-                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, peb, $AR.checked_nat(sel+1))
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, peb, 256)
                                                   val () = $B.bput(peb, "/src")
                                                   val () = $B.put_char(peb, 0)
                                                   val @(pea, pel) = $B.to_arr(peb)
@@ -2779,20 +2779,20 @@ in
                                   in patsopt_deps(dd3, ph, phlen, fuel3 - 1) end
                                   else let
                                   val pats_fresh = let
-                                    var ob: $B.builder_v = $B.create()
+                                    var ob = $B.create()
                                     val () = $B.bput(ob, "build/bats_modules/")
-                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ob, $AR.checked_nat(dlen+1))
+                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ob, 256)
                                     val () = $B.bput(ob, "/src/lib_dats.c")
                                     val () = $B.put_char(ob, 0)
-                                    var ib: $B.builder_v = $B.create()
+                                    var ib = $B.create()
                                     val () = $B.bput(ib, "build/bats_modules/")
-                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ib, $AR.checked_nat(dlen+1))
+                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ib, 256)
                                     val () = $B.bput(ib, "/src/lib.dats")
                                     val () = $B.put_char(ib, 0)
                                   in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                                   val () = (if pats_fresh > 0 then ()
                                   else let
-                                  var po_b: $B.builder_v = $B.create()
+                                  var po_b = $B.create()
                                   val () = $B.bput(po_b, "build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, po_b,
                                     $AR.checked_nat(dlen + 1))
@@ -2800,7 +2800,7 @@ in
                                   val () = $B.put_char(po_b, 0)
                                   val @(po_a, po_len) = $B.to_arr(po_b)
                                   val @(fz_po, bv_po) = $A.freeze<byte>(po_a)
-                                  var pi_b: $B.builder_v = $B.create()
+                                  var pi_b = $B.create()
                                   val () = $B.bput(pi_b, "build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, pi_b,
                                     $AR.checked_nat(dlen + 1))
@@ -2825,7 +2825,7 @@ in
                                   in print_newline() end
                                   else ()) end)
                                   (* patsopt extra .dats files for this dep *)
-                                  var pats_src_b: $B.builder_v = $B.create()
+                                  var pats_src_b = $B.create()
                                   val () = $B.bput(pats_src_b, "build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, pats_src_b,
                                     $AR.checked_nat(dlen + 1))
@@ -2864,36 +2864,36 @@ in
                                                   val @(fz_d3, bv_d3) = $A.freeze<byte>(de3)
                                                   (* freshness: _dats.c vs .dats *)
                                                   val pf = let
-                                                    var fo: $B.builder_v = $B.create()
+                                                    var fo = $B.create()
                                                     val () = $B.bput(fo, "build/bats_modules/")
-                                                    val () = copy_to_builder(dep3, 0, dep3_len, 256, fo, $AR.checked_nat(dep3_len+1))
+                                                    val () = copy_to_builder(dep3, 0, dep3_len, 256, fo, 256)
                                                     val () = $B.bput(fo, "/src/")
-                                                    val () = copy_to_builder(bv_d3, 0, stem3, 256, fo, $AR.checked_nat(stem3+1))
+                                                    val () = copy_to_builder(bv_d3, 0, stem3, 256, fo, 256)
                                                     val () = $B.bput(fo, "_dats.c")
                                                     val () = $B.put_char(fo, 0)
-                                                    var fi: $B.builder_v = $B.create()
+                                                    var fi = $B.create()
                                                     val () = $B.bput(fi, "build/bats_modules/")
-                                                    val () = copy_to_builder(dep3, 0, dep3_len, 256, fi, $AR.checked_nat(dep3_len+1))
+                                                    val () = copy_to_builder(dep3, 0, dep3_len, 256, fi, 256)
                                                     val () = $B.bput(fi, "/src/")
-                                                    val () = copy_to_builder(bv_d3, 0, dl3, 256, fi, $AR.checked_nat(dl3+1))
+                                                    val () = copy_to_builder(bv_d3, 0, dl3, 256, fi, 256)
                                                     val () = $B.put_char(fi, 0)
                                                   in (if freshness_check_bv(fo, fi) then 1 else 0): int end
                                                   val () = (if pf > 0 then ()
                                                   else let
-                                                    var eo: $B.builder_v = $B.create()
+                                                    var eo = $B.create()
                                                     val () = $B.bput(eo, "build/bats_modules/")
-                                                    val () = copy_to_builder(dep3, 0, dep3_len, 256, eo, $AR.checked_nat(dep3_len+1))
+                                                    val () = copy_to_builder(dep3, 0, dep3_len, 256, eo, 256)
                                                     val () = $B.bput(eo, "/src/")
-                                                    val () = copy_to_builder(bv_d3, 0, stem3, 256, eo, $AR.checked_nat(stem3+1))
+                                                    val () = copy_to_builder(bv_d3, 0, stem3, 256, eo, 256)
                                                     val () = $B.bput(eo, "_dats.c")
                                                     val () = $B.put_char(eo, 0)
                                                     val @(eoa, eo_len) = $B.to_arr(eo)
                                                     val @(fz_eo, bv_eo) = $A.freeze<byte>(eoa)
-                                                    var ei: $B.builder_v = $B.create()
+                                                    var ei = $B.create()
                                                     val () = $B.bput(ei, "build/bats_modules/")
-                                                    val () = copy_to_builder(dep3, 0, dep3_len, 256, ei, $AR.checked_nat(dep3_len+1))
+                                                    val () = copy_to_builder(dep3, 0, dep3_len, 256, ei, 256)
                                                     val () = $B.bput(ei, "/src/")
-                                                    val () = copy_to_builder(bv_d3, 0, dl3, 256, ei, $AR.checked_nat(dl3+1))
+                                                    val () = copy_to_builder(bv_d3, 0, dl3, 256, ei, 256)
                                                     val () = $B.put_char(ei, 0)
                                                     val @(eia, ei_len) = $B.to_arr(ei)
                                                     val @(fz_ei, bv_ei) = $A.freeze<byte>(eia)
@@ -2965,28 +2965,28 @@ in
                                   val stem_psm = dl_psm - 5
                                   val @(fz_dpsm, bv_dpsm) = $A.freeze<byte>(de_psm)
                                   val pf_sm = let
-                                    var fo: $B.builder_v = $B.create()
+                                    var fo = $B.create()
                                     val () = $B.bput(fo, "build/src/")
-                                    val () = copy_to_builder(bv_dpsm, 0, stem_psm, 256, fo, $AR.checked_nat(stem_psm+1))
+                                    val () = copy_to_builder(bv_dpsm, 0, stem_psm, 256, fo, 256)
                                     val () = $B.bput(fo, "_dats.c")
                                     val () = $B.put_char(fo, 0)
-                                    var fi: $B.builder_v = $B.create()
+                                    var fi = $B.create()
                                     val () = $B.bput(fi, "build/src/")
-                                    val () = copy_to_builder(bv_dpsm, 0, dl_psm, 256, fi, $AR.checked_nat(dl_psm+1))
+                                    val () = copy_to_builder(bv_dpsm, 0, dl_psm, 256, fi, 256)
                                     val () = $B.put_char(fi, 0)
                                   in (if freshness_check_bv(fo, fi) then 1 else 0): int end
                                   val () = (if pf_sm > 0 then ()
                                   else let
-                                    var eo_sm: $B.builder_v = $B.create()
+                                    var eo_sm = $B.create()
                                     val () = $B.bput(eo_sm, "build/src/")
-                                    val () = copy_to_builder(bv_dpsm, 0, stem_psm, 256, eo_sm, $AR.checked_nat(stem_psm+1))
+                                    val () = copy_to_builder(bv_dpsm, 0, stem_psm, 256, eo_sm, 256)
                                     val () = $B.bput(eo_sm, "_dats.c")
                                     val () = $B.put_char(eo_sm, 0)
                                     val @(eoa_sm, eo_sm_len) = $B.to_arr(eo_sm)
                                     val @(fz_eosm, bv_eosm) = $A.freeze<byte>(eoa_sm)
-                                    var ei_sm: $B.builder_v = $B.create()
+                                    var ei_sm = $B.create()
                                     val () = $B.bput(ei_sm, "build/src/")
-                                    val () = copy_to_builder(bv_dpsm, 0, dl_psm, 256, ei_sm, $AR.checked_nat(dl_psm+1))
+                                    val () = copy_to_builder(bv_dpsm, 0, dl_psm, 256, ei_sm, 256)
                                     val () = $B.put_char(ei_sm, 0)
                                     val @(eia_sm, ei_sm_len) = $B.to_arr(ei_sm)
                                     val @(fz_eism, bv_eism) = $A.freeze<byte>(eia_sm)
@@ -3022,20 +3022,20 @@ in
 
                     (* patsopt for the binary *)
                     val bin_pats_fresh = let
-                      var ob: $B.builder_v = $B.create()
+                      var ob = $B.create()
                       val () = $B.bput(ob, "build/src/bin/")
-                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ob, $AR.checked_nat(stem_len+1))
+                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ob, 256)
                       val () = $B.bput(ob, "_dats.c")
                       val () = $B.put_char(ob, 0)
-                      var ib: $B.builder_v = $B.create()
+                      var ib = $B.create()
                       val () = $B.bput(ib, "build/src/bin/")
-                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ib, $AR.checked_nat(stem_len+1))
+                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ib, 256)
                       val () = $B.bput(ib, ".dats")
                       val () = $B.put_char(ib, 0)
                     in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                     val () = (if bin_pats_fresh > 0 then ()
                     else let
-                    var po_b: $B.builder_v = $B.create()
+                    var po_b = $B.create()
                     val () = $B.bput(po_b, "build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, po_b,
                       $AR.checked_nat(stem_len + 1))
@@ -3043,7 +3043,7 @@ in
                     val () = $B.put_char(po_b, 0)
                     val @(po_a, po_len) = $B.to_arr(po_b)
                     val @(fz_po, bv_po) = $A.freeze<byte>(po_a)
-                    var pi_b: $B.builder_v = $B.create()
+                    var pi_b = $B.create()
                     val () = $B.bput(pi_b, "build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, pi_b,
                       $AR.checked_nat(stem_len + 1))
@@ -3063,20 +3063,20 @@ in
 
                     (* patsopt for synthetic entry *)
                     val ent_pats_fresh = let
-                      var ob: $B.builder_v = $B.create()
+                      var ob = $B.create()
                       val () = $B.bput(ob, "build/_bats_entry_")
-                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ob, $AR.checked_nat(stem_len+1))
+                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ob, 256)
                       val () = $B.bput(ob, "_dats.c")
                       val () = $B.put_char(ob, 0)
-                      var ib: $B.builder_v = $B.create()
+                      var ib = $B.create()
                       val () = $B.bput(ib, "build/_bats_entry_")
-                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ib, $AR.checked_nat(stem_len+1))
+                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ib, 256)
                       val () = $B.bput(ib, ".dats")
                       val () = $B.put_char(ib, 0)
                     in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                     val () = (if ent_pats_fresh > 0 then ()
                     else let
-                    var eo_b: $B.builder_v = $B.create()
+                    var eo_b = $B.create()
                     val () = $B.bput(eo_b, "build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, eo_b,
                       $AR.checked_nat(stem_len + 1))
@@ -3084,7 +3084,7 @@ in
                     val () = $B.put_char(eo_b, 0)
                     val @(eo_a, eo_len) = $B.to_arr(eo_b)
                     val @(fz_eo, bv_eo) = $A.freeze<byte>(eo_a)
-                    var ei_b: $B.builder_v = $B.create()
+                    var ei_b = $B.create()
                     val () = $B.bput(ei_b, "build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, ei_b,
                       $AR.checked_nat(stem_len + 1))
@@ -3131,9 +3131,9 @@ in
                                 in clang_deps(dd4, ph, phlen, rr, fuel4 - 1) end
                                 else let
                                   val @(fz_de, bv_de) = $A.freeze<byte>(de)
-                                  var pk_b3: $B.builder_v = $B.create()
+                                  var pk_b3 = $B.create()
                                   val () = $B.bput(pk_b3, "bats_modules/")
-                                  val () = copy_to_builder(bv_de, 0, dlen, 256, pk_b3, $AR.checked_nat(dlen+1))
+                                  val () = copy_to_builder(bv_de, 0, dlen, 256, pk_b3, 256)
                                   val () = $B.bput(pk_b3, "/bats.toml")
                                   val () = $B.put_char(pk_b3, 0)
                                   val @(pka3, _) = $B.to_arr(pk_b3)
@@ -3145,9 +3145,9 @@ in
                                 in
                                   if ~is_p3 then let
                                     (* Namespace dir — iterate subdirs for clang *)
-                                    var ns_cd: $B.builder_v = $B.create()
+                                    var ns_cd = $B.create()
                                     val () = $B.bput(ns_cd, "bats_modules/")
-                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ns_cd, $AR.checked_nat(dlen+1))
+                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ns_cd, 256)
                                     val () = $B.put_char(ns_cd, 0)
                                     val @(ns_cda, _) = $B.to_arr(ns_cd)
                                     val @(fz_nscd, bv_nscd) = $A.freeze<byte>(ns_cda)
@@ -3171,20 +3171,20 @@ in
                                                 in clang_ns(nscd, ph3, ph3len, ns3, ns3len, rr3, fuel_cn-1) end
                                                 else let
                                                   val @(fz_sde, bv_sde) = $A.freeze<byte>(sde)
-                                                  var co: $B.builder_v = $B.create()
+                                                  var co = $B.create()
                                                   val () = $B.bput(co, "build/bats_modules/")
-                                                  val () = copy_to_builder(ns3, 0, ns3len, 256, co, $AR.checked_nat(ns3len+1))
+                                                  val () = copy_to_builder(ns3, 0, ns3len, 256, co, 256)
                                                   val () = $B.bput(co, "/")
-                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, co, $AR.checked_nat(sel+1))
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, co, 256)
                                                   val () = $B.bput(co, "/src/lib_dats.o")
                                                   val () = $B.put_char(co, 0)
                                                   val @(coa, co_len) = $B.to_arr(co)
                                                   val @(fz_co, bv_co) = $A.freeze<byte>(coa)
-                                                  var ci: $B.builder_v = $B.create()
+                                                  var ci = $B.create()
                                                   val () = $B.bput(ci, "build/bats_modules/")
-                                                  val () = copy_to_builder(ns3, 0, ns3len, 256, ci, $AR.checked_nat(ns3len+1))
+                                                  val () = copy_to_builder(ns3, 0, ns3len, 256, ci, 256)
                                                   val () = $B.bput(ci, "/")
-                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, ci, $AR.checked_nat(sel+1))
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, ci, 256)
                                                   val () = $B.bput(ci, "/src/lib_dats.c")
                                                   val () = $B.put_char(ci, 0)
                                                   val @(cia, ci_len) = $B.to_arr(ci)
@@ -3195,11 +3195,11 @@ in
                                                   val () = $A.drop<byte>(fz_ci, bv_ci)
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_ci))
                                                   (* cc extra _dats.c in this sub-package *)
-                                                  var ceb: $B.builder_v = $B.create()
+                                                  var ceb = $B.create()
                                                   val () = $B.bput(ceb, "build/bats_modules/")
-                                                  val () = copy_to_builder(ns3, 0, ns3len, 256, ceb, $AR.checked_nat(ns3len+1))
+                                                  val () = copy_to_builder(ns3, 0, ns3len, 256, ceb, 256)
                                                   val () = $B.bput(ceb, "/")
-                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, ceb, $AR.checked_nat(sel+1))
+                                                  val () = copy_to_builder(bv_sde, 0, sel, 256, ceb, 256)
                                                   val () = $B.bput(ceb, "/src")
                                                   val () = $B.put_char(ceb, 0)
                                                   val @(cea, cel) = $B.to_arr(ceb)
@@ -3222,20 +3222,20 @@ in
                                   in clang_deps(dd4, ph, phlen, rr, fuel4 - 1) end
                                   else let
                                   val cc_fresh = let
-                                    var ob: $B.builder_v = $B.create()
+                                    var ob = $B.create()
                                     val () = $B.bput(ob, "build/bats_modules/")
-                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ob, $AR.checked_nat(dlen+1))
+                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ob, 256)
                                     val () = $B.bput(ob, "/src/lib_dats.o")
                                     val () = $B.put_char(ob, 0)
-                                    var ib: $B.builder_v = $B.create()
+                                    var ib = $B.create()
                                     val () = $B.bput(ib, "build/bats_modules/")
-                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ib, $AR.checked_nat(dlen+1))
+                                    val () = copy_to_builder(bv_de, 0, dlen, 256, ib, 256)
                                     val () = $B.bput(ib, "/src/lib_dats.c")
                                     val () = $B.put_char(ib, 0)
                                   in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                                   val () = (if cc_fresh > 0 then ()
                                   else let
-                                  var co_b: $B.builder_v = $B.create()
+                                  var co_b = $B.create()
                                   val () = $B.bput(co_b, "build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, co_b,
                                     $AR.checked_nat(dlen + 1))
@@ -3243,7 +3243,7 @@ in
                                   val () = $B.put_char(co_b, 0)
                                   val @(co_a, co_len) = $B.to_arr(co_b)
                                   val @(fz_co, bv_co) = $A.freeze<byte>(co_a)
-                                  var ci_b: $B.builder_v = $B.create()
+                                  var ci_b = $B.create()
                                   val () = $B.bput(ci_b, "build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, ci_b,
                                     $AR.checked_nat(dlen + 1))
@@ -3262,7 +3262,7 @@ in
                                       $AR.checked_nat(dlen + 1))
                                   in print_newline() end else ()) end)
                                   (* compile extra _dats.c files for this dep *)
-                                  var cc_src_b: $B.builder_v = $B.create()
+                                  var cc_src_b = $B.create()
                                   val () = $B.bput(cc_src_b, "build/bats_modules/")
                                   val () = copy_to_builder(bv_de, 0, dlen, 256, cc_src_b,
                                     $AR.checked_nat(dlen + 1))
@@ -3300,36 +3300,36 @@ in
                                                   val stem4 = dl4 - 7
                                                   val @(fz_d4, bv_d4) = $A.freeze<byte>(de4)
                                                   val cf = let
-                                                    var fo: $B.builder_v = $B.create()
+                                                    var fo = $B.create()
                                                     val () = $B.bput(fo, "build/bats_modules/")
-                                                    val () = copy_to_builder(dep4, 0, dep4_len, 256, fo, $AR.checked_nat(dep4_len+1))
+                                                    val () = copy_to_builder(dep4, 0, dep4_len, 256, fo, 256)
                                                     val () = $B.bput(fo, "/src/")
-                                                    val () = copy_to_builder(bv_d4, 0, stem4, 256, fo, $AR.checked_nat(stem4+1))
+                                                    val () = copy_to_builder(bv_d4, 0, stem4, 256, fo, 256)
                                                     val () = $B.bput(fo, "_dats.o")
                                                     val () = $B.put_char(fo, 0)
-                                                    var fi: $B.builder_v = $B.create()
+                                                    var fi = $B.create()
                                                     val () = $B.bput(fi, "build/bats_modules/")
-                                                    val () = copy_to_builder(dep4, 0, dep4_len, 256, fi, $AR.checked_nat(dep4_len+1))
+                                                    val () = copy_to_builder(dep4, 0, dep4_len, 256, fi, 256)
                                                     val () = $B.bput(fi, "/src/")
-                                                    val () = copy_to_builder(bv_d4, 0, dl4, 256, fi, $AR.checked_nat(dl4+1))
+                                                    val () = copy_to_builder(bv_d4, 0, dl4, 256, fi, 256)
                                                     val () = $B.put_char(fi, 0)
                                                   in (if freshness_check_bv(fo, fi) then 1 else 0): int end
                                                   val () = (if cf > 0 then ()
                                                   else let
-                                                    var xo: $B.builder_v = $B.create()
+                                                    var xo = $B.create()
                                                     val () = $B.bput(xo, "build/bats_modules/")
-                                                    val () = copy_to_builder(dep4, 0, dep4_len, 256, xo, $AR.checked_nat(dep4_len+1))
+                                                    val () = copy_to_builder(dep4, 0, dep4_len, 256, xo, 256)
                                                     val () = $B.bput(xo, "/src/")
-                                                    val () = copy_to_builder(bv_d4, 0, stem4, 256, xo, $AR.checked_nat(stem4+1))
+                                                    val () = copy_to_builder(bv_d4, 0, stem4, 256, xo, 256)
                                                     val () = $B.bput(xo, "_dats.o")
                                                     val () = $B.put_char(xo, 0)
                                                     val @(xoa, xo_len) = $B.to_arr(xo)
                                                     val @(fz_xo, bv_xo) = $A.freeze<byte>(xoa)
-                                                    var xi: $B.builder_v = $B.create()
+                                                    var xi = $B.create()
                                                     val () = $B.bput(xi, "build/bats_modules/")
-                                                    val () = copy_to_builder(dep4, 0, dep4_len, 256, xi, $AR.checked_nat(dep4_len+1))
+                                                    val () = copy_to_builder(dep4, 0, dep4_len, 256, xi, 256)
                                                     val () = $B.bput(xi, "/src/")
-                                                    val () = copy_to_builder(bv_d4, 0, dl4, 256, xi, $AR.checked_nat(dl4+1))
+                                                    val () = copy_to_builder(bv_d4, 0, dl4, 256, xi, 256)
                                                     val () = $B.put_char(xi, 0)
                                                     val @(xia, xi_len) = $B.to_arr(xi)
                                                     val @(fz_xi, bv_xi) = $A.freeze<byte>(xia)
@@ -3395,28 +3395,28 @@ in
                                   val stem_csm = dl_csm - 7
                                   val @(fz_dcsm, bv_dcsm) = $A.freeze<byte>(de_csm)
                                   val cf_sm = let
-                                    var fo: $B.builder_v = $B.create()
+                                    var fo = $B.create()
                                     val () = $B.bput(fo, "build/src/")
-                                    val () = copy_to_builder(bv_dcsm, 0, stem_csm, 256, fo, $AR.checked_nat(stem_csm+1))
+                                    val () = copy_to_builder(bv_dcsm, 0, stem_csm, 256, fo, 256)
                                     val () = $B.bput(fo, "_dats.o")
                                     val () = $B.put_char(fo, 0)
-                                    var fi: $B.builder_v = $B.create()
+                                    var fi = $B.create()
                                     val () = $B.bput(fi, "build/src/")
-                                    val () = copy_to_builder(bv_dcsm, 0, dl_csm, 256, fi, $AR.checked_nat(dl_csm+1))
+                                    val () = copy_to_builder(bv_dcsm, 0, dl_csm, 256, fi, 256)
                                     val () = $B.put_char(fi, 0)
                                   in (if freshness_check_bv(fo, fi) then 1 else 0): int end
                                   val () = (if cf_sm > 0 then ()
                                   else let
-                                    var xo_sm: $B.builder_v = $B.create()
+                                    var xo_sm = $B.create()
                                     val () = $B.bput(xo_sm, "build/src/")
-                                    val () = copy_to_builder(bv_dcsm, 0, stem_csm, 256, xo_sm, $AR.checked_nat(stem_csm+1))
+                                    val () = copy_to_builder(bv_dcsm, 0, stem_csm, 256, xo_sm, 256)
                                     val () = $B.bput(xo_sm, "_dats.o")
                                     val () = $B.put_char(xo_sm, 0)
                                     val @(xoa_sm, xo_sm_len) = $B.to_arr(xo_sm)
                                     val @(fz_xosm, bv_xosm) = $A.freeze<byte>(xoa_sm)
-                                    var xi_sm: $B.builder_v = $B.create()
+                                    var xi_sm = $B.create()
                                     val () = $B.bput(xi_sm, "build/src/")
-                                    val () = copy_to_builder(bv_dcsm, 0, dl_csm, 256, xi_sm, $AR.checked_nat(dl_csm+1))
+                                    val () = copy_to_builder(bv_dcsm, 0, dl_csm, 256, xi_sm, 256)
                                     val () = $B.put_char(xi_sm, 0)
                                     val @(xia_sm, xi_sm_len) = $B.to_arr(xi_sm)
                                     val @(fz_xism, bv_xism) = $A.freeze<byte>(xia_sm)
@@ -3449,20 +3449,20 @@ in
 
                     (* Compile binary *)
                     val bin_cc_fresh = let
-                      var ob: $B.builder_v = $B.create()
+                      var ob = $B.create()
                       val () = $B.bput(ob, "build/src/bin/")
-                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ob, $AR.checked_nat(stem_len+1))
+                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ob, 256)
                       val () = $B.bput(ob, "_dats.o")
                       val () = $B.put_char(ob, 0)
-                      var ib: $B.builder_v = $B.create()
+                      var ib = $B.create()
                       val () = $B.bput(ib, "build/src/bin/")
-                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ib, $AR.checked_nat(stem_len+1))
+                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ib, 256)
                       val () = $B.bput(ib, "_dats.c")
                       val () = $B.put_char(ib, 0)
                     in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                     val () = (if bin_cc_fresh > 0 then ()
                     else let
-                    var co_b: $B.builder_v = $B.create()
+                    var co_b = $B.create()
                     val () = $B.bput(co_b, "build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, co_b,
                       $AR.checked_nat(stem_len + 1))
@@ -3470,7 +3470,7 @@ in
                     val () = $B.put_char(co_b, 0)
                     val @(co_a, co_len) = $B.to_arr(co_b)
                     val @(fz_co, bv_co) = $A.freeze<byte>(co_a)
-                    var ci_b: $B.builder_v = $B.create()
+                    var ci_b = $B.create()
                     val () = $B.bput(ci_b, "build/src/bin/")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, ci_b,
                       $AR.checked_nat(stem_len + 1))
@@ -3487,20 +3487,20 @@ in
 
                     (* Compile entry *)
                     val ent_cc_fresh = let
-                      var ob: $B.builder_v = $B.create()
+                      var ob = $B.create()
                       val () = $B.bput(ob, "build/_bats_entry_")
-                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ob, $AR.checked_nat(stem_len+1))
+                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ob, 256)
                       val () = $B.bput(ob, "_dats.o")
                       val () = $B.put_char(ob, 0)
-                      var ib: $B.builder_v = $B.create()
+                      var ib = $B.create()
                       val () = $B.bput(ib, "build/_bats_entry_")
-                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ib, $AR.checked_nat(stem_len+1))
+                      val () = copy_to_builder(bv_e, 0, stem_len, 256, ib, 256)
                       val () = $B.bput(ib, "_dats.c")
                       val () = $B.put_char(ib, 0)
                     in (if freshness_check_bv(ob, ib) then 1 else 0): int end
                     val () = (if ent_cc_fresh > 0 then ()
                     else let
-                    var ceo_b: $B.builder_v = $B.create()
+                    var ceo_b = $B.create()
                     val () = $B.bput(ceo_b, "build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, ceo_b,
                       $AR.checked_nat(stem_len + 1))
@@ -3508,7 +3508,7 @@ in
                     val () = $B.put_char(ceo_b, 0)
                     val @(ceo_a, ceo_len) = $B.to_arr(ceo_b)
                     val @(fz_ceo, bv_ceo) = $A.freeze<byte>(ceo_a)
-                    var cei_b: $B.builder_v = $B.create()
+                    var cei_b = $B.create()
                     val () = $B.bput(cei_b, "build/_bats_entry_")
                     val () = copy_to_builder(bv_e, 0, stem_len, 256, cei_b,
                       $AR.checked_nat(stem_len + 1))
@@ -3524,7 +3524,7 @@ in
                     in end)
 
                     (* Step 8: Link *)
-                    var link: $B.builder_v = $B.create()
+                    var link = $B.create()
                     val () = (if rel > 0 then
                       $B.bput(link, "clang -o dist/release/")
                       else $B.bput(link, "clang -o dist/debug/"))
@@ -3622,7 +3622,7 @@ in
                     (* Convert space-separated link command to null-separated argv *)
                     val @(link_arr, link_len) = $B.to_arr(link)
                     val @(fz_la, bv_la) = $A.freeze<byte>(link_arr)
-                    var link_argv: $B.builder_v = $B.create()
+                    var link_argv = $B.create()
                     fun split_spaces {l2:agz}{fuel:nat} .<fuel>.
                       (bv: !$A.borrow(byte, l2, 524288), i: int, len: int,
                        dst: !$B.builder_v >> $B.builder_v, argc: int, in_arg: int,
@@ -3699,12 +3699,12 @@ in
           in true end
         | ~$R.err(_) => false): bool
       val () = (if lib_exists then let
-          var lc_b: $B.builder_v = $B.create()
+          var lc_b = $B.create()
           val () = $B.bput(lc_b, "build/src/lib_dats.c")
           val () = $B.put_char(lc_b, 0)
           val @(lib_c_out, lc_len) = $B.to_arr(lc_b)
           val @(fz_lc, bv_lc) = $A.freeze<byte>(lib_c_out)
-          var ld_b: $B.builder_v = $B.create()
+          var ld_b = $B.create()
           val () = $B.bput(ld_b, "build/src/lib.dats")
           val () = $B.put_char(ld_b, 0)
           val @(lib_d_in, ld_len) = $B.to_arr(ld_b)
@@ -3741,23 +3741,23 @@ in
             in
               if tcl2 > 0 then let
                 (* mkdir target *)
-                var md: $B.builder_v = $B.create()
-                val () = copy_to_builder(bv_tcb, 0, tcl2, 4096, md, $AR.checked_nat(tcl2+1))
+                var md = $B.create()
+                val () = copy_to_builder(bv_tcb, 0, tcl2, 4096, md, 4096)
                 val _ = run_mkdir(md)
                 (* cp -r build/ <target>/ — copy all C files *)
                 val cp_exec = str_to_path_arr("/bin/cp")
                 val @(fz_cpe, bv_cpe) = $A.freeze<byte>(cp_exec)
-                var cp_argv: $B.builder_v = $B.create()
+                var cp_argv = $B.create()
                 val () = $B.bput(cp_argv, "cp") val () = $B.put_char(cp_argv, 0)
                 val () = $B.bput(cp_argv, "-r") val () = $B.put_char(cp_argv, 0)
                 val () = $B.bput(cp_argv, "build/.") val () = $B.put_char(cp_argv, 0)
-                val () = copy_to_builder(bv_tcb, 0, tcl2, 4096, cp_argv, $AR.checked_nat(tcl2+1))
+                val () = copy_to_builder(bv_tcb, 0, tcl2, 4096, cp_argv, 4096)
                 val () = $B.bput(cp_argv, "/") val () = $B.put_char(cp_argv, 0)
                 val _ = run_cmd(bv_cpe, 524288, cp_argv, 4)
                 val () = $A.drop<byte>(fz_cpe, bv_cpe)
                 val () = $A.free<byte>($A.thaw<byte>(fz_cpe))
                 (* Generate Makefile *)
-                var mf: $B.builder_v = $B.create()
+                var mf = $B.create()
                 val () = $B.bput(mf, "PATSHOME ?= $(HOME)/.bats/ats2\n")
                 val () = $B.bput(mf, "CC ?= cc\n\n")
                 val () = $B.bput(mf, "%_debug.o: %.c\n\t$(CC) -c -o $@ $< -g -O0 -I$(PATSHOME) -I$(PATSHOME)/ccomp/runtime\n\n")
@@ -3769,8 +3769,8 @@ in
                 val () = $B.bput(mf, "debug/bats: $(DEBUG_OBJS)\n\tmkdir -p debug\n\t$(CC) -o $@ $^ -g -O0\n\n")
                 val () = $B.bput(mf, "release/bats: $(RELEASE_OBJS)\n\tmkdir -p release\n\t$(CC) -o $@ $^ -O2\n\n")
                 val () = $B.bput(mf, "clean:\n\trm -f *.o\n\trm -rf debug release\n")
-                var mfp: $B.builder_v = $B.create()
-                val () = copy_to_builder(bv_tcb, 0, tcl2, 4096, mfp, $AR.checked_nat(tcl2+1))
+                var mfp = $B.create()
+                val () = copy_to_builder(bv_tcb, 0, tcl2, 4096, mfp, 4096)
                 val () = $B.bput(mfp, "/Makefile")
                 val () = $B.put_char(mfp, 0)
                 val @(mfpa, _) = $B.to_arr(mfp)
