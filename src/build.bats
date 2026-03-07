@@ -308,6 +308,25 @@ in
                       byte2int0($A.get<byte>(ks, $AR.checked_idx(de - 1, 4096))) else 0 else 0): int
                     val dep_end = (if $AR.eq_int_int(last_byte, 34) then de - 1 else de): int
                     val dl = dep_end - dep_start
+                    (* Check if already resolved: bats_modules/<dep>/bats.toml exists *)
+                    var chk_b : $B.builder_v = $B.create()
+                    val () = bput_v(chk_b, "bats_modules/")
+                    val () = arr_range_to_builder_v(ks, dep_start, dep_end, chk_b)
+                    val () = bput_v(chk_b, "/bats.toml")
+                    val () = put_char_v(chk_b, 0)
+                    val @(chk_a, _) = $B.to_arr(chk_b)
+                    val @(fz_chk, bv_chk) = $A.freeze<byte>(chk_a)
+                    val chk_or = $F.file_open(bv_chk, 524288, 0, 0)
+                    val () = $A.drop<byte>(fz_chk, bv_chk)
+                    val () = $A.free<byte>($A.thaw<byte>(fz_chk))
+                    val already = (case+ chk_or of
+                      | ~$R.ok(cfd) => let
+                          val cr = $F.file_close(cfd)
+                          val () = $R.discard<int><int>(cr)
+                        in true end
+                      | ~$R.err(_) => false): bool
+                  in if already then resolve(ks, de+1, kl, rb, rl, lb, cnt, fuel-1)
+                  else let
                     (* Scan repo/<dep>/ for latest .bats archive *)
                     var dir_b : $B.builder_v = $B.create()
                     val () = copy_to_builder_v(rb, 0, rl, 4096, dir_b)
@@ -532,7 +551,7 @@ in
                         val () = print_arr(ks, dep_start, dep_end, 4096, 4096)
                         val () = print_newline()
                       in resolve(ks, de+1, kl, rb, rl, lb, cnt, fuel-1) end
-                  end
+                  end end
                 end
               val n = resolve(keys, 0, klen, bv_rb3, rplen, lock_b, 0, 200)
               val () = $A.free<byte>(keys)
@@ -548,20 +567,22 @@ in
                   val bdr = $F.dir_open(bv_bmd, 524288)
                   val () = $A.drop<byte>(fz_bmd, bv_bmd)
                   val () = $A.free<byte>($A.thaw<byte>(fz_bmd))
-                  val @(tk, tkl2) = (case+ bdr of
+                  val new_cnt = (case+ bdr of
                     | ~$R.ok(bd) => let
                         val tk = $A.alloc<byte>(4096)
-                        val tkl = ref<int>(0)
-                        fun sdt {ltk:agz}{f3:nat} .<f3>.
-                          (bd: !$F.dir, tk: !$A.arr(byte, ltk, 4096), tkl: ref(int), f3: int f3): void =
-                          if f3 <= 0 then ()
+                        (* Scan each package in bats_modules, resolve its deps immediately *)
+                        fun sdt {ltk:agz}{lr3:agz}{f3:nat} .<f3>.
+                          (bd: !$F.dir, tk: !$A.arr(byte, ltk, 4096),
+                           rb3: !$A.borrow(byte, lr3, 4096), rl3: int,
+                           lb3: !$B.builder_v >> $B.builder_v, cnt3: int, f3: int f3): int =
+                          if f3 <= 0 then cnt3
                           else let
                             val de = $A.alloc<byte>(256)
                             val nr = $F.dir_next(bd, de, 256)
                             val del = $R.option_unwrap_or<int>(nr, ~1)
-                          in if del < 0 then $A.free<byte>(de)
+                          in if del < 0 then let val () = $A.free<byte>(de) in cnt3 end
                             else let val dd = is_dot_or_dotdot(de, del, 256) in
-                              if dd then let val () = $A.free<byte>(de) in sdt(bd, tk, tkl, f3-1) end
+                              if dd then let val () = $A.free<byte>(de) in sdt(bd, tk, rb3, rl3, lb3, cnt3, f3-1) end
                               else let
                                 var tp : $B.builder_v = $B.create()
                                 val () = bput_v(tp, "bats_modules/")
@@ -576,7 +597,7 @@ in
                                 val tfo = $F.file_open(bv_tpa, 524288, 0, 0)
                                 val () = $A.drop<byte>(fz_tpa, bv_tpa)
                                 val () = $A.free<byte>($A.thaw<byte>(fz_tpa))
-                                val () = (case+ tfo of
+                                val cnt4 = (case+ tfo of
                                   | ~$R.ok(tfd) => let
                                       val tb = $A.alloc<byte>(4096)
                                       val tr = $F.file_read(tfd, tb, 4096)
@@ -592,30 +613,26 @@ in
                                           val @(dka, dksz) = $S.str_to_borrow("dependencies")
                                           val @(fz_dka, bv_dka) = $A.freeze<byte>(dka)
                                           val kr2 = $T.keys(doc2, bv_dka, dksz, tk, 4096)
-                                          val () = (case+ kr2 of
-                                            | ~$R.some(kl2) => !tkl := kl2
-                                            | ~$R.none() => ())
+                                          val tkl2 = (case+ kr2 of
+                                            | ~$R.some(kl2) => kl2
+                                            | ~$R.none() => 0): int
                                           val () = $A.drop<byte>(fz_dka, bv_dka)
                                           val () = $A.free<byte>($A.thaw<byte>(fz_dka))
                                           val () = $T.toml_free(doc2)
-                                        in end
-                                      | ~$R.err(_) => ()
+                                          val n2 = resolve(tk, 0, tkl2, rb3, rl3, lb3, cnt3, 200)
+                                        in n2 end
+                                      | ~$R.err(_) => cnt3
                                     end
-                                  | ~$R.err(_) => ())
-                                (* TODO: also scan src/lib.bats for #use directives *)
-                              in sdt(bd, tk, tkl, f3-1) end
+                                  | ~$R.err(_) => cnt3): int
+                              in sdt(bd, tk, rb3, rl3, lb3, cnt4, f3-1) end
                             end
                           end
-                        val () = sdt(bd, tk, tkl, 200)
+                        val cnt_out = sdt(bd, tk, rb2, rl2, lb2, prev_cnt, 200)
                         val dcr3 = $F.dir_close(bd)
                         val () = $R.discard<int><int>(dcr3)
-                        val tklv = !tkl
-                      in @(tk, tklv) end
-                    | ~$R.err(_) => let
-                        val z = $A.alloc<byte>(4096)
-                      in @(z, 0) end): [ltk:agz] @($A.arr(byte, ltk, 4096), int)
-                  val new_cnt = resolve(tk, 0, tkl2, rb2, rl2, lb2, prev_cnt, 200)
-                  val () = $A.free<byte>(tk)
+                        val () = $A.free<byte>(tk)
+                      in cnt_out end
+                    | ~$R.err(_) => prev_cnt): int
                 in
                   if new_cnt > prev_cnt then
                     resolve_pass(rb2, rl2, lb2, new_cnt, fuel - 1)
