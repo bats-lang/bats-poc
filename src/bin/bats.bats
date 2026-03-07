@@ -88,13 +88,13 @@ fun find_dashdash {l:agz}{fuel:nat} .<fuel>.
       if $AR.eq_int_int(b1, 45) then
         if $AR.eq_int_int(b2, 0) then pos
         else let
-          val next = $S.find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+          val next = $S.find_null(buf, pos, 4096, 4096)
         in find_dashdash(buf, next + 1, len, fuel - 1) end
       else let
-        val next = $S.find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+        val next = $S.find_null(buf, pos, 4096, 4096)
       in find_dashdash(buf, next + 1, len, fuel - 1) end
     else let
-      val next = $S.find_null(buf, pos, 4096, $AR.checked_nat(len - pos + 1))
+      val next = $S.find_null(buf, pos, 4096, 4096)
     in find_dashdash(buf, next + 1, len, fuel - 1) end
   end
 
@@ -122,12 +122,12 @@ fun scan_only {l:agz}{fuel:nat} .<fuel>.
               if $AR.eq_int_int(b3, 110) then
                 if $AR.eq_int_int(b4, 108) then
                   if $AR.eq_int_int(b5, 121) then let
-                    val next = $S.find_null(buf, p + 6, 4096, $AR.checked_nat(len - p))
+                    val next = $S.find_null(buf, p + 6, 4096, 4096)
                     val val_start = next + 1
                   in
                     if val_start < len then let
                           val v0 = byte2int0($A.get<byte>(buf, $AR.checked_idx(val_start, 4096)))
-                          val vend = $S.find_null(buf, val_start, 4096, $AR.checked_nat(len - val_start + 1))
+                          val vend = $S.find_null(buf, val_start, 4096, 4096)
                           val vlen = vend - val_start
                           val new_mask = (
                             if $AR.eq_int_int(v0, 100) then
@@ -143,22 +143,22 @@ fun scan_only {l:agz}{fuel:nat} .<fuel>.
                     else mask
                   end
                   else let
-                    val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+                    val next = $S.find_null(buf, p, 4096, 4096)
                   in scan_only(buf, next + 1, len, mask, fuel - 1) end
                 else let
-                  val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+                  val next = $S.find_null(buf, p, 4096, 4096)
                 in scan_only(buf, next + 1, len, mask, fuel - 1) end
               else let
-                val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+                val next = $S.find_null(buf, p, 4096, 4096)
               in scan_only(buf, next + 1, len, mask, fuel - 1) end
             else let
-              val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+              val next = $S.find_null(buf, p, 4096, 4096)
             in scan_only(buf, next + 1, len, mask, fuel - 1) end
           else let
-            val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+            val next = $S.find_null(buf, p, 4096, 4096)
           in scan_only(buf, next + 1, len, mask, fuel - 1) end
         else let
-          val next = $S.find_null(buf, p, 4096, $AR.checked_nat(len - p + 1))
+          val next = $S.find_null(buf, p, 4096, 4096)
         in scan_only(buf, next + 1, len, mask, fuel - 1) end
       end
   end
@@ -184,11 +184,11 @@ in
       | ~$R.ok(cl_n) => let
           val cr = $F.file_close(cl_fd)
           val () = $R.discard<int><int>(cr)
-          val dd_pos = find_dashdash(cl_buf, 0, cl_n, $AR.checked_nat(cl_n + 1))
+          val dd_pos = find_dashdash(cl_buf, 0, cl_n, 4096)
           val () = save_extra_args(cl_buf, dd_pos, cl_n)
           val effective_len = (if dd_pos >= 0 then dd_pos else cl_n): int
           val argc = count_argc(cl_buf, effective_len)
-          val only_mask = scan_only(cl_buf, 0, effective_len, 0, $AR.checked_nat(effective_len + 1))
+          val only_mask = scan_only(cl_buf, 0, effective_len, 0, 4096)
           val @(fz_cb, bv_cb) = $A.freeze<byte>(cl_buf)
           val @(pna, pnl) = $S.str_to_borrow("bats")
           val @(fzpn, bvpn) = $A.freeze<byte>(pna)
@@ -242,8 +242,8 @@ in
                 val repo_buf = $A.alloc<byte>(4096)
                 val rlen = $AP.get_string_copy(r, h_repository, repo_buf, 4096)
                 val @(fz_rb2, bv_rb2) = $A.freeze<byte>(repo_buf)
-                var rb2: $B.builder_v = $B.create()
-                val () = copy_to_builder(bv_rb2, 0, rlen, 4096, rb2, $AR.checked_nat(rlen + 1))
+                var rb2 = $B.create()
+                val () = copy_to_builder(bv_rb2, 0, rlen, 4096, rb2, 4096)
                 val () = $B.put_char(rb2, 10)
                 val () = $A.drop<byte>(fz_rb2, bv_rb2)
                 val () = $A.free<byte>($A.thaw<byte>(fz_rb2))
@@ -258,8 +258,8 @@ in
                 val tc_buf = $A.alloc<byte>(4096)
                 val tclen = $AP.get_string_copy(r, h_to_c, tc_buf, 4096)
                 val @(fz_tc, bv_tc) = $A.freeze<byte>(tc_buf)
-                var tcb: $B.builder_v = $B.create()
-                val () = copy_to_builder(bv_tc, 0, tclen, 4096, tcb, $AR.checked_nat(tclen + 1))
+                var tcb = $B.create()
+                val () = copy_to_builder(bv_tc, 0, tclen, 4096, tcb, 4096)
                 val () = $A.drop<byte>(fz_tc, bv_tc)
                 val () = $A.free<byte>($A.thaw<byte>(fz_tc))
                 val tcp = str_to_path_arr("/tmp/_bpoc_to_c.txt")
@@ -332,8 +332,8 @@ in
                   val bin_buf = $A.alloc<byte>(256)
                   val blen = $AP.get_string_copy(r, h_bin, bin_buf, 256)
                   val @(fz_bb2, bv_bb2) = $A.freeze<byte>(bin_buf)
-                  var bb2: $B.builder_v = $B.create()
-                  val () = copy_to_builder(bv_bb2, 0, blen, 256, bb2, $AR.checked_nat(blen + 1))
+                  var bb2 = $B.create()
+                  val () = copy_to_builder(bv_bb2, 0, blen, 256, bb2, 256)
                   val () = $B.put_char(bb2, 10)
                   val () = $A.drop<byte>(fz_bb2, bv_bb2)
                   val () = $A.free<byte>($A.thaw<byte>(fz_bb2))
