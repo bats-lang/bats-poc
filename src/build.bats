@@ -23,38 +23,16 @@ staload "emitter.sats"
   (src_bv: !$A.borrow(byte, l1, 524288),
    sats_bv: !$A.borrow(byte, l2, 524288),
    dats_bv: !$A.borrow(byte, l3, 524288),
-   build_target: int, is_unsafe: int): int
+   build_target: int, is_unsafe: int,
+   target_changed: bool): int
 
 implement preprocess_one
-  (src_bv, sats_bv, dats_bv, build_target, is_unsafe) = let
-  (* Cache check: if .sats is newer than .bats source, skip preprocessing *)
-  val fresh = (if is_newer(sats_bv, src_bv) then true else false): bool
-  (* Also check if target changed by reading build/.bats_target content.
-     If the stored target doesn't match the current build_target,
-     cached .sats must be regenerated for the new target. *)
-  val target_ok = (if fresh then let
-      val tgt_arr = str_to_path_arr("build/.bats_target")
-      val @(fz_tgt, bv_tgt) = $A.freeze<byte>(tgt_arr)
-      val tgt_or = $F.file_open(bv_tgt, 524288, 0, 0)
-      val () = $A.drop<byte>(fz_tgt, bv_tgt)
-      val () = $A.free<byte>($A.thaw<byte>(fz_tgt))
-    in case+ tgt_or of
-      | ~$R.ok(tfd) => let
-          val tb = $A.alloc<byte>(16)
-          val tr = $F.file_read(tfd, tb, 16)
-          val tl = (case+ tr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
-          val tc = $F.file_close(tfd)
-          val () = $R.discard<int><int>(tc)
-          val first_byte = byte2int0($A.get<byte>(tb, 0))
-          val () = $A.free<byte>(tb)
-          val stored = (if tl > 0 then first_byte - 48
-          else ~1): int
-        in $AR.eq_int_int(stored, build_target) end
-      | ~$R.err(_) => false
-    end
-  else false): bool
+  (src_bv, sats_bv, dats_bv, build_target, is_unsafe, target_changed) = let
+  (* Cache check: if .sats is newer than .bats source AND target hasn't changed,
+     skip preprocessing *)
+  val fresh = (if is_newer(sats_bv, src_bv) then ~target_changed else false): bool
 in
-  if target_ok then 0
+  if fresh then 0
   else let
   val or = $F.file_open(src_bv, 524288, 0, 0)
 in
@@ -894,7 +872,6 @@ fn run_wasm_cc {li:agz}{lo:agz}
   val () = bput_v(argv, "build/_bats_wasm_stubs") val () = put_char_v(argv, 0)
   val () = bput_v(argv, "-Wno-implicit-function-declaration") val () = put_char_v(argv, 0)
   val () = bput_v(argv, "-Wno-int-conversion") val () = put_char_v(argv, 0)
-  val () = bput_v(argv, "-D_BRIDGE_RUNTIME_DEFINED") val () = put_char_v(argv, 0)
   val () = bput_v(argv, "-c") val () = put_char_v(argv, 0)
   val () = bput_v(argv, "-o") val () = put_char_v(argv, 0)
   val oc = out_len - 1
@@ -1623,7 +1600,27 @@ in
     in println! ("error: HOME not set, cannot find ATS2 toolchain") end
     else let
 
-      (* Write target marker so preprocessing cache knows when target changed *)
+      (* Read old target marker to detect target change, then write new one.
+         target_changed is passed to preprocess_one to force reprocessing. *)
+      val tgt_path_r = str_to_path_arr("build/.bats_target")
+      val @(fz_tgtr, bv_tgtr) = $A.freeze<byte>(tgt_path_r)
+      val old_tgt_or = $F.file_open(bv_tgtr, 524288, 0, 0)
+      val old_target = (case+ old_tgt_or of
+        | ~$R.ok(otfd) => let
+            val otb = $A.alloc<byte>(16)
+            val otr = $F.file_read(otfd, otb, 16)
+            val otl = (case+ otr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+            val otc = $F.file_close(otfd)
+            val () = $R.discard<int><int>(otc)
+            val ob = byte2int0($A.get<byte>(otb, 0))
+            val () = $A.free<byte>(otb)
+          in (if otl > 0 then ob - 48 else ~1): int end
+        | ~$R.err(_) => ~1): int
+      val () = $A.drop<byte>(fz_tgtr, bv_tgtr)
+      val () = $A.free<byte>($A.thaw<byte>(fz_tgtr))
+      (* If target changed, preprocess_one will force reprocessing *)
+      val target_changed = ~($AR.eq_int_int(old_target, build_target))
+      (* Now write new target marker *)
       var tgt_b : $B.builder_v = $B.create()
       val () = bput_v(tgt_b, (if $AR.eq_int_int(build_target, 1) then "1" else "0"))
       val tgt_path = str_to_path_arr("build/.bats_target")
@@ -1744,7 +1741,7 @@ in
                                     val () = put_char_v(sd2, 0)
                                     val @(sda2, _) = $B.to_arr(sd2)
                                     val @(fz_sd2, bv_sd2) = $A.freeze<byte>(sda2)
-                                    val pr2 = preprocess_one(bv_sp2, bv_ss2, bv_sd2, build_target, 1)
+                                    val pr2 = preprocess_one(bv_sp2, bv_ss2, bv_sd2, build_target, 1, target_changed)
                                     val () = (if pr2 <> 0 then let
                                       val () = print! ("warning: preprocess failed for dep ")
                                       val () = print_borrow(ns_bv, 0, ns_len, 256, 256)
@@ -1837,7 +1834,7 @@ in
                                                     val () = put_char_v(sd_ns, 0)
                                                     val @(sda_ns, _) = $B.to_arr(sd_ns)
                                                     val @(fz_sdn, bv_sdn) = $A.freeze<byte>(sda_ns)
-                                                    val pr_ns = preprocess_one(bv_spn, bv_ssn, bv_sdn, build_target, 1)
+                                                    val pr_ns = preprocess_one(bv_spn, bv_ssn, bv_sdn, build_target, 1, target_changed)
                                                     val () = (if pr_ns <> 0 then ()
                                                     else if ~is_quiet() then let
                                                       val () = print! ("  preprocessed dep extra: ")
@@ -1908,7 +1905,7 @@ in
                     val () = put_char_v(sd, 0)
                     val @(sda, _) = $B.to_arr(sd)
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
-                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, build_target, 1)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, build_target, 1, target_changed)
                     val () = (if pr <> 0 then let
                       val () = print! ("warning: preprocess failed for dep ")
                       val () = print_borrow(bv_e, 0, elen, 256, 256)
@@ -1981,7 +1978,7 @@ in
                                     val () = put_char_v(sd_ex, 0)
                                     val @(sda_ex, _) = $B.to_arr(sd_ex)
                                     val @(fz_sda, bv_sda) = $A.freeze<byte>(sda_ex)
-                                    val pr_ex = preprocess_one(bv_spa, bv_ssa, bv_sda, build_target, 1)
+                                    val pr_ex = preprocess_one(bv_spa, bv_ssa, bv_sda, build_target, 1, target_changed)
                                     val () = (if pr_ex <> 0 then let
                                       val () = print! ("warning: preprocess failed for extra file in dep ")
                                       val () = print_borrow(dep_bv, 0, dep_len, 256, 256)
@@ -2079,7 +2076,7 @@ in
                     val () = put_char_v(sd_sm, 0)
                     val @(sda_sm, _) = $B.to_arr(sd_sm)
                     val @(fz_sda_sm, bv_sda_sm) = $A.freeze<byte>(sda_sm)
-                    val pr_sm = preprocess_one(bv_spa_sm, bv_ssa_sm, bv_sda_sm, build_target, is_unsafe)
+                    val pr_sm = preprocess_one(bv_spa_sm, bv_ssa_sm, bv_sda_sm, build_target, is_unsafe, target_changed)
                     val () = (if pr_sm <> 0 then let
                       val () = print! ("warning: preprocess failed for src/")
                       val () = print_borrow(bv_esm, 0, elen_sm, 256, 256)
@@ -2550,7 +2547,7 @@ in
                     val () = put_char_v(sd, 0)
                     val @(sda, _) = $B.to_arr(sd)
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
-                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, bin_bt, is_unsafe)
+                    val pr = preprocess_one(bv_sp, bv_ss, bv_sd, bin_bt, is_unsafe, target_changed)
                     val () = (if pr <> 0 then let
                       val () = print! ("error: preprocess failed for ")
                       val () = print_borrow(bv_e, 0, elen, 256, 256)
