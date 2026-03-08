@@ -863,7 +863,7 @@ fn compile_wasm_runtime(): int = let
   val () = bput_v(argv, "build/_bats_wasm_stubs") val () = put_char_v(argv, 0)
   val () = bput_v(argv, "-c") val () = put_char_v(argv, 0)
   val () = bput_v(argv, "-o") val () = put_char_v(argv, 0)
-  val () = bput_v(argv, "build/_bats_wasm_runtime.o") val () = put_char_v(argv, 0)
+  val () = bput_v(argv, "build/_bats_wasm_runtime.wasm.o") val () = put_char_v(argv, 0)
   val () = bput_v(argv, "build/_bats_wasm_runtime.c") val () = put_char_v(argv, 0)
   val rc = run_cmd(bv_exec, 524288, argv, 19)
   val () = $A.drop<byte>(fz_exec, bv_exec)
@@ -910,11 +910,11 @@ in rc end
 
 fn wasm_cc_file {l:agz}
   (path: !$A.borrow(byte, l, 524288), path_len: int): int = let
-  (* path is like "build/.../_dats.c", replace .c with .o for output *)
+  (* path is like "build/.../_dats.c", replace .c with .wasm.o for output *)
   var ob : $B.builder_v = $B.create()
   val pl = path_len - 1
   val () = copy_to_builder_v(path, 0, pl - 1, 524288, ob)
-  val () = bput_v(ob, "o")
+  val () = bput_v(ob, "wasm.o")
   val () = put_char_v(ob, 0)
   val @(oa, ol) = $B.to_arr(ob)
   val @(fz_o, bv_o) = $A.freeze<byte>(oa)
@@ -3447,8 +3447,260 @@ in
                         in end
                       | ~$R.err(_) => ())
 
-                    (* Skip native cc+link for wasm binaries *)
-                    val rl = (if bin_bt > 0 then 0 else let
+                    (* WASM cc+link for wasm binaries, native cc+link otherwise *)
+                    val rl = (if bin_bt > 0 then let
+                      val _ = write_wasm_runtime_h()
+                      val _ = write_wasm_runtime_c()
+                      val _ = write_wasm_stubs()
+                      val wrt_rc = compile_wasm_runtime()
+                      val () = (if wrt_rc <> 0 then println! ("error: WASM runtime compile failed") else ())
+                      val () = println! ("  compiling WASM...")
+                      (* Compile entry _dats.c *)
+                      var we_b : $B.builder_v = $B.create()
+                      val () = bput_v(we_b, "build/_bats_entry_")
+                      val () = copy_to_builder_v(bv_e, 0, stem_len, 256, we_b)
+                      val () = bput_v(we_b, "_dats.c")
+                      val () = put_char_v(we_b, 0)
+                      val @(wea, we_len) = $B.to_arr(we_b)
+                      val @(fz_we, bv_we) = $A.freeze<byte>(wea)
+                      val _ = wasm_cc_file(bv_we, we_len)
+                      val () = $A.drop<byte>(fz_we, bv_we)
+                      val () = $A.free<byte>($A.thaw<byte>(fz_we))
+                      (* Compile binary _dats.c *)
+                      var wb_b : $B.builder_v = $B.create()
+                      val () = bput_v(wb_b, "build/src/bin/")
+                      val () = copy_to_builder_v(bv_e, 0, stem_len, 256, wb_b)
+                      val () = bput_v(wb_b, "_dats.c")
+                      val () = put_char_v(wb_b, 0)
+                      val @(wba, wb_len) = $B.to_arr(wb_b)
+                      val @(fz_wb, bv_wb) = $A.freeze<byte>(wba)
+                      val _ = wasm_cc_file(bv_wb, wb_len)
+                      val () = $A.drop<byte>(fz_wb, bv_wb)
+                      val () = $A.free<byte>($A.thaw<byte>(fz_wb))
+                      (* Build wasm-ld argv *)
+                      var wl : $B.builder_v = $B.create()
+                      val () = bput_v(wl, "wasm-ld") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--no-entry") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--allow-undefined") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--lto-O2") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "-z") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "stack-size=1048576") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--initial-memory=16777216") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--max-memory=268435456") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=mainats_0_void") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=malloc") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_event") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_timer_fire") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_idb_fire") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_idb_fire_get") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_measure_set") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_fetch_complete") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_file_open") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_decompress_complete") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_bridge_stash_set_int") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_bridge_stash_get_int") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_listener_get") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_popstate") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_clipboard_complete") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_clipboard_read_complete") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_permission_result") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_push_subscribe") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "--export=bats_on_media_change") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "-o") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "dist/wasm/app.wasm") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "build/_bats_wasm_runtime.wasm.o") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "build/_bats_entry_")
+                      val () = copy_to_builder_v(bv_e, 0, stem_len, 256, wl)
+                      val () = bput_v(wl, "_dats.wasm.o") val () = put_char_v(wl, 0)
+                      val () = bput_v(wl, "build/src/bin/")
+                      val () = copy_to_builder_v(bv_e, 0, stem_len, 256, wl)
+                      val () = bput_v(wl, "_dats.wasm.o") val () = put_char_v(wl, 0)
+                      val wl_argc0 = 32
+                      (* Compile deps from staload chain and add .o to link *)
+                      val w_dor = $F.file_open(bv_sd, 524288, 0, 0)
+                      val wl_dep_cnt = ref<int>(0)
+                      val () = (case+ w_dor of
+                        | ~$R.ok(w_dfd) => let
+                            val w_buf = $A.alloc<byte>(524288)
+                            val w_rr = $F.file_read(w_dfd, w_buf, 524288)
+                            val w_nb = (case+ w_rr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+                            val w_cr = $F.file_close(w_dfd)
+                            val () = $R.discard<int><int>(w_cr)
+                            val @(fz_wbuf, bv_wbuf) = $A.freeze<byte>(w_buf)
+                            val w_seen = $A.alloc<byte>(16384)
+                            val w_sp1 = scan_staload_deps(bv_wbuf, w_nb, w_seen, 0, 0, 500)
+                            val () = $A.drop<byte>(fz_wbuf, bv_wbuf)
+                            val () = $A.free<byte>($A.thaw<byte>(fz_wbuf))
+                            val w_smd = str_to_path_arr("build/src")
+                            val @(fz_wsmd, bv_wsmd) = $A.freeze<byte>(w_smd)
+                            val w_smd_r = $F.dir_open(bv_wsmd, 524288)
+                            val () = $A.drop<byte>(fz_wsmd, bv_wsmd)
+                            val () = $A.free<byte>($A.thaw<byte>(fz_wsmd))
+                            fun wcc_deps {ls2:agz}{fuel:nat} .<fuel>.
+                              (seen: !$A.arr(byte, ls2, 16384), spos: int, pos: int,
+                               lb: !$B.builder_v >> $B.builder_v, cnt: int, fuel: int fuel): int =
+                              if fuel <= 0 then cnt
+                              else if pos >= spos then cnt
+                              else let
+                                val elen = arr_entry_len(seen, pos, 256)
+                                var wdc : $B.builder_v = $B.create()
+                                val () = bput_v(wdc, "build/bats_modules/")
+                                val () = copy_arr_to_bld(seen, pos, elen, wdc, 256)
+                                val () = bput_v(wdc, "/src/lib_dats.c")
+                                val () = put_char_v(wdc, 0)
+                                val @(wdca, wdc_len) = $B.to_arr(wdc)
+                                val @(fz_wdc, bv_wdc) = $A.freeze<byte>(wdca)
+                                val rc = wasm_cc_file(bv_wdc, wdc_len)
+                                val () = $A.drop<byte>(fz_wdc, bv_wdc)
+                                val () = $A.free<byte>($A.thaw<byte>(fz_wdc))
+                                val cnt2 = (if rc = 0 then let
+                                  val () = bput_v(lb, "build/bats_modules/")
+                                  val () = copy_arr_to_bld(seen, pos, elen, lb, 256)
+                                  val () = bput_v(lb, "/src/lib_dats.wasm.o")
+                                  val () = put_char_v(lb, 0)
+                                in cnt + 1 end else cnt): int
+                                var wds : $B.builder_v = $B.create()
+                                val () = bput_v(wds, "build/bats_modules/")
+                                val () = copy_arr_to_bld(seen, pos, elen, wds, 256)
+                                val () = bput_v(wds, "/src")
+                                val () = put_char_v(wds, 0)
+                                val @(wdsa, _) = $B.to_arr(wds)
+                                val @(fz_wds, bv_wds) = $A.freeze<byte>(wdsa)
+                                val wd_dr = $F.dir_open(bv_wds, 524288)
+                                val () = $A.drop<byte>(fz_wds, bv_wds)
+                                val () = $A.free<byte>($A.thaw<byte>(fz_wds))
+                                val cnt3 = (case+ wd_dr of
+                                  | ~$R.ok(wd) => let
+                                      fun wcc_ex {ls3:agz}{fuel2:nat} .<fuel2>.
+                                        (wd2: !$F.dir, s: !$A.arr(byte, ls3, 16384),
+                                         dp: int, dl: int,
+                                         lb2: !$B.builder_v >> $B.builder_v,
+                                         c: int, fuel2: int fuel2): int =
+                                        if fuel2 <= 0 then c
+                                        else let
+                                          val ef = $A.alloc<byte>(256)
+                                          val enr = $F.dir_next(wd2, ef, 256)
+                                          val el = $R.option_unwrap_or<int>(enr, ~1)
+                                        in if el < 0 then let val () = $A.free<byte>(ef) in c end
+                                        else let
+                                          val ic = $S.has_suffix(ef, el, 256, "_dats.c", 7)
+                                          val il = $S.has_suffix(ef, el, 256, "lib_dats.c", 10)
+                                        in if ic then if il then let val () = $A.free<byte>(ef)
+                                          in wcc_ex(wd2, s, dp, dl, lb2, c, fuel2-1) end
+                                          else let
+                                            val @(fz_ef, bv_ef) = $A.freeze<byte>(ef)
+                                            var wp : $B.builder_v = $B.create()
+                                            val () = bput_v(wp, "build/bats_modules/")
+                                            val () = copy_arr_to_bld(s, dp, dl, wp, 256)
+                                            val () = bput_v(wp, "/src/")
+                                            val () = copy_to_builder_v(bv_ef, 0, el, 256, wp)
+                                            val () = put_char_v(wp, 0)
+                                            val @(wpa, wp_len) = $B.to_arr(wp)
+                                            val @(fz_wp, bv_wp) = $A.freeze<byte>(wpa)
+                                            val rc2 = wasm_cc_file(bv_wp, wp_len)
+                                            val c2 = (if rc2 = 0 then let
+                                              val () = copy_to_builder_v(bv_wp, 0, wp_len - 2, 524288, lb2)
+                                              val () = bput_v(lb2, "wasm.o")
+                                              val () = put_char_v(lb2, 0)
+                                            in c + 1 end else c): int
+                                            val () = $A.drop<byte>(fz_wp, bv_wp)
+                                            val () = $A.free<byte>($A.thaw<byte>(fz_wp))
+                                            val () = $A.drop<byte>(fz_ef, bv_ef)
+                                            val () = $A.free<byte>($A.thaw<byte>(fz_ef))
+                                          in wcc_ex(wd2, s, dp, dl, lb2, c2, fuel2-1) end
+                                        else let val () = $A.free<byte>(ef)
+                                        in wcc_ex(wd2, s, dp, dl, lb2, c, fuel2-1) end
+                                        end
+                                        end
+                                      val cx = wcc_ex(wd, seen, pos, elen, lb, cnt2, 200)
+                                      val dcr_wd = $F.dir_close(wd)
+                                      val () = $R.discard<int><int>(dcr_wd)
+                                    in cx end
+                                  | ~$R.err(_) => cnt2): int
+                                val next = pos + elen + 1
+                              in wcc_deps(seen, spos, next, lb, cnt3, fuel - 1) end
+                            val () = (case+ w_smd_r of
+                              | ~$R.ok(wsmd) => let
+                                  val w_sp2 = scan_shared_module_deps(w_seen, w_sp1, wsmd, 100)
+                                  val dcr_wsm = $F.dir_close(wsmd)
+                                  val () = $R.discard<int><int>(dcr_wsm)
+                                  val w_fsp = collect_trans_deps(w_seen, w_sp2, 0, 200)
+                                  val dc = wcc_deps(w_seen, w_fsp, 0, wl, 0, 200)
+                                  val () = !wl_dep_cnt := dc
+                                  val () = $A.free<byte>(w_seen)
+                                in end
+                              | ~$R.err(_) => let
+                                  val w_fsp = collect_trans_deps(w_seen, w_sp1, 0, 200)
+                                  val dc = wcc_deps(w_seen, w_fsp, 0, wl, 0, 200)
+                                  val () = !wl_dep_cnt := dc
+                                  val () = $A.free<byte>(w_seen)
+                                in end)
+                          in end
+                        | ~$R.err(_) => ())
+                      val wl_argc1 = wl_argc0 + !wl_dep_cnt
+                      (* Compile src modules and add .o to link *)
+                      val wsm_a = str_to_path_arr("build/src")
+                      val @(fz_wsma, bv_wsma) = $A.freeze<byte>(wsm_a)
+                      val wsm_dr = $F.dir_open(bv_wsma, 524288)
+                      val () = $A.drop<byte>(fz_wsma, bv_wsma)
+                      val () = $A.free<byte>($A.thaw<byte>(fz_wsma))
+                      val wl_sm_cnt = ref<int>(0)
+                      val () = (case+ wsm_dr of
+                        | ~$R.ok(wsm_d) => let
+                            fun wcc_sm {fuel3:nat} .<fuel3>.
+                              (d: !$F.dir, lb: !$B.builder_v >> $B.builder_v,
+                               c: int, fuel3: int fuel3): int =
+                              if fuel3 <= 0 then c
+                              else let
+                                val se = $A.alloc<byte>(256)
+                                val snr = $F.dir_next(d, se, 256)
+                                val sl = $R.option_unwrap_or<int>(snr, ~1)
+                              in if sl < 0 then let val () = $A.free<byte>(se) in c end
+                              else let
+                                val isc = $S.has_suffix(se, sl, 256, "_dats.c", 7)
+                              in if ~isc then let val () = $A.free<byte>(se)
+                                in wcc_sm(d, lb, c, fuel3 - 1) end
+                              else let
+                                val @(fz_se2, bv_se2) = $A.freeze<byte>(se)
+                                var smp : $B.builder_v = $B.create()
+                                val () = bput_v(smp, "build/src/")
+                                val () = copy_to_builder_v(bv_se2, 0, sl, 256, smp)
+                                val () = put_char_v(smp, 0)
+                                val @(smpa, smpl) = $B.to_arr(smp)
+                                val @(fz_smp, bv_smp) = $A.freeze<byte>(smpa)
+                                val rc = wasm_cc_file(bv_smp, smpl)
+                                val c2 = (if rc = 0 then let
+                                  val () = copy_to_builder_v(bv_smp, 0, smpl - 2, 524288, lb)
+                                  val () = bput_v(lb, "wasm.o")
+                                  val () = put_char_v(lb, 0)
+                                in c + 1 end else c): int
+                                val () = $A.drop<byte>(fz_smp, bv_smp)
+                                val () = $A.free<byte>($A.thaw<byte>(fz_smp))
+                                val () = $A.drop<byte>(fz_se2, bv_se2)
+                                val () = $A.free<byte>($A.thaw<byte>(fz_se2))
+                              in wcc_sm(d, lb, c2, fuel3 - 1) end
+                              end
+                              end
+                            val sc = wcc_sm(wsm_d, wl, 0, 200)
+                            val () = !wl_sm_cnt := sc
+                            val dcr_wsm2 = $F.dir_close(wsm_d)
+                            val () = $R.discard<int><int>(dcr_wsm2)
+                          in end
+                        | ~$R.err(_) => ())
+                      val wl_argc2 = wl_argc1 + !wl_sm_cnt
+                      var mb_w1 : $B.builder_v = $B.create()
+                      val () = bput_v(mb_w1, "dist")
+                      val _ = run_mkdir(mb_w1)
+                      var mb_w2 : $B.builder_v = $B.create()
+                      val () = bput_v(mb_w2, "dist/wasm")
+                      val _ = run_mkdir(mb_w2)
+                      val () = println! ("  linking WASM...")
+                      val wld_exec = str_to_path_arr("/usr/bin/wasm-ld")
+                      val @(fz_wld, bv_wld) = $A.freeze<byte>(wld_exec)
+                      val wlr = run_cmd(bv_wld, 524288, wl, wl_argc2)
+                      val () = $A.drop<byte>(fz_wld, bv_wld)
+                      val () = $A.free<byte>($A.thaw<byte>(fz_wld))
+                    in wlr end else let
 
                     (* Compile binary *)
                     val bin_cc_fresh = let
@@ -3662,11 +3914,13 @@ in
                     val () = $A.free<byte>($A.thaw<byte>(fz_sd))
                     val () = (if is_to_c() then ()
                     else if rl = 0 then
-                      if ~is_quiet() then let
-                        val () = (if rel > 0 then print! ("  built: dist/release/")
-                          else print! ("  built: dist/debug/"))
-                        val () = print_borrow(bv_e, 0, stem_len, 256, 256)
-                      in print_newline() end
+                      if ~is_quiet() then
+                        if bin_bt > 0 then println! ("  built: dist/wasm/app.wasm")
+                        else let
+                          val () = (if rel > 0 then print! ("  built: dist/release/")
+                            else print! ("  built: dist/debug/"))
+                          val () = print_borrow(bv_e, 0, stem_len, 256, 256)
+                        in print_newline() end
                       else ()
                     else println! ("error: link failed"))
                     val () = $A.drop<byte>(fz_e, bv_e)

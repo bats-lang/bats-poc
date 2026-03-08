@@ -288,9 +288,7 @@ in
                   val () = do_build(0, 0)
                   val () = do_build(1, 0)
                   val () = do_build(0, 1)
-                  val () = do_build_wasm(0)
-                  val () = do_build(1, 1)
-                in do_build_wasm(1) end
+                in do_build(1, 1) end
                 else let
                   val bt = (if has_wasm > 0 then 1 else 0): int
                   val () = (if has_debug > 0 then do_build(0, bt) else ())
@@ -302,7 +300,7 @@ in
                   val () = (if has_wasm > 0 then
                     if is_to_c() then
                       println! ("error: --to-c wasm is not yet implemented without shell")
-                    else do_build_wasm(if has_release > 0 then 1 else 0)
+                    else ()
                   else ())
                 in
                   if has_debug = 0 then
