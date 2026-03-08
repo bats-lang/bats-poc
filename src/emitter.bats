@@ -226,19 +226,34 @@ fun find_matching_end {ls:agz}{ns:pos}{fuel:nat} .<fuel>.
 (* Blank a range then tail-call content processing *)
 fun emit_blank_then_content {ls:agz}{ns:pos}{bn:nat}{fuel:nat | bn + fuel <= $B.BUILDER_CAP} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), pos: int, blank_end: int,
-   content_end: int, overall_end: int,
+   content_end: int, end_kw_end: int, scan_end: int, overall_end: int,
    max: int ns, out: !$B.builder(bn) >> [m:nat | bn <= m; m <= bn + fuel] $B.builder(m), fuel: int fuel): void =
   if fuel <= 0 then ()
-  else if pos >= blank_end then
-    emit_range_process_unsafe(src, pos, content_end, overall_end, max, out, fuel - 1)
-  else let
+  else if pos < blank_end then let
+    (* Phase 1: blank "$UNSAFE begin" region *)
     val b = $S.borrow_byte(src, pos, max)
   in
     if $AR.eq_int_int(b, 10) then let
       val () = $B.put_char(out, 10)
-    in emit_blank_then_content(src, pos + 1, blank_end, content_end, overall_end, max, out, fuel - 1) end
-    else emit_blank_then_content(src, pos + 1, blank_end, content_end, overall_end, max, out, fuel - 1)
+    in emit_blank_then_content(src, pos + 1, blank_end, content_end, end_kw_end, scan_end, overall_end, max, out, fuel - 1) end
+    else emit_blank_then_content(src, pos + 1, blank_end, content_end, end_kw_end, scan_end, overall_end, max, out, fuel - 1)
   end
+  else if pos < content_end then let
+    (* Phase 2: copy inner $UNSAFE content *)
+    val () = $B.put_char(out, $S.borrow_byte(src, pos, max))
+  in emit_blank_then_content(src, pos + 1, blank_end, content_end, end_kw_end, scan_end, overall_end, max, out, fuel - 1) end
+  else if pos < end_kw_end then let
+    (* Phase 3: blank "end" keyword *)
+    val b = $S.borrow_byte(src, pos, max)
+  in
+    if $AR.eq_int_int(b, 10) then let
+      val () = $B.put_char(out, 10)
+    in emit_blank_then_content(src, pos + 1, blank_end, content_end, end_kw_end, scan_end, overall_end, max, out, fuel - 1) end
+    else emit_blank_then_content(src, pos + 1, blank_end, content_end, end_kw_end, scan_end, overall_end, max, out, fuel - 1)
+  end
+  else
+    (* Phase 4: continue scanning for more $UNSAFE blocks *)
+    emit_range_process_unsafe(src, pos, scan_end, overall_end, max, out, fuel - 1)
 
 (* Emit range processing $UNSAFE begin...end blocks inside #target content.
    Scans byte by byte. When $UNSAFE begin is found, blanks it, emits inner
@@ -288,7 +303,7 @@ and emit_range_process_unsafe {ls:agz}{ns:pos}{bn:nat}{fuel:nat | bn + fuel <= $
           val ep2 = (if end2 < end_pos then end2 + 3 else end2): int
           (* Blank [start, cs2), then process [cs2, end2), then blank [end2, ep2),
              then continue with [ep2, end_pos). All via tail calls. *)
-        in emit_blank_then_content(src, start, cs2, end2, overall_end, max, out, fuel - 1) end
+        in emit_blank_then_content(src, start, cs2, end2, ep2, end_pos, overall_end, max, out, fuel - 1) end
         else let
           val () = $B.put_char(out, b)
         in emit_range_process_unsafe(src, start + 1, end_pos, overall_end, max, out, fuel - 1) end
