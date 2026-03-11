@@ -404,17 +404,35 @@ implement run_mkdir(path_b) = let
   val () = copy_to_builder(bv_p, 0, pl, 524288, argv, 4096)
   val () = $A.drop<byte>(fz_p, bv_p)
   val () = $A.free<byte>($A.thaw<byte>(fz_p))
-  val rc = run_cmd(bv_exec, 524288, argv, 3)
+  val rc = run_cmd(bv_exec, 524288, argv)
   val () = $A.drop<byte>(fz_exec, bv_exec)
   val () = $A.free<byte>($A.thaw<byte>(fz_exec))
 in rc end
 
+(* Count null bytes in an array — each null terminates one argv entry *)
+fn _count_nulls {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), len: int, cap: int n): int = let
+  fun loop {l2:agz}{n2:pos}{fuel:nat} .<fuel>.
+    (buf: !$A.arr(byte, l2, n2), cap: int n2,
+     pos: int, len: int, count: int, fuel: int fuel): int =
+    if fuel <= 0 then count
+    else if pos >= len then count
+    else let
+      val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, cap)))
+    in
+      if b = 0 then loop(buf, cap, pos + 1, len, count + 1, fuel - 1)
+      else loop(buf, cap, pos + 1, len, count, fuel - 1)
+    end
+  val len1 = g1ofg0(len)
+in if len1 <= 0 then 0 else loop(buf, cap, 0, len1, 0, len1) end
+
 #pub fn run_cmd {le:agz}
   (exec_bv: !$A.borrow(byte, le, 524288), exec_len: int,
-   argv_b: $B.builder_v, argc: int): int
+   argv_b: $B.builder_v): int
 
-implement run_cmd (exec_bv, exec_len, argv_b, argc) = let
-  val @(argv_arr, _) = $B.to_arr(argv_b)
+implement run_cmd (exec_bv, exec_len, argv_b) = let
+  val @(argv_arr, argv_len) = $B.to_arr(argv_b)
+  val argc = _count_nulls(argv_arr, argv_len, 524288)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   var envp_b = $B.create()
   val () = $B.bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
@@ -501,11 +519,12 @@ in @(y2, m, d, secs_of_day) end
 (* Run a command and capture stdout into outbuf. Returns @(exit_code, stdout_len). *)
 #pub fn run_cmd_capture {le:agz}{lo:agz}
   (exec_bv: !$A.borrow(byte, le, 524288), exec_len: int,
-   argv_b: $B.builder_v, argc: int,
+   argv_b: $B.builder_v,
    outbuf: !$A.arr(byte, lo, 4096)): @(int, int)
 
-implement run_cmd_capture (exec_bv, exec_len, argv_b, argc, outbuf) = let
-  val @(argv_arr, _) = $B.to_arr(argv_b)
+implement run_cmd_capture (exec_bv, exec_len, argv_b, outbuf) = let
+  val @(argv_arr, argv_len) = $B.to_arr(argv_b)
+  val argc = _count_nulls(argv_arr, argv_len, 524288)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   var envp_b = $B.create()
   val () = $B.bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
