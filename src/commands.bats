@@ -6,6 +6,7 @@
 #use arith as AR
 #use builder as B
 #use file as F
+#use list as L
 #use str as S
 #use process as P
 #use result as R
@@ -867,22 +868,26 @@ end
 #pub fn run_process_demo(): void
 
 implement run_process_demo() = let
-  var path_b = $B.create()
-  val () = $B.bput(path_b, "/bin/echo")
-  val () = $B.put_char(path_b, 0)
+  val path_arr = str_to_path_arr("/bin/echo")
+  val @(fz_p, bv_p) = $A.freeze<byte>(path_arr)
 
-  (* argv: "echo\0check passed\0" *)
-  var b_argv = $B.create()
-  val () = $B.bput(b_argv, "echo")
-  val () = $B.put_char(b_argv, 0)
-  val () = $B.bput(b_argv, "check passed")
-  val () = $B.put_char(b_argv, 0)
+  (* argv: list of arg entries *)
+  var b_a1 = $B.create()
+  val () = $B.bput(b_a1, "echo")
+  val @(a1_arr, a1_len) = $B.to_arr(b_a1)
+  var b_a2 = $B.create()
+  val () = $B.bput(b_a2, "check passed")
+  val @(a2_arr, a2_len) = $B.to_arr(b_a2)
+  val argv_list = $L.list_vt_cons(@(a1_arr, a1_len),
+    $L.list_vt_cons(@(a2_arr, a2_len), $L.list_vt_nil()))
 
-  (* envp: empty *)
-  var envp_b: $B.builder_v = $B.create()
+  (* envp: empty list *)
+  val envp_list: $L.listv($P.arg_entry) = $L.list_vt_nil()
 
-  val spawn_r = $P.spawn_buf(path_b, b_argv, envp_b,
+  val spawn_r = $P.spawn_bv(bv_p, argv_list, envp_list,
     $P.dev_null(), $P.pipe_new(), $P.dev_null())
+  val () = $A.drop<byte>(fz_p, bv_p)
+  val () = $A.free<byte>($A.thaw<byte>(fz_p))
 in
   case+ spawn_r of
   | ~$R.ok(sp) => let
