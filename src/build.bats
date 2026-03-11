@@ -1619,7 +1619,36 @@ in
       val () = $A.drop<byte>(fz_tgtr, bv_tgtr)
       val () = $A.free<byte>($A.thaw<byte>(fz_tgtr))
       (* If target changed, preprocess_one will force reprocessing *)
-      val target_changed = ~($AR.eq_int_int(old_target, build_target))
+      val target_changed_tgt = ~($AR.eq_int_int(old_target, build_target))
+      (* Cache buster: when compiler semantics change, bump this ID.
+         If the stored ID differs, force reprocessing of all cached files. *)
+      val cache_buster_id = 49 (* ASCII '1' — bump when output semantics change *)
+      val cid_path_r = str_to_path_arr("build/.bats_cache_id")
+      val @(fz_cidr, bv_cidr) = $A.freeze<byte>(cid_path_r)
+      val old_cid_or = $F.file_open(bv_cidr, 524288, 0, 0)
+      val old_cid = (case+ old_cid_or of
+        | ~$R.ok(cfd) => let
+            val cb = $A.alloc<byte>(16)
+            val cr = $F.file_read(cfd, cb, 16)
+            val cl = (case+ cr of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+            val cc = $F.file_close(cfd)
+            val () = $R.discard<int><int>(cc)
+            val ov = byte2int0($A.get<byte>(cb, 0))
+            val () = $A.free<byte>(cb)
+          in (if cl > 0 then ov else ~1): int end
+        | ~$R.err(_) => ~1): int
+      val () = $A.drop<byte>(fz_cidr, bv_cidr)
+      val () = $A.free<byte>($A.thaw<byte>(fz_cidr))
+      val cache_busted = ~($AR.eq_int_int(old_cid, cache_buster_id))
+      val target_changed = (target_changed_tgt || cache_busted)
+      (* Write cache buster ID *)
+      var cid_b : $B.builder_v = $B.create()
+      val () = put_char_v(cid_b, cache_buster_id)
+      val cid_path = str_to_path_arr("build/.bats_cache_id")
+      val @(fz_cidp, bv_cidp) = $A.freeze<byte>(cid_path)
+      val _ = write_file_from_builder(bv_cidp, 524288, cid_b)
+      val () = $A.drop<byte>(fz_cidp, bv_cidp)
+      val () = $A.free<byte>($A.thaw<byte>(fz_cidp))
       (* Now write new target marker *)
       var tgt_b : $B.builder_v = $B.create()
       val () = bput_v(tgt_b, (if $AR.eq_int_int(build_target, 1) then "1" else "0"))
