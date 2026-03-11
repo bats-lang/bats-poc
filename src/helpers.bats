@@ -410,8 +410,10 @@ implement run_mkdir(path_b) = let
 in rc end
 
 (* Count null bytes in an array — each null terminates one argv entry *)
-fn _count_nulls {l:agz}{n:pos}
-  (buf: !$A.arr(byte, l, n), len: int, cap: int n): int = let
+#pub fun count_nulls {l:agz}{n:pos}
+  (buf: !$A.arr(byte, l, n), len: int, cap: int n): int
+
+implement count_nulls {l}{n} (buf, len, cap) = let
   fun loop {l2:agz}{n2:pos}{fuel:nat} .<fuel>.
     (buf: !$A.arr(byte, l2, n2), cap: int n2,
      pos: int, len: int, count: int, fuel: int fuel): int =
@@ -432,7 +434,7 @@ in if len1 <= 0 then 0 else loop(buf, cap, 0, len1, 0, len1) end
 
 implement run_cmd (exec_bv, exec_len, argv_b) = let
   val @(argv_arr, argv_len) = $B.to_arr(argv_b)
-  val argc = _count_nulls(argv_arr, argv_len, 524288)
+  val argc = count_nulls(argv_arr, argv_len, 524288)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   var envp_b = $B.create()
   val () = $B.bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
@@ -524,7 +526,7 @@ in @(y2, m, d, secs_of_day) end
 
 implement run_cmd_capture (exec_bv, exec_len, argv_b, outbuf) = let
   val @(argv_arr, argv_len) = $B.to_arr(argv_b)
-  val argc = _count_nulls(argv_arr, argv_len, 524288)
+  val argc = count_nulls(argv_arr, argv_len, 524288)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   var envp_b = $B.create()
   val () = $B.bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")
@@ -600,14 +602,16 @@ implement run_patsopt(ph, phlen, out_bv, out_len, in_bv, in_len) = let
   val () = copy_to_builder(in_bv, 0, in_clen, 524288, argv_b,
     4096)
   val () = $B.put_char(argv_b, 0)
-  val @(argv_arr, _) = $B.to_arr(argv_b)
+  val @(argv_arr, argv_len) = $B.to_arr(argv_b)
+  val argc = count_nulls(argv_arr, argv_len, 524288)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   var envp_b = $B.create()
   val () = $B.bput(envp_b, "PATSHOME=")
   val () = copy_to_builder(ph, 0, phlen, 512, envp_b,
     512)
   val () = $B.put_char(envp_b, 0)
-  val @(envp_arr, _) = $B.to_arr(envp_b)
+  val @(envp_arr, envp_len) = $B.to_arr(envp_b)
+  val envp_c = count_nulls(envp_arr, envp_len, 524288)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
   val _verbose = if is_verbose() then 1 else 0
   val () = (if $AR.gt_int_int(_verbose, 0) then let
@@ -618,7 +622,7 @@ implement run_patsopt(ph, phlen, out_bv, out_len, in_bv, in_len) = let
     val () = print_borrow(in_bv, 0, in_len, 524288,
       4096)
   in print_newline() end else ())
-  val sr = $P.spawn(bv_exec, 524288, bv_a, 11, bv_e, 1,
+  val sr = $P.spawn(bv_exec, 524288, bv_a, argc, bv_e, envp_c,
     $P.dev_null(), $P.dev_null(), $P.pipe_new())
   val () = $A.drop<byte>(fz_exec, bv_exec)
   val () = $A.free<byte>($A.thaw<byte>(fz_exec))
@@ -696,7 +700,7 @@ implement run_cc(ph, phlen, out_bv, out_len, in_bv, in_len, rel) = let
   val () = copy_to_builder(in_bv, 0, cc_in_clen, 524288, argv_b,
     4096)
   val () = $B.put_char(argv_b, 0)
-  val argc = cc_opt_flags(argv_b, rel)
+  val _ = cc_opt_flags(argv_b, rel)
   val () = $B.bput(argv_b, "-I")
   val () = copy_to_builder(ph, 0, phlen, 512, argv_b,
     512)
@@ -706,7 +710,8 @@ implement run_cc(ph, phlen, out_bv, out_len, in_bv, in_len, rel) = let
     512)
   val () = $B.bput(argv_b, "/ccomp/runtime")
   val () = $B.put_char(argv_b, 0)
-  val @(argv_arr, _) = $B.to_arr(argv_b)
+  val @(argv_arr, argv_len) = $B.to_arr(argv_b)
+  val argc = count_nulls(argv_arr, argv_len, 524288)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   var envp_b = $B.create()
   val () = $B.bput(envp_b, "PATH=/usr/bin:/usr/local/bin:/bin")

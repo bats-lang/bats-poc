@@ -900,15 +900,16 @@ implement run_process_demo() = let
   val () = $B.put_char(b_argv, 101)
   val () = $B.put_char(b_argv, 100)
   val () = $B.put_char(b_argv, 0)
-  val @(argv_arr, _) = $B.to_arr(b_argv)
+  val @(argv_arr, argv_len) = $B.to_arr(b_argv)
+  val argc = count_nulls(argv_arr, argv_len, 524288)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
 
-  (* envp: single null byte *)
+  (* envp: empty *)
   val envp_arr = $A.alloc<byte>(1)
   val () = $A.write_byte(envp_arr, 0, 0)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
 
-  val spawn_r = $P.spawn(bv_p, 9, bv_a, 2, bv_e, 0,
+  val spawn_r = $P.spawn(bv_p, 9, bv_a, argc, bv_e, 0,
     $P.dev_null(), $P.pipe_new(), $P.dev_null())
 
   val () = $A.drop<byte>(fz_p, bv_p)
