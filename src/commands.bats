@@ -317,7 +317,7 @@ in
                 val () = $B.bput(ts_argv, "-1") val () = $B.put_char(ts_argv, 0)
                 val () = $B.bput(ts_argv, "--format=%ct") val () = $B.put_char(ts_argv, 0)
                 val ts_out = $A.alloc<byte>(4096)
-                val @(ts_rc, ts_len) = run_cmd_capture(bv_ge, 524288, ts_argv, 4, ts_out)
+                val @(ts_rc, ts_len) = run_cmd_capture(bv_ge, 524288, ts_argv, ts_out)
                 val ts = parse_decimal(ts_out, ts_len, 4096)
                 val () = $A.free<byte>(ts_out)
                 val @(yr, mo, dy, secs) = timestamp_to_calver(ts)
@@ -328,7 +328,7 @@ in
                 val () = $B.bput(br_argv, "--abbrev-ref") val () = $B.put_char(br_argv, 0)
                 val () = $B.bput(br_argv, "HEAD") val () = $B.put_char(br_argv, 0)
                 val br_out = $A.alloc<byte>(4096)
-                val @(br_rc, br_len) = run_cmd_capture(bv_ge, 524288, br_argv, 4, br_out)
+                val @(br_rc, br_len) = run_cmd_capture(bv_ge, 524288, br_argv, br_out)
                 (* Check if branch is "main" (109,97,105,110) *)
                 val b0 = byte2int0($A.get<byte>(br_out, 0))
                 val b1 = byte2int0($A.get<byte>(br_out, 1))
@@ -406,7 +406,7 @@ in
                 val () = $A.free<byte>($A.thaw<byte>(fz_rp))
                 val () = $A.drop<byte>(fz_px, bv_px)
                 val () = $A.free<byte>($A.thaw<byte>(fz_px))
-                val rc = run_cmd(bv_ze, 524288, cmd, 5)
+                val rc = run_cmd(bv_ze, 524288, cmd)
                 val () = $A.drop<byte>(fz_ze, bv_ze)
                 val () = $A.free<byte>($A.thaw<byte>(fz_ze))
               in
@@ -613,7 +613,7 @@ in
     var pwd_argv = $B.create()
     val () = $B.bput(pwd_argv, "pwd") val () = $B.put_char(pwd_argv, 0)
     (* TODO: run_cmd sends stdout to /dev/null, need stdout capture *)
-    val _ = run_cmd(bv_pwd, 524288, pwd_argv, 1)
+    val _ = run_cmd(bv_pwd, 524288, pwd_argv)
     val () = $A.drop<byte>(fz_pwd, bv_pwd)
     val () = $A.free<byte>($A.thaw<byte>(fz_pwd))
     (* Write placeholder CWD *)
@@ -844,7 +844,7 @@ in
       val () = $A.drop<byte>(fz_pat, bv_pat)
       val () = $A.free<byte>($A.thaw<byte>(fz_pat))
       val () = bput_v(sed_argv, "bats.toml") val () = put_char_v(sed_argv, 0)
-      val rc = run_cmd(bv_se, 524288, sed_argv, 4)
+      val rc = run_cmd(bv_se, 524288, sed_argv)
       val () = $A.drop<byte>(fz_se, bv_se)
       val () = $A.free<byte>($A.thaw<byte>(fz_se))
     in
@@ -900,15 +900,16 @@ implement run_process_demo() = let
   val () = $B.put_char(b_argv, 101)
   val () = $B.put_char(b_argv, 100)
   val () = $B.put_char(b_argv, 0)
-  val @(argv_arr, _) = $B.to_arr(b_argv)
+  val @(argv_arr, argv_len) = $B.to_arr(b_argv)
+  val argc = count_nulls(argv_arr, argv_len, 524288)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
 
-  (* envp: single null byte *)
+  (* envp: empty *)
   val envp_arr = $A.alloc<byte>(1)
   val () = $A.write_byte(envp_arr, 0, 0)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
 
-  val spawn_r = $P.spawn(bv_p, 9, bv_a, 2, bv_e, 0,
+  val spawn_r = $P.spawn(bv_p, 9, bv_a, argc, bv_e, 0,
     $P.dev_null(), $P.pipe_new(), $P.dev_null())
 
   val () = $A.drop<byte>(fz_p, bv_p)
@@ -1115,7 +1116,7 @@ in
               var run_argv: $B.builder_v = $B.create()
               val () = copy_to_builder_v(bv_ea, 0, exec_len - 1, 524288, run_argv)
               val () = put_char_v(run_argv, 0)
-              val rc = run_cmd(bv_ea, 524288, run_argv, 1)
+              val rc = run_cmd(bv_ea, 524288, run_argv)
               val () = $A.drop<byte>(fz_ea, bv_ea)
               val () = $A.free<byte>($A.thaw<byte>(fz_ea))
             in
