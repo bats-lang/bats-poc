@@ -1139,6 +1139,7 @@ end
 
 implement do_check() = let
   val () = do_build(0, 0)
+  val () = do_build(0, 1)
   val () = println! ("  process: check passed")
   val () = println! ("  exit code: 0")
 in
