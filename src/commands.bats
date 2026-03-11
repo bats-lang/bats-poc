@@ -867,57 +867,22 @@ end
 #pub fn run_process_demo(): void
 
 implement run_process_demo() = let
-  (* "/bin/echo" -- 9 bytes, exact alloc for spawn path *)
-  val path_arr = $A.alloc<byte>(9)
-  val () = $A.write_byte(path_arr, 0, 47)   (* / *)
-  val () = $A.write_byte(path_arr, 1, 98)   (* b *)
-  val () = $A.write_byte(path_arr, 2, 105)  (* i *)
-  val () = $A.write_byte(path_arr, 3, 110)  (* n *)
-  val () = $A.write_byte(path_arr, 4, 47)   (* / *)
-  val () = $A.write_byte(path_arr, 5, 101)  (* e *)
-  val () = $A.write_byte(path_arr, 6, 99)   (* c *)
-  val () = $A.write_byte(path_arr, 7, 104)  (* h *)
-  val () = $A.write_byte(path_arr, 8, 111)  (* o *)
-  val @(fz_p, bv_p) = $A.freeze<byte>(path_arr)
+  var path_b = $B.create()
+  val () = $B.bput(path_b, "/bin/echo")
+  val () = $B.put_char(path_b, 0)
 
   (* argv: "echo\0check passed\0" *)
   var b_argv = $B.create()
-  val () = $B.put_char(b_argv, 101)
-  val () = $B.put_char(b_argv, 99)
-  val () = $B.put_char(b_argv, 104)
-  val () = $B.put_char(b_argv, 111)
+  val () = $B.bput(b_argv, "echo")
   val () = $B.put_char(b_argv, 0)
-  val () = $B.put_char(b_argv, 99)
-  val () = $B.put_char(b_argv, 104)
-  val () = $B.put_char(b_argv, 101)
-  val () = $B.put_char(b_argv, 99)
-  val () = $B.put_char(b_argv, 107)
-  val () = $B.put_char(b_argv, 32)
-  val () = $B.put_char(b_argv, 112)
-  val () = $B.put_char(b_argv, 97)
-  val () = $B.put_char(b_argv, 115)
-  val () = $B.put_char(b_argv, 115)
-  val () = $B.put_char(b_argv, 101)
-  val () = $B.put_char(b_argv, 100)
+  val () = $B.bput(b_argv, "check passed")
   val () = $B.put_char(b_argv, 0)
-  val @(argv_arr, argv_len) = $B.to_arr(b_argv)
-  val argc = count_nulls(argv_arr, argv_len, 524288)
-  val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
 
   (* envp: empty *)
-  val envp_arr = $A.alloc<byte>(1)
-  val () = $A.write_byte(envp_arr, 0, 0)
-  val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
+  var envp_b: $B.builder_v = $B.create()
 
-  val spawn_r = $P.spawn(bv_p, 9, bv_a, argc, bv_e, 0,
+  val spawn_r = $P.spawn_buf(path_b, b_argv, envp_b,
     $P.dev_null(), $P.pipe_new(), $P.dev_null())
-
-  val () = $A.drop<byte>(fz_p, bv_p)
-  val () = $A.free<byte>($A.thaw<byte>(fz_p))
-  val () = $A.drop<byte>(fz_a, bv_a)
-  val () = $A.free<byte>($A.thaw<byte>(fz_a))
-  val () = $A.drop<byte>(fz_e, bv_e)
-  val () = $A.free<byte>($A.thaw<byte>(fz_e))
 in
   case+ spawn_r of
   | ~$R.ok(sp) => let
