@@ -297,17 +297,85 @@ in
               val () = bput_v(mbb, "bats_modules")
               val _ = run_mkdir(mbb)
               var lock_b : $B.builder_v = $B.create()
+              (* Read existing bats.lock for version pinning *)
+              val el_path = str_to_path_arr("bats.lock")
+              val @(fz_elp, bv_elp) = $A.freeze<byte>(el_path)
+              val el_or = $F.file_open(bv_elp, 524288, 0, 0)
+              val () = $A.drop<byte>(fz_elp, bv_elp)
+              val () = $A.free<byte>($A.thaw<byte>(fz_elp))
+              val @(el_buf, el_len) = (case+ el_or of
+                | ~$R.ok(elfd) => let
+                    val eb = $A.alloc<byte>(524288)
+                    val er = $F.file_read(elfd, eb, 524288)
+                    val elen = (case+ er of | ~$R.ok(n) => n | ~$R.err(_) => 0): int
+                    val ecr = $F.file_close(elfd)
+                    val () = $R.discard<int><int>(ecr)
+                  in @(eb, elen) end
+                | ~$R.err(_) => let val eb = $A.alloc<byte>(524288) in @(eb, 0) end
+                ): [lel:agz] @($A.arr(byte, lel, 524288), int)
+              val @(fz_el, bv_el) = $A.freeze<byte>(el_buf)
+              (* Search existing lock for a dep's version.
+                 Returns (version_start, version_end) in lock buffer, or (-1,-1). *)
+              fun lock_find_ver {lel:agz}{lk:agz}{fuel:nat} .<fuel>.
+                (elb: !$A.borrow(byte, lel, 524288), el_len: int,
+                 ks: !$A.arr(byte, lk, 4096), ds: int, de: int,
+                 pos: int, fuel: int fuel): @(int, int) =
+                if fuel <= 0 then @(~1, ~1)
+                else if pos >= el_len then @(~1, ~1)
+                else let
+                  val dl = de - ds
+                  fun match_n {lel2:agz}{lk2:agz}{f2:nat} .<f2>.
+                    (elb: !$A.borrow(byte, lel2, 524288),
+                     ks: !$A.arr(byte, lk2, 4096),
+                     ei: int, ki: int, rem: int, f2: int f2): bool =
+                    if f2 <= 0 then true
+                    else if rem <= 0 then true
+                    else let
+                      val eb = $S.borrow_byte(elb, ei, 524288)
+                      val kb = (if ki >= 0 then if ki < 4096 then
+                        byte2int0($A.get<byte>(ks, $AR.checked_idx(ki, 4096)))
+                        else 0 else 0): int
+                    in if $AR.neq_int_int(eb, kb) then false
+                      else match_n(elb, ks, ei + 1, ki + 1, rem - 1, f2 - 1)
+                    end
+                  val matches = match_n(elb, ks, pos, ds, dl, $AR.checked_nat(dl + 1))
+                  val after = pos + dl
+                  val sp = $S.borrow_byte(elb, after, 524288)
+                in
+                  if matches && $AR.eq_int_int(sp, 32) then let
+                    val vstart = after + 1
+                    fun find_sp {lel2:agz}{f2:nat} .<f2>.
+                      (elb: !$A.borrow(byte, lel2, 524288), i: int, f2: int f2): int =
+                      if f2 <= 0 then i
+                      else let val b = $S.borrow_byte(elb, i, 524288)
+                      in if $AR.eq_int_int(b, 32) || $AR.eq_int_int(b, 10) || $AR.eq_int_int(b, 0) then i
+                        else find_sp(elb, i + 1, f2 - 1)
+                      end
+                    val vend = find_sp(elb, vstart, 256)
+                  in @(vstart, vend) end
+                  else let
+                    fun skip_ln {lel2:agz}{f2:nat} .<f2>.
+                      (elb: !$A.borrow(byte, lel2, 524288), i: int, f2: int f2): int =
+                      if f2 <= 0 then i
+                      else let val b = $S.borrow_byte(elb, i, 524288)
+                      in if $AR.eq_int_int(b, 10) then i + 1
+                        else skip_ln(elb, i + 1, f2 - 1)
+                      end
+                    val nl = skip_ln(elb, pos, 524288)
+                  in lock_find_ver(elb, el_len, ks, ds, de, nl, fuel - 1) end
+                end
               (* Resolve each dependency *)
-              fun resolve {lk:agz}{lr:agz}{fuel:nat} .<fuel>.
+              fun resolve {lk:agz}{lr:agz}{lel:agz}{fuel:nat} .<fuel>.
                 (ks: !$A.arr(byte, lk, 4096), pos: int, kl: int,
                  rb: !$A.borrow(byte, lr, 4096), rl: int,
+                 elb: !$A.borrow(byte, lel, 524288), el_len: int,
                  lb: !$B.builder_v >> $B.builder_v, cnt: int, fuel: int fuel): int =
                 if fuel <= 0 then cnt
                 else if pos >= kl then cnt
                 else let
                   val de = $S.find_null(ks, pos, 4096, 4096)
                   val dl = de - pos
-                in if dl <= 0 then resolve(ks, de + 1, kl, rb, rl, lb, cnt, fuel - 1)
+                in if dl <= 0 then resolve(ks, de + 1, kl, rb, rl, elb, el_len, lb, cnt, fuel - 1)
                   else let
                     (* Strip quotes from key name *)
                     val first_byte = (if pos >= 0 then if pos < 4096 then
@@ -334,7 +402,21 @@ in
                           val () = $R.discard<int><int>(cr)
                         in true end
                       | ~$R.err(_) => false): bool
-                  in let
+                    (* Check existing lock for pinned version *)
+                    val @(lock_vs, lock_ve) = (if already then
+                      lock_find_ver(elb, el_len, ks, dep_start, dep_end, 0, 524288)
+                      else @(~1, ~1)): @(int, int)
+                  in
+                    if lock_vs >= 0 then let
+                      (* Dep is present and pinned — write lock line, don't bump count *)
+                      val () = arr_range_to_builder_v(ks, dep_start, dep_end, lb)
+                      val () = put_char_v(lb, 32)
+                      val () = copy_to_builder_v(elb, lock_vs, lock_ve, 524288, lb)
+                      val () = put_char_v(lb, 32)
+                      val () = bput_v(lb, "0")
+                      val () = put_char_v(lb, 10)
+                    in resolve(ks, de+1, kl, rb, rl, elb, el_len, lb, cnt, fuel-1) end
+                    else let
                     (* Scan repo/<dep>/ for latest .bats archive *)
                     var dir_b : $B.builder_v = $B.create()
                     val () = copy_to_builder_v(rb, 0, rl, 4096, dir_b)
@@ -480,7 +562,7 @@ in
                           val () = print_arr(ks, dep_start, dep_end, 4096, 4096)
                           val () = print_newline()
                           val () = $A.free<byte>(best)
-                        in resolve(ks, de+1, kl, rb, rl, lb, cnt, fuel-1) end
+                        in resolve(ks, de+1, kl, rb, rl, elb, el_len, lb, cnt, fuel-1) end
                         else let
                           (* Fetch only if not already present *)
                           val @(fz_b, bv_b) = $A.freeze<byte>(best)
@@ -548,7 +630,7 @@ in
                           val () = put_char_v(lb, 10)
                           val () = $A.drop<byte>(fz_b, bv_b)
                           val () = $A.free<byte>($A.thaw<byte>(fz_b))
-                        in resolve(ks, de+1, kl, rb, rl, lb, cnt+1, fuel-1) end
+                        in resolve(ks, de+1, kl, rb, rl, elb, el_len, lb, cnt+1, fuel-1) end
                         else let
                           val () = bput_v(lb, "unknown")
                           val () = put_char_v(lb, 32)
@@ -556,21 +638,22 @@ in
                           val () = put_char_v(lb, 10)
                           val () = $A.drop<byte>(fz_b, bv_b)
                           val () = $A.free<byte>($A.thaw<byte>(fz_b))
-                        in resolve(ks, de+1, kl, rb, rl, lb, cnt+1, fuel-1) end end
+                        in resolve(ks, de+1, kl, rb, rl, elb, el_len, lb, cnt+1, fuel-1) end end
                       end
                     | ~$R.err(_) => let
                         val () = print! ("error: package not found: ")
                         val () = print_arr(ks, dep_start, dep_end, 4096, 4096)
                         val () = print_newline()
-                      in resolve(ks, de+1, kl, rb, rl, lb, cnt, fuel-1) end
+                      in resolve(ks, de+1, kl, rb, rl, elb, el_len, lb, cnt, fuel-1) end
                   end end
                 end
-              val n = resolve(keys, 0, klen, bv_rb3, rplen, lock_b, 0, 200)
+              val n = resolve(keys, 0, klen, bv_rb3, rplen, bv_el, el_len, lock_b, 0, 200)
               val () = $A.free<byte>(keys)
               (* Resolve transitive deps by running resolve again on deps found
                  in extracted packages' bats.toml files. Repeat until stable. *)
-              fun resolve_pass {lr2:agz}{fuel:nat} .<fuel>.
+              fun resolve_pass {lr2:agz}{lel2:agz}{fuel:nat} .<fuel>.
                 (rb2: !$A.borrow(byte, lr2, 4096), rl2: int,
+                 elb2: !$A.borrow(byte, lel2, 524288), el_len2: int,
                  lb2: !$B.builder_v >> $B.builder_v, prev_cnt: int, fuel: int fuel): int =
                 if fuel <= 0 then prev_cnt
                 else let
@@ -583,9 +666,10 @@ in
                     | ~$R.ok(bd) => let
                         val tk = $A.alloc<byte>(4096)
                         (* Scan each package in bats_modules, resolve its deps immediately *)
-                        fun sdt {ltk:agz}{lr3:agz}{f3:nat} .<f3>.
+                        fun sdt {ltk:agz}{lr3:agz}{lel3:agz}{f3:nat} .<f3>.
                           (bd: !$F.dir, tk: !$A.arr(byte, ltk, 4096),
                            rb3: !$A.borrow(byte, lr3, 4096), rl3: int,
+                           elb3: !$A.borrow(byte, lel3, 524288), el_len3: int,
                            lb3: !$B.builder_v >> $B.builder_v, cnt3: int, f3: int f3): int =
                           if f3 <= 0 then cnt3
                           else let
@@ -594,7 +678,7 @@ in
                             val del = $R.option_unwrap_or<int>(nr, ~1)
                           in if del < 0 then let val () = $A.free<byte>(de) in cnt3 end
                             else let val dd = is_dot_or_dotdot(de, del, 256) in
-                              if dd then let val () = $A.free<byte>(de) in sdt(bd, tk, rb3, rl3, lb3, cnt3, f3-1) end
+                              if dd then let val () = $A.free<byte>(de) in sdt(bd, tk, rb3, rl3, elb3, el_len3, lb3, cnt3, f3-1) end
                               else let
                                 var tp : $B.builder_v = $B.create()
                                 val () = bput_v(tp, "bats_modules/")
@@ -631,15 +715,15 @@ in
                                           val () = $A.drop<byte>(fz_dka, bv_dka)
                                           val () = $A.free<byte>($A.thaw<byte>(fz_dka))
                                           val () = $T.toml_free(doc2)
-                                          val n2 = resolve(tk, 0, tkl2, rb3, rl3, lb3, cnt3, 200)
+                                          val n2 = resolve(tk, 0, tkl2, rb3, rl3, elb3, el_len3, lb3, cnt3, 200)
                                         in n2 end
                                       | ~$R.err(_) => cnt3
                                     end
                                   | ~$R.err(_) => cnt3): int
-                              in sdt(bd, tk, rb3, rl3, lb3, cnt4, f3-1) end
+                              in sdt(bd, tk, rb3, rl3, elb3, el_len3, lb3, cnt4, f3-1) end
                             end
                           end
-                        val cnt_out = sdt(bd, tk, rb2, rl2, lb2, prev_cnt, 200)
+                        val cnt_out = sdt(bd, tk, rb2, rl2, elb2, el_len2, lb2, prev_cnt, 200)
                         val dcr3 = $F.dir_close(bd)
                         val () = $R.discard<int><int>(dcr3)
                         val () = $A.free<byte>(tk)
@@ -647,15 +731,17 @@ in
                     | ~$R.err(_) => prev_cnt): int
                 in
                   if new_cnt > prev_cnt then
-                    resolve_pass(rb2, rl2, lb2, new_cnt, fuel - 1)
+                    resolve_pass(rb2, rl2, elb2, el_len2, lb2, new_cnt, fuel - 1)
                   else new_cnt
                 end
-              val n = resolve_pass(bv_rb3, rplen, lock_b, n, 10)
+              val n = resolve_pass(bv_rb3, rplen, bv_el, el_len, lock_b, n, 10)
               val lp = str_to_path_arr("bats.lock")
               val @(fz_lp, bv_lp) = $A.freeze<byte>(lp)
               val _ = write_file_from_builder(bv_lp, 524288, lock_b)
               val () = $A.drop<byte>(fz_lp, bv_lp)
               val () = $A.free<byte>($A.thaw<byte>(fz_lp))
+              val () = $A.drop<byte>(fz_el, bv_el)
+              val () = $A.free<byte>($A.thaw<byte>(fz_el))
               val () = println! ("wrote bats.lock (", n, " dependencies)")
               val () = $T.toml_free(doc)
             in end
