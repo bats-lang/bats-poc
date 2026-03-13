@@ -1856,6 +1856,27 @@ in
                                   in scan_ns(nsd2, ph2, ns_bv, ns_len, fuel2 - 1) end
                                   else let
                                     val @(fz_se, bv_se) = $A.freeze<byte>(se)
+                                    (* Check that subdir is a package (has bats.toml) *)
+                                    var ns_chk : $B.builder_v = $B.create()
+                                    val () = bput_v(ns_chk, "bats_modules/")
+                                    val () = copy_to_builder_v(ns_bv, 0, ns_len, 256, ns_chk)
+                                    val () = bput_v(ns_chk, "/")
+                                    val () = copy_to_builder_v(bv_se, 0, sel, 256, ns_chk)
+                                    val () = bput_v(ns_chk, "/bats.toml")
+                                    val () = put_char_v(ns_chk, 0)
+                                    val @(ns_chk_a, _) = $B.to_arr(ns_chk)
+                                    val @(fz_nsc, bv_nsc) = $A.freeze<byte>(ns_chk_a)
+                                    val ns_chk_or = $F.file_mtime(bv_nsc, 524288)
+                                    val ns_is_pkg = (case+ ns_chk_or of
+                                      | ~$R.ok(_) => true | ~$R.err(_) => false): bool
+                                    val () = $A.drop<byte>(fz_nsc, bv_nsc)
+                                    val () = $A.free<byte>($A.thaw<byte>(fz_nsc))
+                                  in
+                                    if ~ns_is_pkg then let
+                                      val () = $A.drop<byte>(fz_se, bv_se)
+                                      val () = $A.free<byte>($A.thaw<byte>(fz_se))
+                                    in scan_ns(nsd2, ph2, ns_bv, ns_len, fuel2 - 1) end
+                                    else let
                                     (* Build full dep name: <namespace>/<subdir> *)
                                     (* mkdir build/bats_modules/<namespace>/<subdir>/src *)
                                     var mc2 : $B.builder_v = $B.create()
@@ -2018,6 +2039,7 @@ in
                                     val () = $A.drop<byte>(fz_se, bv_se)
                                     val () = $A.free<byte>($A.thaw<byte>(fz_se))
                                   in scan_ns(nsd2, ph2, ns_bv, ns_len, fuel2 - 1) end
+                                  end
                                 end
                               end
                             val () = scan_ns(nsd2, ph, bv_e, elen, 100)
