@@ -6,7 +6,6 @@
 #use arith as AR
 #use builder as B
 #use file as F
-#use list as L
 #use str as S
 #use process as P
 #use result as R
@@ -312,24 +311,36 @@ in
                 val git_exec = str_to_path_arr("/usr/bin/git")
                 val @(fz_ge, bv_ge) = $A.freeze<byte>(git_exec)
                 (* Get commit timestamp *)
-                var ts_argv = $B.create()
-                val () = $B.bput(ts_argv, "git") val () = $B.put_char(ts_argv, 0)
-                val () = $B.bput(ts_argv, "log") val () = $B.put_char(ts_argv, 0)
-                val () = $B.bput(ts_argv, "-1") val () = $B.put_char(ts_argv, 0)
-                val () = $B.bput(ts_argv, "--format=%ct") val () = $B.put_char(ts_argv, 0)
+                var ts_b1 = $B.create()
+                val () = bput_v(ts_b1, "git")
+                var ts_b2 = $B.create()
+                val () = bput_v(ts_b2, "log")
+                var ts_b3 = $B.create()
+                val () = bput_v(ts_b3, "-1")
+                var ts_b4 = $B.create()
+                val () = bput_v(ts_b4, "--format=%ct")
+                val ts_argv = $L.list_vt_cons(mk_arg(ts_b1),
+                  $L.list_vt_cons(mk_arg(ts_b2), $L.list_vt_cons(mk_arg(ts_b3),
+                  $L.list_vt_cons(mk_arg(ts_b4), $L.list_vt_nil()))))
                 val ts_out = $A.alloc<byte>(4096)
-                val @(ts_rc, ts_len) = run_cmd_capture(bv_ge, 524288, ts_argv, ts_out)
+                val @(ts_rc, ts_len) = run_cmd_capture(bv_ge, ts_argv, ts_out)
                 val ts = parse_decimal(ts_out, ts_len, 4096)
                 val () = $A.free<byte>(ts_out)
                 val @(yr, mo, dy, secs) = timestamp_to_calver(ts)
                 (* Check if on main branch *)
-                var br_argv = $B.create()
-                val () = $B.bput(br_argv, "git") val () = $B.put_char(br_argv, 0)
-                val () = $B.bput(br_argv, "rev-parse") val () = $B.put_char(br_argv, 0)
-                val () = $B.bput(br_argv, "--abbrev-ref") val () = $B.put_char(br_argv, 0)
-                val () = $B.bput(br_argv, "HEAD") val () = $B.put_char(br_argv, 0)
+                var br_b1 = $B.create()
+                val () = bput_v(br_b1, "git")
+                var br_b2 = $B.create()
+                val () = bput_v(br_b2, "rev-parse")
+                var br_b3 = $B.create()
+                val () = bput_v(br_b3, "--abbrev-ref")
+                var br_b4 = $B.create()
+                val () = bput_v(br_b4, "HEAD")
+                val br_argv = $L.list_vt_cons(mk_arg(br_b1),
+                  $L.list_vt_cons(mk_arg(br_b2), $L.list_vt_cons(mk_arg(br_b3),
+                  $L.list_vt_cons(mk_arg(br_b4), $L.list_vt_nil()))))
                 val br_out = $A.alloc<byte>(4096)
-                val @(br_rc, br_len) = run_cmd_capture(bv_ge, 524288, br_argv, br_out)
+                val @(br_rc, br_len) = run_cmd_capture(bv_ge, br_argv, br_out)
                 (* Check if branch is "main" (109,97,105,110) *)
                 val b0 = byte2int0($A.get<byte>(br_out, 0))
                 val b1 = byte2int0($A.get<byte>(br_out, 1))
@@ -394,20 +405,27 @@ in
                 val _ = run_mkdir(mkd)
                 val zip_exec = str_to_path_arr("/usr/bin/zip")
                 val @(fz_ze, bv_ze) = $A.freeze<byte>(zip_exec)
-                var cmd: $B.builder_v = $B.create()
-                val () = bput_v(cmd, "zip") val () = put_char_v(cmd, 0)
-                val () = bput_v(cmd, "-r") val () = put_char_v(cmd, 0)
-                val () = copy_to_builder_v(bv_zp, 0, zpa_len - 1, 524288, cmd)
-                val () = put_char_v(cmd, 0)
-                val () = bput_v(cmd, "bats.toml") val () = put_char_v(cmd, 0)
-                val () = bput_v(cmd, "src/") val () = put_char_v(cmd, 0)
+                var za1 = $B.create()
+                val () = bput_v(za1, "zip")
+                var za2 = $B.create()
+                val () = bput_v(za2, "-r")
+                var za3 = $B.create()
+                val () = copy_to_builder_v(bv_zp, 0, zpa_len - 1, 524288, za3)
+                var za4 = $B.create()
+                val () = bput_v(za4, "bats.toml")
+                var za5 = $B.create()
+                val () = bput_v(za5, "src/")
                 val () = $A.drop<byte>(fz_nb, bv_nb)
                 val () = $A.free<byte>($A.thaw<byte>(fz_nb))
                 val () = $A.drop<byte>(fz_rp, bv_rp)
                 val () = $A.free<byte>($A.thaw<byte>(fz_rp))
                 val () = $A.drop<byte>(fz_px, bv_px)
                 val () = $A.free<byte>($A.thaw<byte>(fz_px))
-                val rc = run_cmd(bv_ze, 524288, cmd)
+                val zip_argv = $L.list_vt_cons(mk_arg(za1),
+                  $L.list_vt_cons(mk_arg(za2), $L.list_vt_cons(mk_arg(za3),
+                  $L.list_vt_cons(mk_arg(za4), $L.list_vt_cons(mk_arg(za5),
+                  $L.list_vt_nil())))))
+                val rc = run_cmd(bv_ze, zip_argv)
                 val () = $A.drop<byte>(fz_ze, bv_ze)
                 val () = $A.free<byte>($A.thaw<byte>(fz_ze))
               in
@@ -611,10 +629,11 @@ in
     (* Get CWD via pwd *)
     val pwd_exec = str_to_path_arr("/bin/pwd")
     val @(fz_pwd, bv_pwd) = $A.freeze<byte>(pwd_exec)
-    var pwd_argv = $B.create()
-    val () = $B.bput(pwd_argv, "pwd") val () = $B.put_char(pwd_argv, 0)
+    var pwd_b1 = $B.create()
+    val () = bput_v(pwd_b1, "pwd")
+    val pwd_argv = $L.list_vt_cons(mk_arg(pwd_b1), $L.list_vt_nil())
     (* TODO: run_cmd sends stdout to /dev/null, need stdout capture *)
-    val _ = run_cmd(bv_pwd, 524288, pwd_argv)
+    val _ = run_cmd(bv_pwd, pwd_argv)
     val () = $A.drop<byte>(fz_pwd, bv_pwd)
     val () = $A.free<byte>($A.thaw<byte>(fz_pwd))
     (* Write placeholder CWD *)
@@ -830,22 +849,21 @@ in
       val () = $A.free<byte>(tbuf)
       val sed_exec = str_to_path_arr("/usr/bin/sed")
       val @(fz_se, bv_se) = $A.freeze<byte>(sed_exec)
-      var sed_argv: $B.builder_v = $B.create()
-      val () = bput_v(sed_argv, "sed") val () = put_char_v(sed_argv, 0)
-      val () = bput_v(sed_argv, "-i") val () = put_char_v(sed_argv, 0)
+      var sb1 = $B.create()
+      val () = bput_v(sb1, "sed")
+      var sb2 = $B.create()
+      val () = bput_v(sb2, "-i")
       (* Build pattern: /^"<pkg>"/d *)
       var pat_b: $B.builder_v = $B.create()
       val () = bput_v(pat_b, "/^\"")
       val () = copy_to_builder_v(bv, pkg_start, pkg_start + pkg_len, max, pat_b)
       val () = bput_v(pat_b, "\"/d")
-      val @(pat_a, pat_len) = $B.to_arr(pat_b)
-      val @(fz_pat, bv_pat) = $A.freeze<byte>(pat_a)
-      val () = copy_to_builder_v(bv_pat, 0, pat_len, 524288, sed_argv)
-      val () = put_char_v(sed_argv, 0)
-      val () = $A.drop<byte>(fz_pat, bv_pat)
-      val () = $A.free<byte>($A.thaw<byte>(fz_pat))
-      val () = bput_v(sed_argv, "bats.toml") val () = put_char_v(sed_argv, 0)
-      val rc = run_cmd(bv_se, 524288, sed_argv)
+      var sb4 = $B.create()
+      val () = bput_v(sb4, "bats.toml")
+      val sed_argv = $L.list_vt_cons(mk_arg(sb1), $L.list_vt_cons(mk_arg(sb2),
+        $L.list_vt_cons(mk_arg(pat_b), $L.list_vt_cons(mk_arg(sb4),
+        $L.list_vt_nil()))))
+      val rc = run_cmd(bv_se, sed_argv)
       val () = $A.drop<byte>(fz_se, bv_se)
       val () = $A.free<byte>($A.thaw<byte>(fz_se))
     in
@@ -868,26 +886,19 @@ end
 #pub fn run_process_demo(): void
 
 implement run_process_demo() = let
-  val path_arr = str_to_path_arr("/bin/echo")
-  val @(fz_p, bv_p) = $A.freeze<byte>(path_arr)
-
-  (* argv: list of arg entries *)
-  var b_a1 = $B.create()
-  val () = $B.bput(b_a1, "echo")
-  val @(a1_arr, a1_len) = $B.to_arr(b_a1)
-  var b_a2 = $B.create()
-  val () = $B.bput(b_a2, "check passed")
-  val @(a2_arr, a2_len) = $B.to_arr(b_a2)
-  val argv_list = $L.list_vt_cons(@(a1_arr, a1_len),
-    $L.list_vt_cons(@(a2_arr, a2_len), $L.list_vt_nil()))
-
-  (* envp: empty list *)
-  val envp_list: $L.listv($P.arg_entry) = $L.list_vt_nil()
-
-  val spawn_r = $P.spawn_bv(bv_p, argv_list, envp_list,
+  val exec = str_to_path_arr("/bin/echo")
+  val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
+  var ba1 = $B.create()
+  val () = bput_v(ba1, "echo")
+  var ba2 = $B.create()
+  val () = bput_v(ba2, "check passed")
+  val argv = $L.list_vt_cons(mk_arg(ba1),
+    $L.list_vt_cons(mk_arg(ba2), $L.list_vt_nil()))
+  val envp: $L.listv($P.arg_entry) = $L.list_vt_nil()
+  val spawn_r = $P.spawn(bv_exec, argv, envp,
     $P.dev_null(), $P.pipe_new(), $P.dev_null())
-  val () = $A.drop<byte>(fz_p, bv_p)
-  val () = $A.free<byte>($A.thaw<byte>(fz_p))
+  val () = $A.drop<byte>(fz_exec, bv_exec)
+  val () = $A.free<byte>($A.thaw<byte>(fz_exec))
 in
   case+ spawn_r of
   | ~$R.ok(sp) => let
@@ -1083,10 +1094,10 @@ in
               val () = put_char_v(cmd, 0)
               val @(exec_a, exec_len) = $B.to_arr(cmd)
               val @(fz_ea, bv_ea) = $A.freeze<byte>(exec_a)
-              var run_argv: $B.builder_v = $B.create()
-              val () = copy_to_builder_v(bv_ea, 0, exec_len - 1, 524288, run_argv)
-              val () = put_char_v(run_argv, 0)
-              val rc = run_cmd(bv_ea, 524288, run_argv)
+              var run_b1 = $B.create()
+              val () = copy_to_builder_v(bv_ea, 0, exec_len - 1, 524288, run_b1)
+              val run_argv = $L.list_vt_cons(mk_arg(run_b1), $L.list_vt_nil())
+              val rc = run_cmd(bv_ea, run_argv)
               val () = $A.drop<byte>(fz_ea, bv_ea)
               val () = $A.free<byte>($A.thaw<byte>(fz_ea))
             in

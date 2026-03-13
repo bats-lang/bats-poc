@@ -43,11 +43,19 @@ jobs:
           mkdir -p ~/bats-bin
           cp debug/bats ~/bats-bin/bats
 
+      - name: Fetch deps from lock
+        run: |
+          git clone https://github.com/bats-lang/repository-prototype.git ~/repository
+          mkdir -p bats_modules
+          awk '!seen[$1]++ { print $1, $2 }' bats.lock | while read name version; do
+            dir="bats_modules/$name"
+            mkdir -p "$dir"
+            unzip -o ~/repository/"$name"/"${name}_${version}.bats" -d "$dir"
+          done
+
       - name: bats check
         run: |
           export PATH=~/bats-bin:$PATH
-          git clone https://github.com/bats-lang/repository-prototype.git ~/repository
-          bats lock --repository ~/repository
           bats check --repository ~/repository
 
       - name: bats build
