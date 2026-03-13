@@ -3963,12 +3963,13 @@ in
                     val () = $A.free<byte>($A.thaw<byte>(fz_cei))
                     in end)
 
-                    (* Step 8: Link *)
+                    (* Step 8: Link to .new then atomic rename *)
                     var link : $B.builder_v = $B.create()
                     val () = (if rel > 0 then
                       bput_v(link, "clang -o dist/release/")
                       else bput_v(link, "clang -o dist/debug/"))
                     val () = copy_to_builder_v(bv_e, 0, stem_len, 256, link)
+                    val () = bput_v(link, ".new")
                     val () = bput_v(link, " build/_bats_entry_")
                     val () = copy_to_builder_v(bv_e, 0, stem_len, 256, link)
                     val () = bput_v(link, "_dats.o build/src/bin/")
@@ -4072,6 +4073,34 @@ in
                     val () = $A.free<byte>($A.thaw<byte>(fz_ss))
                     val () = $A.drop<byte>(fz_sd, bv_sd)
                     val () = $A.free<byte>($A.thaw<byte>(fz_sd))
+                    (* Rename .new to final for native builds *)
+                    val () = (if is_to_c() then ()
+                    else if rl = 0 then
+                      if bin_bt <= 0 then let
+                        var mv_src : $B.builder_v = $B.create()
+                        val () = (if rel > 0 then bput_v(mv_src, "dist/release/")
+                          else bput_v(mv_src, "dist/debug/"))
+                        val () = copy_to_builder_v(bv_e, 0, stem_len, 256, mv_src)
+                        val () = bput_v(mv_src, ".new")
+                        val a1 = mk_arg(mv_src)
+                        var mv_dst : $B.builder_v = $B.create()
+                        val () = (if rel > 0 then bput_v(mv_dst, "dist/release/")
+                          else bput_v(mv_dst, "dist/debug/"))
+                        val () = copy_to_builder_v(bv_e, 0, stem_len, 256, mv_dst)
+                        val a2 = mk_arg(mv_dst)
+                        var mv_n : $B.builder_v = $B.create()
+                        val () = bput_v(mv_n, "mv")
+                        val a0 = mk_arg(mv_n)
+                        val mv_exec = str_to_path_arr("/bin/mv")
+                        val @(fz_mve, bv_mve) = $A.freeze<byte>(mv_exec)
+                        val mv_argv = $L.list_vt_cons(a0,
+                          $L.list_vt_cons(a1,
+                          $L.list_vt_cons(a2, $L.list_vt_nil())))
+                        val _mvr = run_cmd(bv_mve, mv_argv)
+                        val () = $A.drop<byte>(fz_mve, bv_mve)
+                        val () = $A.free<byte>($A.thaw<byte>(fz_mve))
+                      in end else ()
+                    else ())
                     val () = (if is_to_c() then ()
                     else if rl = 0 then
                       if ~is_quiet() then
