@@ -1535,7 +1535,7 @@ implement do_build(release, build_target) = let
   var mb4 : $B.builder_v = $B.create()
   val () = bput_v(mb4, "dist/release")
   val r0 = run_mkdir(mb4)
-  val () = (if r0 <> 0 then println! ("error: mkdir failed") else ())
+  val () = (if r0 <> 0 then let val () = set_build_err() in println! ("error: mkdir failed") end else ())
 in
   if r0 <> 0 then ()
   else let
@@ -1565,7 +1565,7 @@ in
     val nrt_r = run_cmd(bv_nrt_exec, nrt_argv)
     val () = $A.drop<byte>(fz_nrt_exec, bv_nrt_exec)
     val () = $A.free<byte>($A.thaw<byte>(fz_nrt_exec))
-    val () = (if nrt_r <> 0 then println! ("error: failed to compile native runtime") else ())
+    val () = (if nrt_r <> 0 then let val () = set_build_err() in println! ("error: failed to compile native runtime") end else ())
     (* Step 2: Ensure ATS2 toolchain at $HOME/.bats/ats2 *)
     val phbuf = $A.alloc<byte>(512)
     val hk = $A.alloc<byte>(4)
@@ -1713,7 +1713,7 @@ in
         val () = println! ("ATS2 installed successfully")
       in r1 + r2 + r3 + r4 end): int
     in
-      if rc <> 0 then println! ("error: ATS2 installation failed") else ()
+      if rc <> 0 then let val () = set_build_err() in println! ("error: ATS2 installation failed") end else ()
     end
     val @(fz_patshome, bv_patshome) = $A.freeze<byte>(phbuf)
     val () = ensure_ats2(bv_patshome, phlen)
@@ -1721,6 +1721,7 @@ in
     if phlen <= 0 then let
       val () = $A.drop<byte>(fz_patshome, bv_patshome)
       val () = $A.free<byte>($A.thaw<byte>(fz_patshome))
+    val () = set_build_err()
     in println! ("error: HOME not set, cannot find ATS2 toolchain") end
     else let
 
@@ -1855,6 +1856,27 @@ in
                                   in scan_ns(nsd2, ph2, ns_bv, ns_len, fuel2 - 1) end
                                   else let
                                     val @(fz_se, bv_se) = $A.freeze<byte>(se)
+                                    (* Check that subdir is a package (has bats.toml) *)
+                                    var ns_chk : $B.builder_v = $B.create()
+                                    val () = bput_v(ns_chk, "bats_modules/")
+                                    val () = copy_to_builder_v(ns_bv, 0, ns_len, 256, ns_chk)
+                                    val () = bput_v(ns_chk, "/")
+                                    val () = copy_to_builder_v(bv_se, 0, sel, 256, ns_chk)
+                                    val () = bput_v(ns_chk, "/bats.toml")
+                                    val () = put_char_v(ns_chk, 0)
+                                    val @(ns_chk_a, _) = $B.to_arr(ns_chk)
+                                    val @(fz_nsc, bv_nsc) = $A.freeze<byte>(ns_chk_a)
+                                    val ns_chk_or = $F.file_mtime(bv_nsc, 524288)
+                                    val ns_is_pkg = (case+ ns_chk_or of
+                                      | ~$R.ok(_) => true | ~$R.err(_) => false): bool
+                                    val () = $A.drop<byte>(fz_nsc, bv_nsc)
+                                    val () = $A.free<byte>($A.thaw<byte>(fz_nsc))
+                                  in
+                                    if ~ns_is_pkg then let
+                                      val () = $A.drop<byte>(fz_se, bv_se)
+                                      val () = $A.free<byte>($A.thaw<byte>(fz_se))
+                                    in scan_ns(nsd2, ph2, ns_bv, ns_len, fuel2 - 1) end
+                                    else let
                                     (* Build full dep name: <namespace>/<subdir> *)
                                     (* mkdir build/bats_modules/<namespace>/<subdir>/src *)
                                     var mc2 : $B.builder_v = $B.create()
@@ -1896,6 +1918,7 @@ in
                                     val @(fz_sd2, bv_sd2) = $A.freeze<byte>(sda2)
                                     val pr2 = preprocess_one(bv_sp2, bv_ss2, bv_sd2, build_target, 1, target_changed)
                                     val () = (if pr2 <> 0 then let
+                                      val () = set_build_err()
                                       val () = print! ("warning: preprocess failed for dep ")
                                       val () = print_borrow(ns_bv, 0, ns_len, 256, 256)
                                       val () = print! ("/")
@@ -2016,6 +2039,7 @@ in
                                     val () = $A.drop<byte>(fz_se, bv_se)
                                     val () = $A.free<byte>($A.thaw<byte>(fz_se))
                                   in scan_ns(nsd2, ph2, ns_bv, ns_len, fuel2 - 1) end
+                                  end
                                 end
                               end
                             val () = scan_ns(nsd2, ph, bv_e, elen, 100)
@@ -2060,6 +2084,7 @@ in
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
                     val pr = preprocess_one(bv_sp, bv_ss, bv_sd, build_target, 1, target_changed)
                     val () = (if pr <> 0 then let
+                      val () = set_build_err()
                       val () = print! ("warning: preprocess failed for dep ")
                       val () = print_borrow(bv_e, 0, elen, 256, 256)
                     in print_newline() end
@@ -2133,6 +2158,7 @@ in
                                     val @(fz_sda, bv_sda) = $A.freeze<byte>(sda_ex)
                                     val pr_ex = preprocess_one(bv_spa, bv_ssa, bv_sda, build_target, 1, target_changed)
                                     val () = (if pr_ex <> 0 then let
+                                      val () = set_build_err()
                                       val () = print! ("warning: preprocess failed for extra file in dep ")
                                       val () = print_borrow(dep_bv, 0, dep_len, 256, 256)
                                     in print_newline() end
@@ -2231,6 +2257,7 @@ in
                     val @(fz_sda_sm, bv_sda_sm) = $A.freeze<byte>(sda_sm)
                     val pr_sm = preprocess_one(bv_spa_sm, bv_ssa_sm, bv_sda_sm, build_target, is_unsafe, target_changed)
                     val () = (if pr_sm <> 0 then let
+                      val () = set_build_err()
                       val () = print! ("warning: preprocess failed for src/")
                       val () = print_borrow(bv_esm, 0, elen_sm, 256, 256)
                     in print_newline() end
@@ -2702,6 +2729,7 @@ in
                     val @(fz_sd, bv_sd) = $A.freeze<byte>(sda)
                     val pr = preprocess_one(bv_sp, bv_ss, bv_sd, bin_bt, is_unsafe, target_changed)
                     val () = (if pr <> 0 then let
+                      val () = set_build_err()
                       val () = print! ("error: preprocess failed for ")
                       val () = print_borrow(bv_e, 0, elen, 256, 256)
                     in print_newline() end
@@ -2812,8 +2840,9 @@ in
                     val ew = write_file_from_builder(bv_ep, 524288, entry)
                     val () = $A.drop<byte>(fz_ep, bv_ep)
                     val () = $A.free<byte>($A.thaw<byte>(fz_ep))
-                    val () = (if ew <> 0 then
-                      println! ("error: failed to write synthetic entry")
+                    val () = (if ew <> 0 then let
+                      val () = set_build_err()
+                    in println! ("error: failed to write synthetic entry") end
                       else if ~is_quiet() then println! ("  generated synthetic entry")
                       else ())
 
@@ -2911,6 +2940,7 @@ in
                                                   val () = $A.drop<byte>(fz_pi, bv_pi)
                                                   val () = $A.free<byte>($A.thaw<byte>(fz_pi))
                                                   val () = (if rc_ns <> 0 then let
+                                                    val () = set_build_err()
                                                     val () = print! ("error: patsopt failed for dep ")
                                                     val () = print_borrow(ns_name, 0, ns_len, 256, 256)
                                                     val () = print! ("/")
@@ -2984,6 +3014,7 @@ in
                                   val () = $A.drop<byte>(fz_pi, bv_pi)
                                   val () = $A.free<byte>($A.thaw<byte>(fz_pi))
                                   in (if rc <> 0 then let
+                                    val () = set_build_err()
                                     val () = print! ("error: patsopt failed for dep ")
                                     val () = print_borrow(bv_de, 0, dlen, 256, 256)
                                   in print_newline() end
@@ -3070,6 +3101,7 @@ in
                                                     val () = $A.drop<byte>(fz_ei, bv_ei)
                                                     val () = $A.free<byte>($A.thaw<byte>(fz_ei))
                                                   in (if rc3 <> 0 then let
+                                                    val () = set_build_err()
                                                     val () = print! ("error: patsopt failed for extra ")
                                                     val () = print_borrow(bv_d3, 0, dl3, 256, 256)
                                                   in print_newline() end
@@ -3161,6 +3193,7 @@ in
                                     val () = $A.drop<byte>(fz_eism, bv_eism)
                                     val () = $A.free<byte>($A.thaw<byte>(fz_eism))
                                   in (if rc_sm <> 0 then let
+                                    val () = set_build_err()
                                     val () = print! ("error: patsopt failed for src module ")
                                     val () = print_borrow(bv_dpsm, 0, dl_psm, 256, 256)
                                   in print_newline() end
@@ -3217,8 +3250,9 @@ in
                     val () = $A.free<byte>($A.thaw<byte>(fz_po))
                     val () = $A.drop<byte>(fz_pi, bv_pi)
                     val () = $A.free<byte>($A.thaw<byte>(fz_pi))
-                    in (if rbp <> 0 then
-                      println! ("error: patsopt failed for binary")
+                    in (if rbp <> 0 then let
+                      val () = set_build_err()
+                    in println! ("error: patsopt failed for binary") end
                       else if ~is_quiet() then println! ("  patsopt: binary")
                       else ()) end)
 
@@ -3256,8 +3290,9 @@ in
                     val () = $A.free<byte>($A.thaw<byte>(fz_eo))
                     val () = $A.drop<byte>(fz_ei, bv_ei)
                     val () = $A.free<byte>($A.thaw<byte>(fz_ei))
-                    in (if rep <> 0 then
-                      println! ("error: patsopt failed for entry")
+                    in (if rep <> 0 then let
+                      val () = set_build_err()
+                    in println! ("error: patsopt failed for entry") end
                       else if ~is_quiet() then println! ("  patsopt: entry")
                       else ()) end)
 
@@ -3414,6 +3449,7 @@ in
                                   val () = $A.drop<byte>(fz_ci, bv_ci)
                                   val () = $A.free<byte>($A.thaw<byte>(fz_ci))
                                   in (if rc <> 0 then let
+                                    val () = set_build_err()
                                     val () = print! ("error: cc failed for dep ")
                                     val () = print_borrow(bv_de, 0, dlen, 256, 256)
                                   in print_newline() end else ()) end)
@@ -3494,6 +3530,7 @@ in
                                                     val () = $A.drop<byte>(fz_xi, bv_xi)
                                                     val () = $A.free<byte>($A.thaw<byte>(fz_xi))
                                                   in (if rc4 <> 0 then let
+                                                    val () = set_build_err()
                                                     val () = print! ("error: cc failed for extra ")
                                                     val () = print_borrow(bv_d4, 0, dl4, 256, 256)
                                                   in print_newline() end else ()) end)
@@ -3580,6 +3617,7 @@ in
                                     val () = $A.drop<byte>(fz_xism, bv_xism)
                                     val () = $A.free<byte>($A.thaw<byte>(fz_xism))
                                   in (if rc_csm <> 0 then let
+                                    val () = set_build_err()
                                     val () = print! ("error: cc failed for src module ")
                                     val () = print_borrow(bv_dcsm, 0, dl_csm, 256, 256)
                                   in print_newline() end else ()) end)
@@ -3603,7 +3641,7 @@ in
                       val _ = write_wasm_runtime_c()
                       val _ = write_wasm_stubs()
                       val wrt_rc = compile_wasm_runtime()
-                      val () = (if wrt_rc <> 0 then println! ("error: WASM runtime compile failed") else ())
+                      val () = (if wrt_rc <> 0 then let val () = set_build_err() in println! ("error: WASM runtime compile failed") end else ())
                       val () = println! ("  compiling WASM...")
                       (* Compile entry _dats.c *)
                       var we_b : $B.builder_v = $B.create()
@@ -4044,7 +4082,7 @@ in
                           val () = print_borrow(bv_e, 0, stem_len, 256, 256)
                         in print_newline() end
                       else ()
-                    else println! ("error: link failed"))
+                    else let val () = set_build_err() in println! ("error: link failed") end)
                     val () = $A.drop<byte>(fz_e, bv_e)
                     val () = $A.free<byte>($A.thaw<byte>(fz_e))
                   in scan_bins(d, ph, phlen, rel, fuel - 1) end
@@ -4085,8 +4123,9 @@ in
           val () = $A.free<byte>($A.thaw<byte>(fz_lc))
           val () = $A.drop<byte>(fz_ld, bv_ld)
           val () = $A.free<byte>($A.thaw<byte>(fz_ld))
-          val () = (if lrc <> 0 then
-            println! ("error: patsopt failed for src/lib.bats")
+          val () = (if lrc <> 0 then let
+            val () = set_build_err()
+          in println! ("error: patsopt failed for src/lib.bats") end
           else if ~is_quiet() then println! ("  patsopt: src/lib.bats")
           else ())
         in end

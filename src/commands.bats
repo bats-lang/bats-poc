@@ -1120,10 +1120,16 @@ end
 #pub fn do_check(): void
 
 implement do_check() = let
+  val () = clear_build_err()
   val () = do_build(0, 0)
   val () = do_build(0, 1)
-  val () = println! ("  process: check passed")
-  val () = println! ("  exit code: 0")
 in
-  println! ("check passed")
+  if has_build_err() then
+    println! ("check failed")
+  else let
+    val () = println! ("  process: check passed")
+    val () = println! ("  exit code: 0")
+  in
+    println! ("check passed")
+  end
 end
