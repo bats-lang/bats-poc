@@ -27,6 +27,7 @@ val g_bin: ref(string) = ref("")
 val g_to_c = ref<int>(0)
 val g_to_c_done = ref<int>(0)
 val g_self_path: ref(string) = ref("")
+val g_build_err = ref<bool>(false)
 
 #pub fn is_verbose(): bool
 
@@ -66,6 +67,12 @@ val g_self_path: ref(string) = ref("")
 
 #pub fn get_self_path(): string
 
+#pub fn set_build_err(): void
+
+#pub fn has_build_err(): bool
+
+#pub fn clear_build_err(): void
+
 implement is_verbose() = !g_verbose
 implement is_quiet() = !g_quiet
 implement is_test_mode() = !g_test_mode
@@ -85,6 +92,9 @@ implement set_to_c_done(v) = !g_to_c_done := v
 implement get_to_c_done() = !g_to_c_done
 implement set_self_path(s) = !g_self_path := s
 implement get_self_path() = !g_self_path
+implement set_build_err() = !g_build_err := true
+implement has_build_err() = !g_build_err
+implement clear_build_err() = !g_build_err := false
 
 (* ============================================================
    String builder helpers
