@@ -1747,7 +1747,7 @@ in
       val target_changed_tgt = ~($AR.eq_int_int(old_target, build_target))
       (* Cache buster: when compiler semantics change, bump this ID.
          If the stored ID differs, force reprocessing of all cached files. *)
-      val cache_buster_id = 49 (* ASCII '1' — bump when output semantics change *)
+      val cache_buster_id = 50 (* ASCII '2' — bumped: auto-clean stale .o on target change *)
       val cid_path_r = str_to_path_arr("build/.bats_cache_id")
       val @(fz_cidr, bv_cidr) = $A.freeze<byte>(cid_path_r)
       val old_cid_or = $F.file_open(bv_cidr, 524288, 0, 0)
@@ -1782,6 +1782,23 @@ in
       val _ = write_file_from_builder(bv_tgtp, 524288, tgt_b)
       val () = $A.drop<byte>(fz_tgtp, bv_tgtp)
       val () = $A.free<byte>($A.thaw<byte>(fz_tgtp))
+
+      (* When target changed or cache busted, remove stale .o files *)
+      val () = if target_changed then let
+        val exec = str_to_path_arr("/bin/sh")
+        val @(fz_exec, bv_exec) = $A.freeze<byte>(exec)
+        var b1 = $B.create()
+        val () = bput_v(b1, "sh")
+        var b2 = $B.create()
+        val () = bput_v(b2, "-c")
+        var b3 = $B.create()
+        val () = bput_v(b3, "rm -f build/*.o build/bats_modules/*/*/*.o build/bats_modules/*/*/*/*.o")
+        val argv = $L.list_vt_cons(mk_arg(b1), $L.list_vt_cons(mk_arg(b2),
+          $L.list_vt_cons(mk_arg(b3), $L.list_vt_nil())))
+        val _ = run_cmd(bv_exec, argv)
+        val () = $A.drop<byte>(fz_exec, bv_exec)
+        val () = $A.free<byte>($A.thaw<byte>(fz_exec))
+      in end else ()
 
       (* Step 3: Scan bats_modules/ for deps and preprocess *)
       val bm_arr = str_to_path_arr("bats_modules")
