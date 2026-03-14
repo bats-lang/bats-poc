@@ -738,11 +738,35 @@ in
               val lp = str_to_path_arr("bats.lock")
               val @(fz_lp, bv_lp) = $A.freeze<byte>(lp)
               val _ = write_file_from_builder(bv_lp, 524288, lock_b)
+              (* Count lines in bats.lock to report accurate dep count *)
+              val lf_or = $F.file_open(bv_lp, 524288, 0, 0)
+              val total_deps = (case+ lf_or of
+                | ~$R.ok(lfd) => let
+                    val lbuf = $A.alloc<byte>(524288)
+                    val lr2 = $F.file_read(lfd, lbuf, 524288)
+                    val ll = (case+ lr2 of | ~$R.ok(n2) => n2 | ~$R.err(_) => 0): int
+                    val lc = $F.file_close(lfd)
+                    val () = $R.discard<int><int>(lc)
+                    fun count_nl {la:agz}{k:nat} .<k>.
+                      (buf: !$A.arr(byte, la, 524288), pos: int, len: int,
+                       acc: int, fuel: int k): int =
+                      if fuel <= 0 then acc
+                      else if pos >= len then acc
+                      else if pos < 0 then acc
+                      else let
+                        val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, 524288)))
+                      in if $AR.eq_int_int(b, 10) then
+                        count_nl(buf, pos + 1, len, acc + 1, fuel - 1)
+                      else count_nl(buf, pos + 1, len, acc, fuel - 1) end
+                    val nc = count_nl(lbuf, 0, ll, 0, $AR.checked_nat(ll))
+                    val () = $A.free<byte>(lbuf)
+                  in nc end
+                | ~$R.err(_) => n): int
               val () = $A.drop<byte>(fz_lp, bv_lp)
               val () = $A.free<byte>($A.thaw<byte>(fz_lp))
               val () = $A.drop<byte>(fz_el, bv_el)
               val () = $A.free<byte>($A.thaw<byte>(fz_el))
-              val () = println! ("wrote bats.lock (", n, " dependencies)")
+              val () = println! ("wrote bats.lock (", total_deps, " dependencies)")
               val () = $T.toml_free(doc)
             in end
           | ~$R.err(e) => println! ("error: cannot parse bats.toml: ", e)
