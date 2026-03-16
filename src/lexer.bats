@@ -32,6 +32,8 @@ fn is_ident_start(b: int): bool =
    Kinds: 0=passthrough 1=hash_use 2=pub_decl 3=qualified
           4=unsafe_block 5=unsafe_construct 6=extcode
           7=target 8=unittest 9=restricted 10=unittest_run
+          11=target_block (opaque, expanded by post-lex pass)
+          13=target_begin 14=target_end
    Dests: 0=dats 1=sats 2=both
    ============================================================ *)
 
@@ -929,6 +931,75 @@ fun lex_main {l:agz}{n:pos}{fuel:nat} .<fuel>.
     in lex_main(src, src_len, max, spans, ep, count + 1, fuel - 1) end
   end
 
+(* ============================================================
+   Post-lex expansion: expand kind=11 target blocks
+   Replaces opaque target_block spans with target_begin (kind=13),
+   properly-lexed inner spans, and target_end (kind=14).
+   ============================================================ *)
+
+fn _get_i32 {l:agz}{n:pos}
+  (bv: !$A.borrow(byte, l, n), off: int, max: int n): int =
+  let
+    val b0 = $S.borrow_byte(bv, off, max)
+    val b1 = $S.borrow_byte(bv, off + 1, max)
+    val b2 = $S.borrow_byte(bv, off + 2, max)
+    val b3 = $S.borrow_byte(bv, off + 3, max)
+  in b0 + b1 * 256 + b2 * 65536 + b3 * 16777216 end
+
+(* Check if any kind=11 spans exist *)
+fun _has_target_blocks {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (spans: !$A.borrow(byte, l, n), max: int n,
+   span_count: int, idx: int, fuel: int fuel): bool =
+  if fuel <= 0 then false
+  else if idx >= span_count then false
+  else if $AR.eq_int_int($S.borrow_byte(spans, idx * 28, max), 11) then true
+  else _has_target_blocks(spans, max, span_count, idx + 1, fuel - 1)
+
+(* Copy one 28-byte span record from borrow to builder *)
+fun _copy_span_bytes {l:agz}{n:pos}{fuel:nat} .<fuel>.
+  (spans: !$A.borrow(byte, l, n), base: int, max: int n,
+   out: !$B.builder_v >> $B.builder_v, byte_idx: int, fuel: int fuel): void =
+  if fuel <= 0 then ()
+  else if byte_idx >= 28 then ()
+  else let
+    val b = $S.borrow_byte(spans, base + byte_idx, max)
+    val () = put_char_v(out, b)
+  in _copy_span_bytes(spans, base, max, out, byte_idx + 1, fuel - 1) end
+
+(* Expand target blocks: replace kind=11 with kind=13 + inner spans + kind=14 *)
+fun _expand_target_blocks {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
+  (src: !$A.borrow(byte, ls, ns), src_len: int, max: int ns,
+   spans: !$A.borrow(byte, lp, np), span_max: int np,
+   span_count: int, idx: int,
+   out: !$B.builder_v >> $B.builder_v,
+   new_count: int, fuel: int fuel): int =
+  if fuel <= 0 then new_count
+  else if idx >= span_count then new_count
+  else let
+    val kind = $S.borrow_byte(spans, idx * 28, span_max)
+  in
+    if $AR.eq_int_int(kind, 11) then let
+      val base = idx * 28
+      val ss = _get_i32(spans, base + 2, span_max)
+      val se = _get_i32(spans, base + 6, span_max)
+      val block_target = _get_i32(spans, base + 10, span_max)
+      val cs = _get_i32(spans, base + 14, span_max)
+      val ce = _get_i32(spans, base + 18, span_max)
+      (* Emit target_begin marker: kind=13, covers [ss, cs) *)
+      val () = put_span(out, 13, 0, ss, cs, block_target, 0, 0, 0)
+      (* Lex inner content: use ce as src_len bound *)
+      val @(_, inner_count) = lex_main(src, ce, max, out, cs, 0, max)
+      (* Emit target_end marker: kind=14, covers [ce, se) *)
+      val () = put_span(out, 14, 0, ce, se, 0, 0, 0, 0)
+    in _expand_target_blocks(src, src_len, max, spans, span_max,
+         span_count, idx + 1, out, new_count + inner_count + 2, fuel - 1) end
+    else let
+      (* Non-target span: copy 28 bytes as-is *)
+      val () = _copy_span_bytes(spans, idx * 28, span_max, out, 0, 28)
+    in _expand_target_blocks(src, src_len, max, spans, span_max,
+         span_count, idx + 1, out, new_count + 1, fuel - 1) end
+  end
+
 (* Top-level lex function *)
 #pub fn do_lex {l:agz}{n:pos}
   (src: !$A.borrow(byte, l, n), src_len: int, max: int n
@@ -938,4 +1009,18 @@ implement do_lex (src, src_len, max) = let
   var span_builder = $B.create()
   val @(_, span_count) = lex_main(src, src_len, max, span_builder, 0, 0, max)
   val @(span_arr, span_arr_len) = $B.to_arr(span_builder)
-in @(span_arr, span_arr_len, span_count) end
+  val @(fz, bv) = $A.freeze<byte>(span_arr)
+in
+  if _has_target_blocks(bv, 524288, span_count, 0, max) then let
+    var expanded = $B.create()
+    val new_count = _expand_target_blocks(src, src_len, max, bv, 524288,
+      span_count, 0, expanded, 0, max)
+    val () = $A.drop<byte>(fz, bv)
+    val () = $A.free<byte>($A.thaw<byte>(fz))
+    val @(exp_arr, exp_arr_len) = $B.to_arr(expanded)
+  in @(exp_arr, exp_arr_len, new_count) end
+  else let
+    val () = $A.drop<byte>(fz, bv)
+    val arr = $A.thaw<byte>(fz)
+  in @(arr, span_arr_len, span_count) end
+end
