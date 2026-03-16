@@ -698,45 +698,71 @@ fun emit_spans {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
                   sats, dats, build_target, is_unsafe, errors, target_state, fuel - 1)
   end
 
-(* Build dats prelude: self-stld + dependency staloads *)
+(* Build dats prelude: self-stld + dependency staloads.
+   Skips #use spans inside non-matching target blocks. *)
 fun build_prelude {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
-   prelude: !$B.builder_v >> $B.builder_v, fuel: int fuel): int =
+   prelude: !$B.builder_v >> $B.builder_v,
+   build_target: int, target_state: int, fuel: int fuel): int =
   if fuel <= 0 then 0
   else if idx >= span_count then 0
   else let
     val kind = span_kind(spans, idx, span_max)
   in
-    if $AR.eq_int_int(kind, 1) then let  (* hash_use *)
+    if $AR.eq_int_int(kind, 13) then let
+      val block_target = span_aux1(spans, idx, span_max)
+      val new_ts = (if target_state > 0 then target_state + 1
+                    else if $AR.eq_int_int(block_target, build_target) then 0
+                    else 1): int
+    in build_prelude(src, src_max, spans, span_max, span_count,
+        idx + 1, prelude, build_target, new_ts, fuel - 1) end
+    else if $AR.eq_int_int(kind, 14) then let
+      val new_ts = (if target_state > 0 then target_state - 1 else 0): int
+    in build_prelude(src, src_max, spans, span_max, span_count,
+        idx + 1, prelude, build_target, new_ts, fuel - 1) end
+    else if $AR.eq_int_int(kind, 1) && target_state <= 0 then let
       val () = emit_dep_stld(src, src_max, spans, idx, span_max, prelude)
       val rest = build_prelude(src, src_max, spans, span_max, span_count,
-        idx + 1, prelude, fuel - 1)
+        idx + 1, prelude, build_target, target_state, fuel - 1)
     in rest + 1 end
     else
       build_prelude(src, src_max, spans, span_max, span_count,
-        idx + 1, prelude, fuel - 1)
+        idx + 1, prelude, build_target, target_state, fuel - 1)
   end
 
-(* Build sats prelude: staload ALIAS = "pkg/src/lib.sats" for each #use *)
+(* Build sats prelude: staload ALIAS = "pkg/src/lib.sats" for each #use.
+   Skips #use spans inside non-matching target blocks. *)
 fun build_prelude_sats {ls:agz}{ns:pos}{lp:agz}{np:pos}{fuel:nat} .<fuel>.
   (src: !$A.borrow(byte, ls, ns), src_max: int ns,
    spans: !$A.borrow(byte, lp, np), span_max: int np,
    span_count: int, idx: int,
-   prelude: !$B.builder_v >> $B.builder_v, fuel: int fuel): void =
+   prelude: !$B.builder_v >> $B.builder_v,
+   build_target: int, target_state: int, fuel: int fuel): void =
   if fuel <= 0 then ()
   else if idx >= span_count then ()
   else let
     val kind = span_kind(spans, idx, span_max)
   in
-    if $AR.eq_int_int(kind, 1) then let
+    if $AR.eq_int_int(kind, 13) then let
+      val block_target = span_aux1(spans, idx, span_max)
+      val new_ts = (if target_state > 0 then target_state + 1
+                    else if $AR.eq_int_int(block_target, build_target) then 0
+                    else 1): int
+    in build_prelude_sats(src, src_max, spans, span_max, span_count,
+        idx + 1, prelude, build_target, new_ts, fuel - 1) end
+    else if $AR.eq_int_int(kind, 14) then let
+      val new_ts = (if target_state > 0 then target_state - 1 else 0): int
+    in build_prelude_sats(src, src_max, spans, span_max, span_count,
+        idx + 1, prelude, build_target, new_ts, fuel - 1) end
+    else if $AR.eq_int_int(kind, 1) && target_state <= 0 then let
       val () = emit_dep_stld_sats(src, src_max, spans, idx, span_max, prelude)
     in build_prelude_sats(src, src_max, spans, span_max, span_count,
-        idx + 1, prelude, fuel - 1) end
+        idx + 1, prelude, build_target, target_state, fuel - 1) end
     else
       build_prelude_sats(src, src_max, spans, span_max, span_count,
-        idx + 1, prelude, fuel - 1)
+        idx + 1, prelude, build_target, target_state, fuel - 1)
   end
 
 (* Top-level emit *)
@@ -755,12 +781,12 @@ implement do_emit (src, src_len, src_max, spans, span_max, span_count, build_tar
 
   (* Build dats prelude: self-stld line is always 1 line *)
   val dep_count = build_prelude(src, src_max, spans, span_max,
-    span_count, 0, prelude_b, 524288)
+    span_count, 0, prelude_b, build_target, 0, 524288)
   val prelude_lines = dep_count + 1
 
   (* Build sats prelude: staload ALIAS = "pkg/src/lib.sats" *)
   val () = build_prelude_sats(src, src_max, spans, span_max,
-    span_count, 0, sats_prelude_b, 524288)
+    span_count, 0, sats_prelude_b, build_target, 0, 524288)
 
   (* Emit dats prelude *)
   val @(pre_arr, pre_len) = $B.to_arr(prelude_b)
